@@ -30,7 +30,7 @@ Rust + Axum
 
 ### Web
 
-Leptos
+Leptos (or use TypeScript to have a larger ecosystem to pull from, though I want to try Leptos in an app and it may make using the Rust business logic easier in the web app than using wasm-bindgen to TypeScript/JavaScript)
 
 ### iOS + watchOS
 
@@ -44,9 +44,20 @@ Kotlin + Jetpack Compose + UniFFI to bind Rust business logic
 
 verelle.app
 
+## Payments
+
+Stripe to the Mercury Checking account of Stephens Page LLC 
+
+Probably a freemium model where local use is free but server side features require a monthy or yearly subscription.
+
+
 ## Release / CI/CD Plan
 
 GitOps, GitHub Actions, OpenTofu, Ansible, Digital Ocean VM (optionally on my stephens.page VM), Cloudflare DNS nameserver, Porkbun Registrar - overall having as much of the app encoded and its environment and configuration as possible
+
+## Distribution
+
+App Store, Play Store, website
 
 ## Style
 
