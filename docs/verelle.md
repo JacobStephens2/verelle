@@ -2,74 +2,52 @@
 
 ## Concept Brief
 
-### Application Name
-
-Caeven - Marquette Method Fertility Care
-
-### One-Sentence Description
+Verelle - Marquette Method Fertility Care
 
 A cross-platform application for a couple to track their use of the Marquette Method for care of their fertility.
 
-### Roadmap
-
-## Product Requirements Document / Mission
-
-I want the user to be able to use their Caeven account on web, Android, iOS, and possibly watchOS.
-
-
+I want the user to be able to use their Verelle account on web, Android + Wear OS, and iOS + watchOS.
 
 # Architecture & Decisions
 
 ## Architecture Overview / Software Design Document
 
-Headless core with native shells
+Headless core with native shells to have shared business logic
 
-## Architecture Decision Records (ADRs)
+## Database
 
-## Data Model / Domain Model
-
-
+PostgreSQL
 
 # Cross-Platform-Specific
 
-### Shared Core
+### Shared Core business logic
 
-Rust (Crux?)
+Rust
 
-Binding pair: UniFFI for iOS/Android and wasm-bindgen for 
+### Server
+
+Rust + Axum
 
 ### Web
 
-TypeScript (Next.js?) / WASM / Lepta or Yew
+Leptos
 
 ### iOS + watchOS
 
-Swift + SwiftUI
+Swift + SwiftUI + UniFFI to bind Rust business logic
 
 ### Android + Wear OS
 
-Kotlin
+Kotlin + Jetpack Compose + UniFFI to bind Rust business logic
 
-## Platform Strategy + Capability Matrix
+## Domain
 
-## Vertical Slice Plan
-
-
-
-# Quality, Release & Compliance
-
-## Testing / Validation Plan
+verelle.app
 
 ## Release / CI/CD Plan
 
-## Release / Compliance Checklist
+GitOps, GitHub Actions, OpenTofu, Ansible, Digital Ocean VM (optionally on my stephens.page VM), Cloudflare DNS nameserver, Porkbun Registrar - overall having as much of the app encoded and its environment and configuration as possible
 
+## Style
 
-
-# Style Guides
-
-## Code Style Guide
-
-## Design System / UI Style Guide
-
-## Documentation / Writing Style Guide
+Feminine, possibly blue ish to match the Clearblue Fertility Monitor, as seen at https://www.vitaefertility.com/wp-content/uploads/2021/08/clearblue-fertility-monitor-for-marquette-method-nfp.jpg, so inspired by that but still more feminine and a bit distinct from that
