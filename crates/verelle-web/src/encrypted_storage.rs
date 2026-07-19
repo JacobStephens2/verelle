@@ -21,6 +21,13 @@ extern "C" {
 
     #[wasm_bindgen(catch, js_name = destroyBrowserVault)]
     fn destroy_browser_vault() -> Result<Promise, JsValue>;
+
+    #[wasm_bindgen(catch, js_name = downloadPlaintextFile)]
+    fn download_plaintext_file(
+        filename: &str,
+        media_type: &str,
+        contents: &str,
+    ) -> Result<(), JsValue>;
 }
 
 pub async fn load() -> Result<Option<String>, String> {
@@ -88,4 +95,9 @@ pub async fn destroy() -> Result<(), String> {
     .await
     .map_err(|_| "Browser vault deletion failed".to_owned())?;
     Ok(())
+}
+
+pub fn download(filename: &str, media_type: &str, contents: &str) -> Result<(), String> {
+    download_plaintext_file(filename, media_type, contents)
+        .map_err(|_| "The browser could not create the export download".to_owned())
 }

@@ -32,6 +32,7 @@ fn App() -> impl IntoView {
     let password_confirmation = RwSignal::new(String::new());
     let health_consent = RwSignal::new(false);
     let recovery_acknowledged = RwSignal::new(false);
+    let recovery_code = RwSignal::new(String::new());
     let deletion_confirmation = RwSignal::new(String::new());
     let crypto_ready = browser_crypto_round_trip();
 
@@ -126,6 +127,47 @@ fn App() -> impl IntoView {
                     }
                     Err(error) => notice.set(Some(error)),
                 },
+                Err(error) => notice.set(Some(error)),
+            }
+            busy.set(false);
+        });
+    };
+
+    let recover_account = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        let entered_password = password.get_untracked();
+        if entered_password != password_confirmation.get_untracked() {
+            notice.set(Some("The new passwords do not match".to_owned()));
+            return;
+        }
+        let entered_email = email.get_untracked();
+        let entered_recovery_code = recovery_code.get_untracked();
+        password.set(String::new());
+        password_confirmation.set(String::new());
+        recovery_code.set(String::new());
+        busy.set(true);
+        notice.set(Some(
+            "Recovering the encrypted account and replacing old devices…".to_owned(),
+        ));
+        let current = vault.get_untracked();
+        spawn_local(async move {
+            match account::recover(
+                current,
+                entered_email,
+                entered_recovery_code,
+                entered_password,
+            )
+            .await
+            {
+                Ok(recovered) => {
+                    vault.set(recovered);
+                    notice.set(Some(
+                        "Account recovered. Store the new recovery code; old sessions and devices were revoked."
+                            .to_owned(),
+                    ));
+                }
                 Err(error) => notice.set(Some(error)),
             }
             busy.set(false);
@@ -249,6 +291,38 @@ fn App() -> impl IntoView {
 
     let sync_now = move |_| persist_and_sync(vault, busy, notice);
 
+    let export_json = move |_| {
+        let current = vault.get_untracked();
+        match current.export_json().and_then(|contents| {
+            encrypted_storage::download(
+                &format!("verelle-chart-{}.json", today()),
+                "application/json;charset=utf-8",
+                &contents,
+            )
+        }) {
+            Ok(()) => notice.set(Some(
+                "Plaintext JSON export downloaded on this device".to_owned(),
+            )),
+            Err(error) => notice.set(Some(error)),
+        }
+    };
+
+    let export_csv = move |_| {
+        let current = vault.get_untracked();
+        match current.export_csv().and_then(|contents| {
+            encrypted_storage::download(
+                &format!("verelle-chart-{}.csv", today()),
+                "text/csv;charset=utf-8",
+                &contents,
+            )
+        }) {
+            Ok(()) => notice.set(Some(
+                "Plaintext CSV export downloaded on this device".to_owned(),
+            )),
+            Err(error) => notice.set(Some(error)),
+        }
+    };
+
     let delete_account = move |_| {
         if deletion_confirmation.get_untracked() != "DELETE" || busy.get_untracked() {
             notice.set(Some(
@@ -320,9 +394,11 @@ fn App() -> impl IntoView {
                     password_confirmation=password_confirmation
                     health_consent=health_consent
                     recovery_acknowledged=recovery_acknowledged
+                    recovery_code=recovery_code
                     notice=notice
                     register=Callback::new(register)
                     sign_in=Callback::new(sign_in)
+                    recover_account=Callback::new(recover_account)
                     acknowledge_recovery=Callback::new(acknowledge_recovery)
                 />
 
@@ -380,9 +456,17 @@ fn App() -> impl IntoView {
                 </section>
 
                 <Show when=move || vault.get().active_session()>
+                    <section class="danger-zone export-zone">
+                        <h2>"Export your chart"</h2>
+                        <p>"Exports are decrypted in this browser and downloaded as plaintext. Store or share them only where you intend."</p>
+                        <div class="topbar-actions">
+                            <button class="quiet-button" type="button" on:click=export_json disabled=move || busy.get()>"Download JSON"</button>
+                            <button class="quiet-button" type="button" on:click=export_csv disabled=move || busy.get()>"Download CSV"</button>
+                        </div>
+                    </section>
                     <section class="danger-zone">
                         <h2>"Delete account and chart"</h2>
-                        <p>"This permanently deletes the account and encrypted server chart. It cannot be undone. Export requirements remain an open launch gate."</p>
+                        <p>"This permanently deletes the account and encrypted server chart. It cannot be undone. Download an export first if you need a copy."</p>
                         <label class="field"><span>"Type DELETE"</span><input type="text" prop:value=move || deletion_confirmation.get() on:input=move |event| deletion_confirmation.set(event_target_value(&event))/></label>
                         <button class="quiet-button danger" type="button" on:click=delete_account disabled=move || busy.get()>"Delete permanently"</button>
                     </section>
@@ -407,9 +491,11 @@ fn AuthPanel(
     password_confirmation: RwSignal<String>,
     health_consent: RwSignal<bool>,
     recovery_acknowledged: RwSignal<bool>,
+    recovery_code: RwSignal<String>,
     notice: RwSignal<Option<String>>,
     register: Callback<leptos::ev::MouseEvent>,
     sign_in: Callback<leptos::ev::MouseEvent>,
+    recover_account: Callback<leptos::ev::MouseEvent>,
     acknowledge_recovery: Callback<leptos::ev::MouseEvent>,
 ) -> impl IntoView {
     let reset_interrupted_signup = move |_| {
@@ -448,6 +534,11 @@ fn AuthPanel(
                         <label class="consent"><input type="checkbox" prop:checked=move || health_consent.get() on:change=move |event| health_consent.set(event_target_checked(&event))/><span>"I affirmatively consent to that collection for those purposes, after reading the separate "<a href="/consumer-health-data-privacy.html" target="_blank" rel="noopener">"Consumer Health Data Privacy Policy"</a>"."</span></label>
                     </div>
                     <button class="primary-button" type="button" on:click=move |event| register.run(event) disabled=move || busy.get()><span>"Create encrypted account"</span><span>"→"</span></button>
+                    <hr/>
+                    <strong>"Recover on this browser"</strong>
+                    <p class="form-note">"Enter the offline recovery code and choose a new password. Recovery revokes every old session and enrolled device and issues a replacement recovery code."</p>
+                    <label class="field"><span>"Recovery code"</span><input type="password" autocomplete="off" prop:value=move || recovery_code.get() on:input=move |event| recovery_code.set(event_target_value(&event))/></label>
+                    <button class="quiet-button" type="button" on:click=move |event| recover_account.run(event) disabled=move || busy.get()>"Recover account and replace devices"</button>
                 </div>
             </Show>
 
@@ -457,7 +548,7 @@ fn AuthPanel(
                     <label class="field"><span>"Enrolled email"</span><input type="email" prop:value=move || email.get() readonly/></label>
                     <label class="field"><span>"Password"</span><input type="password" autocomplete="current-password" prop:value=move || password.get() on:input=move |event| password.set(event_target_value(&event))/></label>
                     <button class="primary-button" type="button" on:click=move |event| sign_in.run(event) disabled=move || busy.get()><span>"Sign in"</span><span>"→"</span></button>
-                    <p class="form-note">"New-device and lost-browser recovery are not ready. Do not clear this browser until recovery has been implemented and verified."</p>
+                    <p class="form-note">"If this device is lost, use the offline recovery code on a new browser to replace the password and revoke every old session and device."</p>
                     <Show when=move || vault.get().account.as_ref().is_some_and(|account| account.account_id.is_none() && account.pending_registration.is_some())>
                         <button class="quiet-button danger" type="button" on:click=reset_interrupted_signup disabled=move || busy.get()>"Reset interrupted signup"</button>
                     </Show>

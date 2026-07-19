@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use verelle_api::{
     HEALTH_DATA_CONSENT_VERSION, HealthDataConsent, LoginFinishRequest, LoginStartRequest,
-    OpaqueMessage, RegistrationFinishRequest, RegistrationStartRequest, login_device_proof_message,
+    OpaqueMessage, RecoveryFinishRequest, RecoveryStartRequest, RegistrationFinishRequest,
+    RegistrationStartRequest, login_device_proof_message, recovery_account_proof_message,
     registration_device_proof_message,
 };
 use verelle_auth::{
@@ -17,8 +18,11 @@ use verelle_auth::{
     client_registration_finish, client_registration_start, derive_account_wrapping_key,
     normalize_account_identifier,
 };
-use verelle_core::Observation;
-use verelle_crypto::{RecoveryCode, SecretKey, wrap_secret_key};
+use verelle_core::{Observation, observations_to_csv, observations_to_json};
+use verelle_crypto::{
+    EncryptedEnvelope, RecoveryCode, SecretKey, recovery_public_key, sign_recovery_message,
+    unwrap_secret_key, wrap_secret_key,
+};
 use zeroize::{Zeroize, Zeroizing};
 
 const VAULT_VERSION: u8 = 1;
@@ -39,6 +43,8 @@ pub struct BrowserAccount {
     pub health_data_consent_version: String,
     #[serde(default)]
     pub pending_registration: Option<RegistrationFinishRequest>,
+    #[serde(default)]
+    pub pending_recovery: Option<RecoveryFinishRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,6 +110,16 @@ impl BrowserVault {
         sync_once(&mut self.sync, &session)
             .await
             .map_err(|error| error.to_string())
+    }
+
+    pub fn export_json(&self) -> Result<String, String> {
+        observations_to_json(&self.observations()?)
+            .map_err(|_| "The JSON export could not be created".to_owned())
+    }
+
+    pub fn export_csv(&self) -> Result<String, String> {
+        observations_to_csv(&self.observations()?)
+            .map_err(|_| "The CSV export could not be created".to_owned())
     }
 }
 
@@ -228,6 +244,8 @@ pub async fn register(
         &dataset_key,
     )
     .map_err(|_| "The chart key could not be protected".to_owned())?;
+    let recovery_public_key = recovery_public_key(&account_data_key)
+        .map_err(|_| "The recovery verifier could not be created".to_owned())?;
 
     let sync = BrowserSyncState::default();
     vault.local_observations.clear();
@@ -245,6 +263,7 @@ pub async fn register(
         },
         wrapped_account_key: OpaqueMessage::from_bytes(&wrapped_account_key.to_bytes()),
         recovery_wrapped_account_key: OpaqueMessage::from_bytes(&wrapped_recovery_key.to_bytes()),
+        recovery_public_key: OpaqueMessage::from_bytes(&recovery_public_key),
         wrapped_dataset_key: OpaqueMessage::from_bytes(&wrapped_dataset_key.to_bytes()),
         health_data_consent: HealthDataConsent {
             policy_version: HEALTH_DATA_CONSENT_VERSION.to_owned(),
@@ -264,6 +283,7 @@ pub async fn register(
         recovery_code_pending_acknowledgement: Some(recovery_code.as_str().to_owned()),
         health_data_consent_version: HEALTH_DATA_CONSENT_VERSION.to_owned(),
         pending_registration: Some(finish_request.clone()),
+        pending_recovery: None,
     });
     save_vault(&vault).await?;
 
@@ -283,6 +303,7 @@ pub async fn register(
 pub async fn login(vault: &mut BrowserVault, password: &mut String) -> Result<(), String> {
     let password = Zeroizing::new(std::mem::take(password));
     validate_password(password.as_str())?;
+    resume_pending_recovery(vault).await?;
     resume_pending_registration(vault).await;
     let account = vault.account.as_ref().ok_or_else(|| {
         "This browser has no enrolled device. Create an account here first".to_owned()
@@ -346,6 +367,169 @@ pub async fn login(vault: &mut BrowserVault, password: &mut String) -> Result<()
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
+pub async fn recover(
+    mut vault: BrowserVault,
+    email: String,
+    recovery_code: String,
+    new_password: String,
+) -> Result<BrowserVault, String> {
+    if vault.account.is_some() {
+        return Err("This browser already has an enrolled account".to_owned());
+    }
+    if !vault.local_observations.is_empty() {
+        return Err("Clear the local preview before recovering an account".to_owned());
+    }
+    let mut new_password = Zeroizing::new(new_password);
+    validate_password(new_password.as_str())?;
+    let email = normalize_account_identifier(&email)
+        .map_err(|_| "Enter a valid email address".to_owned())?;
+    let credential_identifier = account_credential_identifier(&email)
+        .map_err(|_| "Enter a valid email address".to_owned())?;
+    let recovery_code = RecoveryCode::parse(recovery_code)
+        .map_err(|_| "The email or recovery code was not accepted".to_owned())?;
+    let registration = client_registration_start(new_password.as_bytes())
+        .map_err(|_| "Secure recovery could not start".to_owned())?;
+    let started = account_transport::recovery_start(&RecoveryStartRequest {
+        account_identifier: email.clone(),
+        registration_request: OpaqueMessage::from_bytes(&registration.request),
+    })
+    .await?;
+    let finished = client_registration_finish(
+        &registration.state,
+        new_password.as_bytes(),
+        &credential_identifier,
+        &started
+            .registration_response
+            .decode()
+            .map_err(|_| "The recovery response is invalid".to_owned())?,
+    )
+    .map_err(|_| "Secure recovery could not finish".to_owned())?;
+    let account_wrap = EncryptedEnvelope::from_bytes(
+        &started
+            .recovery_wrapped_account_key
+            .decode()
+            .map_err(|_| "The recovery account key is invalid".to_owned())?,
+    )
+    .map_err(|_| "The recovery account key is invalid".to_owned())?;
+    let account_data_key = unwrap_secret_key(
+        &recovery_code
+            .wrapping_key()
+            .map_err(|_| "The email or recovery code was not accepted".to_owned())?,
+        KEY_EPOCH,
+        b"account/recovery-wrap",
+        &account_wrap,
+    )
+    .map_err(|_| "The email or recovery code was not accepted".to_owned())?;
+    let dataset_wrap = EncryptedEnvelope::from_bytes(
+        &started
+            .wrapped_dataset_key
+            .decode()
+            .map_err(|_| "The recovered chart key is invalid".to_owned())?,
+    )
+    .map_err(|_| "The recovered chart key is invalid".to_owned())?;
+    let dataset_key = unwrap_secret_key(
+        &account_data_key,
+        KEY_EPOCH,
+        b"dataset/account-wrap",
+        &dataset_wrap,
+    )
+    .map_err(|_| "The recovered chart key could not be opened".to_owned())?;
+
+    let device_id = Uuid::new_v4();
+    let device_public_key = encrypted_storage::public_device_key().await?;
+    let device_proof = registration_device_proof_message(
+        started.flow_id,
+        device_id,
+        started.dataset_id,
+        &finished.upload,
+    );
+    let device_signature =
+        encrypted_storage::sign_device(&URL_SAFE_NO_PAD.encode(device_proof)).await?;
+    let password_wrapping_key = SecretKey::from_bytes(
+        derive_account_wrapping_key(finished.export_key)
+            .map_err(|_| "The account wrapping key could not be derived".to_owned())?,
+    );
+    let wrapped_account_key = wrap_secret_key(
+        &password_wrapping_key,
+        KEY_EPOCH,
+        b"account/password-wrap",
+        &account_data_key,
+    )
+    .map_err(|_| "The account key could not be protected".to_owned())?;
+    let new_recovery_code = RecoveryCode::generate();
+    let wrapped_recovery_key = wrap_secret_key(
+        &new_recovery_code
+            .wrapping_key()
+            .map_err(|_| "The new recovery key could not be derived".to_owned())?,
+        KEY_EPOCH,
+        b"account/recovery-wrap",
+        &account_data_key,
+    )
+    .map_err(|_| "The new recovery copy could not be protected".to_owned())?;
+    let wrapped_dataset_key = wrap_secret_key(
+        &account_data_key,
+        KEY_EPOCH,
+        b"dataset/account-wrap",
+        &dataset_key,
+    )
+    .map_err(|_| "The chart key could not be protected".to_owned())?;
+    let mut finish_request = RecoveryFinishRequest {
+        flow_id: started.flow_id,
+        device_id,
+        dataset_id: started.dataset_id,
+        registration_upload: OpaqueMessage::from_bytes(&finished.upload),
+        device_public_key: OpaqueMessage {
+            message: device_public_key,
+        },
+        device_signature: OpaqueMessage {
+            message: device_signature,
+        },
+        recovery_signature: OpaqueMessage::from_bytes(&[1]),
+        wrapped_account_key: OpaqueMessage::from_bytes(&wrapped_account_key.to_bytes()),
+        recovery_wrapped_account_key: OpaqueMessage::from_bytes(&wrapped_recovery_key.to_bytes()),
+        wrapped_dataset_key: OpaqueMessage::from_bytes(&wrapped_dataset_key.to_bytes()),
+    };
+    let challenge = started
+        .recovery_challenge
+        .decode()
+        .map_err(|_| "The recovery challenge is invalid".to_owned())?;
+    let recovery_proof = recovery_account_proof_message(&finish_request, &challenge);
+    finish_request.recovery_signature = OpaqueMessage::from_bytes(
+        &sign_recovery_message(&account_data_key, &recovery_proof)
+            .map_err(|_| "The recovery authorization could not be signed".to_owned())?,
+    );
+
+    vault.sync = BrowserSyncState::default();
+    vault.account = Some(BrowserAccount {
+        email: email.clone(),
+        account_id: None,
+        device_id,
+        dataset_id: started.dataset_id,
+        server_public_key: URL_SAFE_NO_PAD.encode(&finished.server_public_key),
+        account_data_key: URL_SAFE_NO_PAD.encode(account_data_key.expose()),
+        dataset_key: URL_SAFE_NO_PAD.encode(dataset_key.expose()),
+        bearer_token: None,
+        session_expires_at_unix_seconds: 0,
+        recovery_code_pending_acknowledgement: Some(new_recovery_code.as_str().to_owned()),
+        health_data_consent_version: HEALTH_DATA_CONSENT_VERSION.to_owned(),
+        pending_registration: None,
+        pending_recovery: Some(finish_request.clone()),
+    });
+    save_vault(&vault).await?;
+    let recovered = account_transport::recovery_finish(&finish_request).await?;
+    if recovered.device_id != device_id || recovered.dataset_id != started.dataset_id {
+        return Err("The account service returned different recovery identifiers".to_owned());
+    }
+    if let Some(account) = vault.account.as_mut() {
+        account.account_id = Some(recovered.account_id);
+        account.pending_recovery = None;
+    }
+    login(&mut vault, &mut new_password).await?;
+    save_vault(&vault).await?;
+    Ok(vault)
+}
+
 pub async fn logout(vault: &mut BrowserVault) -> Result<(), String> {
     let account = vault
         .account
@@ -406,6 +590,25 @@ async fn resume_pending_registration(vault: &mut BrowserVault) {
         account.pending_registration = None;
     }
     let _ = save_vault(vault).await;
+}
+
+async fn resume_pending_recovery(vault: &mut BrowserVault) -> Result<(), String> {
+    let Some(request) = vault
+        .account
+        .as_ref()
+        .and_then(|account| account.pending_recovery.clone())
+    else {
+        return Ok(());
+    };
+    let response = account_transport::recovery_finish(&request).await?;
+    if response.device_id != request.device_id || response.dataset_id != request.dataset_id {
+        return Err("The account service returned different recovery identifiers".to_owned());
+    }
+    if let Some(account) = vault.account.as_mut() {
+        account.account_id = Some(response.account_id);
+        account.pending_recovery = None;
+    }
+    save_vault(vault).await
 }
 
 fn validate_password(password: &str) -> Result<(), String> {

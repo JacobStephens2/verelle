@@ -29,7 +29,7 @@ use verelle_auth::{
     generate_server_setup,
 };
 use verelle_core::{CycleStartBasis, Observation, ObservationValue, VersionStamp};
-use verelle_crypto::{RecoveryCode, SecretKey, wrap_secret_key};
+use verelle_crypto::{RecoveryCode, SecretKey, recovery_public_key, wrap_secret_key};
 use verelle_server::{
     accounts::{AuthService, account_router},
     database::Database,
@@ -181,6 +181,9 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
             )
             .unwrap()
             .to_bytes(),
+        ),
+        recovery_public_key: OpaqueMessage::from_bytes(
+            &recovery_public_key(&account_data_key).unwrap(),
         ),
         wrapped_dataset_key: OpaqueMessage::from_bytes(
             &wrap_secret_key(&account_data_key, 1, b"dataset/account-wrap", &dataset_key)

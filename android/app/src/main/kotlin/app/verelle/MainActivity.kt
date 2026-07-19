@@ -75,6 +75,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun RecordAndChartScreen(repository: LocalRepository) {
     val context = LocalContext.current
+    val enrollmentStore = remember { SyncEnrollmentStore(context) }
+    var enrollment by remember { mutableStateOf(runCatching { enrollmentStore.load() }.getOrNull()) }
+    var enrollmentDataset by remember { mutableStateOf(enrollment?.datasetId ?: "") }
+    var enrollmentToken by remember { mutableStateOf(enrollment?.bearerToken ?: "") }
+    var enrollmentExpiry by remember { mutableStateOf(enrollment?.expiresAtUnixSeconds?.toString() ?: "") }
     var charts by remember(repository) {
         mutableStateOf(repository.charts())
     }
@@ -96,6 +101,18 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
         item {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text("Verelle", style = MaterialTheme.typography.headlineMedium)
+                Text("Android sync enrollment", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(enrollmentDataset, { enrollmentDataset = it }, label = { Text("Dataset ID") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("enrollment-dataset"))
+                OutlinedTextField(enrollmentToken, { enrollmentToken = it }, label = { Text("Bearer token") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("enrollment-token"))
+                OutlinedTextField(enrollmentExpiry, { enrollmentExpiry = it.filter(Char::isDigit) }, label = { Text("Token expiry (Unix seconds)") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("enrollment-expiry"))
+                Button(onClick = {
+                    message = runCatching {
+                        val saved = SyncEnrollment(enrollmentDataset.trim(), enrollmentToken.trim(), enrollmentExpiry.toLong())
+                        enrollmentStore.save(saved); enrollment = saved; VerelleSyncWorker.enqueue(context)
+                        "Enrollment saved securely"
+                    }.fold({ it }, { it.message ?: "Enrollment could not be saved" })
+                }, modifier = Modifier.testTag("save-enrollment")) { Text(if (enrollment == null) "Enroll device" else "Update enrollment") }
+                if (enrollment != null) Text("Device enrolled for ${enrollment!!.datasetId}", modifier = Modifier.testTag("enrollment-status"))
                 Text(
                     "Synthetic testing only — export and recovery are not ready",
                     color = MaterialTheme.colorScheme.error,

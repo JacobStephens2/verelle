@@ -16,6 +16,8 @@ pub const REGISTRATION_START_PATH: &str = "/api/v1/accounts/opaque/start";
 pub const REGISTRATION_FINISH_PATH: &str = "/api/v1/accounts/opaque/finish";
 pub const LOGIN_START_PATH: &str = "/api/v1/sessions/opaque/start";
 pub const LOGIN_FINISH_PATH: &str = "/api/v1/sessions/opaque/finish";
+pub const RECOVERY_START_PATH: &str = "/api/v1/recoveries/opaque/start";
+pub const RECOVERY_FINISH_PATH: &str = "/api/v1/recoveries/opaque/finish";
 pub const CURRENT_SESSION_PATH: &str = "/api/v1/sessions/current";
 pub const CURRENT_ACCOUNT_PATH: &str = "/api/v1/accounts/current";
 pub const HEALTH_DATA_CONSENT_VERSION: &str = "2026-07-19";
@@ -91,6 +93,7 @@ pub struct RegistrationFinishRequest {
     pub device_signature: OpaqueMessage,
     pub wrapped_account_key: OpaqueMessage,
     pub recovery_wrapped_account_key: OpaqueMessage,
+    pub recovery_public_key: OpaqueMessage,
     pub wrapped_dataset_key: OpaqueMessage,
     pub health_data_consent: HealthDataConsent,
 }
@@ -144,6 +147,38 @@ pub struct AccountDeletionResponse {
     pub deleted_at_unix_seconds: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryStartRequest {
+    pub account_identifier: String,
+    pub registration_request: OpaqueMessage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryStartResponse {
+    pub flow_id: Uuid,
+    pub registration_response: OpaqueMessage,
+    pub recovery_challenge: OpaqueMessage,
+    pub dataset_id: Uuid,
+    pub recovery_wrapped_account_key: OpaqueMessage,
+    pub wrapped_dataset_key: OpaqueMessage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecoveryFinishRequest {
+    pub flow_id: Uuid,
+    pub device_id: Uuid,
+    pub dataset_id: Uuid,
+    pub registration_upload: OpaqueMessage,
+    pub device_public_key: OpaqueMessage,
+    pub device_signature: OpaqueMessage,
+    pub recovery_signature: OpaqueMessage,
+    pub wrapped_account_key: OpaqueMessage,
+    pub recovery_wrapped_account_key: OpaqueMessage,
+    pub wrapped_dataset_key: OpaqueMessage,
+}
+
+pub type RecoveryFinishResponse = RegistrationFinishResponse;
+
 pub fn registration_device_proof_message(
     flow_id: Uuid,
     device_id: Uuid,
@@ -167,6 +202,30 @@ pub fn login_device_proof_message(flow_id: Uuid, challenge: &[u8]) -> Vec<u8> {
     message.extend_from_slice(DOMAIN);
     message.extend_from_slice(flow_id.as_bytes());
     message.extend_from_slice(challenge);
+    message
+}
+
+pub fn recovery_account_proof_message(
+    request: &RecoveryFinishRequest,
+    challenge: &[u8],
+) -> Vec<u8> {
+    const DOMAIN: &[u8] = b"verelle/account-recovery/v1";
+    let fields = [
+        request.registration_upload.message.as_bytes(),
+        request.device_public_key.message.as_bytes(),
+        request.wrapped_account_key.message.as_bytes(),
+        request.recovery_wrapped_account_key.message.as_bytes(),
+        request.wrapped_dataset_key.message.as_bytes(),
+    ];
+    let mut message = Vec::with_capacity(DOMAIN.len() + 16 * 3 + challenge.len() + 160);
+    message.extend_from_slice(DOMAIN);
+    message.extend_from_slice(request.flow_id.as_bytes());
+    message.extend_from_slice(request.device_id.as_bytes());
+    message.extend_from_slice(request.dataset_id.as_bytes());
+    message.extend_from_slice(challenge);
+    for field in fields {
+        message.extend_from_slice(&Sha256::digest(field));
+    }
     message
 }
 

@@ -212,3 +212,19 @@ export function destroyBrowserVault() {
   });
   return writeQueue;
 }
+
+export function downloadPlaintextFile(filename, mediaType, contents) {
+  const blob = new Blob([contents], { type: mediaType });
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}

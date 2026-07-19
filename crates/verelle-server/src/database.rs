@@ -32,6 +32,22 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             )),
             false,
         ),
+        Migration::new(
+            4,
+            Cow::Borrowed("account recovery"),
+            MigrationType::Simple,
+            Cow::Borrowed(include_str!("../migrations/0004_account_recovery.sql")),
+            false,
+        ),
+        Migration::new(
+            5,
+            Cow::Borrowed("independent deletion ledger"),
+            MigrationType::Simple,
+            Cow::Borrowed(include_str!(
+                "../migrations/0005_independent_deletion_ledger.sql"
+            )),
+            false,
+        ),
     ]),
     ..Migrator::DEFAULT
 });

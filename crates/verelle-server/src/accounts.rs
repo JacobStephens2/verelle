@@ -680,28 +680,7 @@ impl AuthService {
                 .bind(dataset_id)
                 .execute(&mut *transaction)
                 .await?;
-            // Keep an independent, append-only record so a restored live
-            // manifest cannot silently resurrect this dataset's ciphertext.
-            query::<Postgres>(
-                "INSERT INTO deletion_ledger
-                 (deletion_id, requested_account_id, dataset_id, event)
-                 VALUES ($1, $2, $3, 'dataset_deleted')",
-            )
-            .bind(deletion_id)
-            .bind(account_id)
-            .bind(dataset_id)
-            .execute(&mut *transaction)
-            .await?;
         }
-        query::<Postgres>(
-            "INSERT INTO deletion_ledger
-             (deletion_id, requested_account_id, event)
-             VALUES ($1, $2, 'account_deleted')",
-        )
-        .bind(deletion_id)
-        .bind(account_id)
-        .execute(&mut *transaction)
-        .await?;
         query::<Postgres>("DELETE FROM accounts WHERE account_id = $1")
             .bind(account_id)
             .execute(&mut *transaction)

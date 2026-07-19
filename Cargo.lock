@@ -3726,6 +3726,7 @@ dependencies = [
  "argon2",
  "base64",
  "hkdf",
+ "p256",
  "rand 0.8.7",
  "serde",
  "sha2",

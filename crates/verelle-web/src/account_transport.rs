@@ -5,7 +5,8 @@ use web_sys::{Request, RequestInit, RequestMode, Response, window};
 
 use verelle_api::{
     AccountDeletionResponse, LoginFinishRequest, LoginFinishResponse, LoginStartRequest,
-    LoginStartResponse, RegistrationFinishRequest, RegistrationFinishResponse,
+    LoginStartResponse, RecoveryFinishRequest, RecoveryFinishResponse, RecoveryStartRequest,
+    RecoveryStartResponse, RegistrationFinishRequest, RegistrationFinishResponse,
     RegistrationStartRequest, RegistrationStartResponse,
 };
 
@@ -41,6 +42,30 @@ pub async fn login_start(request: &LoginStartRequest) -> Result<LoginStartRespon
 
 pub async fn login_finish(request: &LoginFinishRequest) -> Result<LoginFinishResponse, String> {
     request_json("POST", verelle_api::LOGIN_FINISH_PATH, None, Some(request)).await
+}
+
+pub async fn recovery_start(
+    request: &RecoveryStartRequest,
+) -> Result<RecoveryStartResponse, String> {
+    request_json(
+        "POST",
+        verelle_api::RECOVERY_START_PATH,
+        None,
+        Some(request),
+    )
+    .await
+}
+
+pub async fn recovery_finish(
+    request: &RecoveryFinishRequest,
+) -> Result<RecoveryFinishResponse, String> {
+    request_json(
+        "POST",
+        verelle_api::RECOVERY_FINISH_PATH,
+        None,
+        Some(request),
+    )
+    .await
 }
 
 pub async fn logout(bearer_token: &str) -> Result<(), String> {

@@ -10,6 +10,10 @@ use aes_gcm::{
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
+use p256::{
+    ecdsa::{Signature, SigningKey, signature::Signer},
+    pkcs8::EncodePublicKey,
+};
 use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -39,6 +43,8 @@ pub enum CryptoError {
     MalformedRecoveryCode,
     #[error("wrapped key plaintext is malformed")]
     MalformedWrappedKey,
+    #[error("recovery proof key could not be encoded")]
+    RecoveryProofKey,
 }
 
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
@@ -294,6 +300,47 @@ impl RecoveryCode {
     }
 }
 
+/// Returns the stable public recovery verifier for a random account data key.
+/// The server stores only this public key and can therefore verify recovery
+/// authorization without receiving the recovery code or account data key.
+pub fn recovery_public_key(account_data_key: &SecretKey) -> Result<Vec<u8>, CryptoError> {
+    let signing_key = recovery_signing_key(account_data_key)?;
+    signing_key
+        .verifying_key()
+        .to_public_key_der()
+        .map(|document| document.as_bytes().to_vec())
+        .map_err(|_| CryptoError::RecoveryProofKey)
+}
+
+/// Signs a server challenge with a deterministic P-256 key derived from the
+/// random account data key.
+pub fn sign_recovery_message(
+    account_data_key: &SecretKey,
+    message: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let signing_key = recovery_signing_key(account_data_key)?;
+    let signature: Signature = signing_key.sign(message);
+    Ok(signature.to_bytes().to_vec())
+}
+
+fn recovery_signing_key(account_data_key: &SecretKey) -> Result<SigningKey, CryptoError> {
+    for counter in 0_u8..=u8::MAX {
+        let hkdf = Hkdf::<Sha256>::new(
+            Some(b"verelle/account-recovery-proof/v1"),
+            account_data_key.expose(),
+        );
+        let mut candidate = [0_u8; KEY_LEN];
+        hkdf.expand(&[b'p', b'2', b'5', b'6', counter], &mut candidate)
+            .map_err(|_| CryptoError::KeyDerivation)?;
+        if let Ok(key) = SigningKey::from_bytes((&candidate).into()) {
+            candidate.zeroize();
+            return Ok(key);
+        }
+        candidate.zeroize();
+    }
+    Err(CryptoError::RecoveryProofKey)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,5 +409,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(recovered.expose(), data_key.expose());
+    }
+
+    #[test]
+    fn recovery_proof_key_is_stable_and_signs() {
+        use p256::{
+            ecdsa::{Signature, VerifyingKey, signature::Verifier},
+            pkcs8::DecodePublicKey,
+        };
+
+        let account_key = SecretKey::from_bytes([31_u8; 32]);
+        let first = recovery_public_key(&account_key).unwrap();
+        let second = recovery_public_key(&account_key).unwrap();
+        assert_eq!(first, second);
+        let signature = sign_recovery_message(&account_key, b"recovery challenge").unwrap();
+        let verifying_key = VerifyingKey::from_public_key_der(&first).unwrap();
+        verifying_key
+            .verify(
+                b"recovery challenge",
+                &Signature::from_slice(&signature).unwrap(),
+            )
+            .unwrap();
     }
 }
