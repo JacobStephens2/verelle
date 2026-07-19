@@ -27,8 +27,10 @@ use uuid::Uuid;
 use verelle_api::{
     AccountDeletionResponse, ApiErrorBody, ApiErrorCode, HEALTH_DATA_CONSENT_VERSION,
     LoginFinishRequest, LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage,
+    RecoveryFinishRequest, RecoveryFinishResponse, RecoveryStartRequest, RecoveryStartResponse,
     RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
-    RegistrationStartResponse, login_device_proof_message, registration_device_proof_message,
+    RegistrationStartResponse, login_device_proof_message, recovery_account_proof_message,
+    registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, server_login_finish, server_login_start,
@@ -126,6 +128,11 @@ impl AuthService {
             decode_bounded(&request.wrapped_account_key, MAX_WRAPPED_KEY_BYTES)?;
         let recovery_wrapped_account_key =
             decode_bounded(&request.recovery_wrapped_account_key, MAX_WRAPPED_KEY_BYTES)?;
+        let recovery_public_key =
+            decode_bounded(&request.recovery_public_key, MAX_DEVICE_PUBLIC_KEY_BYTES)?;
+        if VerifyingKey::from_public_key_der(&recovery_public_key).is_err() {
+            return Err(AuthServiceError::InvalidRequest);
+        }
         let wrapped_dataset_key =
             decode_bounded(&request.wrapped_dataset_key, MAX_WRAPPED_KEY_BYTES)?;
 
@@ -146,14 +153,16 @@ impl AuthService {
         let dataset_id = request.dataset_id;
         query::<Postgres>(
             "INSERT INTO accounts \
-             (account_id, identifier_hash, opaque_password_file, wrapped_account_key, recovery_wrapped_account_key) \
-             VALUES ($1, $2, $3, $4, $5)",
+             (account_id, identifier_hash, opaque_password_file, wrapped_account_key, \
+              recovery_wrapped_account_key, recovery_public_key) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
         )
         .bind(account_id)
         .bind(identifier_hash)
         .bind(password_file)
         .bind(wrapped_account_key)
         .bind(recovery_wrapped_account_key)
+        .bind(recovery_public_key)
         .execute(&mut *transaction)
         .await
         .map_err(map_account_insert_error)?;
@@ -363,6 +372,214 @@ impl AuthService {
         Ok(response)
     }
 
+    pub async fn recovery_start(
+        &self,
+        request: RecoveryStartRequest,
+    ) -> Result<RecoveryStartResponse, AuthServiceError> {
+        let identifier = account_credential_identifier(&request.account_identifier)
+            .map_err(|_| AuthServiceError::InvalidRequest)?;
+        self.enforce_start_rate_limit(&identifier).await?;
+        let registration_request = request
+            .registration_request
+            .decode()
+            .map_err(|_| AuthServiceError::InvalidRequest)?;
+        let account = query::<Postgres>(
+            "SELECT account.account_id, account.recovery_wrapped_account_key, \
+                    membership.dataset_id, key_wrap.wrapped_key \
+             FROM accounts account \
+             JOIN dataset_memberships membership \
+               ON membership.account_id = account.account_id AND membership.removed_at IS NULL \
+             JOIN sync_datasets dataset ON dataset.dataset_id = membership.dataset_id \
+             JOIN dataset_key_wraps key_wrap \
+               ON key_wrap.dataset_id = dataset.dataset_id \
+              AND key_wrap.account_id = account.account_id \
+              AND key_wrap.key_epoch = dataset.current_epoch \
+             WHERE account.identifier_hash = $1 AND account.disabled_at IS NULL \
+               AND account.recovery_public_key IS NOT NULL \
+             ORDER BY membership.joined_at ASC LIMIT 1",
+        )
+        .bind(identifier.as_slice())
+        .fetch_optional(self.database.pool())
+        .await?
+        .ok_or(AuthServiceError::InvalidCredentials)?;
+        let registration_response = server_registration_start(
+            self.server_setup.as_slice(),
+            &identifier,
+            &registration_request,
+        )
+        .map_err(|_| AuthServiceError::InvalidRequest)?;
+        let flow_id = Uuid::new_v4();
+        let mut challenge = [0_u8; DEVICE_CHALLENGE_BYTES];
+        OsRng.fill_bytes(&mut challenge);
+        let account_id = account.get::<Uuid, _>("account_id");
+        let dataset_id = account.get::<Uuid, _>("dataset_id");
+        query::<Postgres>(
+            "INSERT INTO account_recovery_flows \
+             (flow_id, identifier_hash, account_id, dataset_id, recovery_challenge, expires_at) \
+             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '10 minutes')",
+        )
+        .bind(flow_id)
+        .bind(identifier.as_slice())
+        .bind(account_id)
+        .bind(dataset_id)
+        .bind(challenge.as_slice())
+        .execute(self.database.pool())
+        .await?;
+        Ok(RecoveryStartResponse {
+            flow_id,
+            registration_response: OpaqueMessage::from_bytes(&registration_response),
+            recovery_challenge: OpaqueMessage::from_bytes(&challenge),
+            dataset_id,
+            recovery_wrapped_account_key: OpaqueMessage::from_bytes(
+                &account.get::<Vec<u8>, _>("recovery_wrapped_account_key"),
+            ),
+            wrapped_dataset_key: OpaqueMessage::from_bytes(
+                &account.get::<Vec<u8>, _>("wrapped_key"),
+            ),
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub async fn recovery_finish(
+        &self,
+        request: RecoveryFinishRequest,
+    ) -> Result<RecoveryFinishResponse, AuthServiceError> {
+        if request.device_id.is_nil() || request.dataset_id.is_nil() {
+            return Err(AuthServiceError::InvalidRequest);
+        }
+        let registration_upload = request
+            .registration_upload
+            .decode()
+            .map_err(|_| AuthServiceError::InvalidRequest)?;
+        let password_file = server_registration_finish(&registration_upload)
+            .map_err(|_| AuthServiceError::InvalidRequest)?;
+        let device_public_key =
+            decode_bounded(&request.device_public_key, MAX_DEVICE_PUBLIC_KEY_BYTES)?;
+        let device_signature =
+            decode_bounded(&request.device_signature, MAX_DEVICE_PUBLIC_KEY_BYTES)?;
+        let recovery_signature =
+            decode_bounded(&request.recovery_signature, MAX_DEVICE_PUBLIC_KEY_BYTES)?;
+        let wrapped_account_key =
+            decode_bounded(&request.wrapped_account_key, MAX_WRAPPED_KEY_BYTES)?;
+        let recovery_wrapped_account_key =
+            decode_bounded(&request.recovery_wrapped_account_key, MAX_WRAPPED_KEY_BYTES)?;
+        let wrapped_dataset_key =
+            decode_bounded(&request.wrapped_dataset_key, MAX_WRAPPED_KEY_BYTES)?;
+        let request_bytes =
+            serde_json::to_vec(&request).map_err(|_| AuthServiceError::InvalidRequest)?;
+        let request_hash = Sha256::digest(request_bytes);
+
+        let mut transaction = self.database.pool().begin().await?;
+        let flow = query::<Postgres>(
+            "SELECT flow.identifier_hash, flow.account_id, flow.dataset_id, \
+                    flow.recovery_challenge, flow.request_hash, \
+                    flow.consumed_at IS NOT NULL AS consumed, \
+                    flow.expires_at > CURRENT_TIMESTAMP AS unexpired, \
+                    account.recovery_public_key \
+             FROM account_recovery_flows flow \
+             JOIN accounts account ON account.account_id = flow.account_id \
+             WHERE flow.flow_id = $1 FOR UPDATE OF flow, account",
+        )
+        .bind(request.flow_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AuthServiceError::InvalidCredentials)?;
+        let account_id = flow.get::<Uuid, _>("account_id");
+        let dataset_id = flow.get::<Uuid, _>("dataset_id");
+        if flow.get::<bool, _>("consumed") {
+            let matches = flow
+                .get::<Option<Vec<u8>>, _>("request_hash")
+                .is_some_and(|stored| stored.as_slice() == request_hash.as_slice());
+            if matches && dataset_id == request.dataset_id {
+                transaction.commit().await?;
+                return Ok(RecoveryFinishResponse {
+                    account_id,
+                    device_id: request.device_id,
+                    dataset_id,
+                });
+            }
+            return Err(AuthServiceError::InvalidCredentials);
+        }
+        if !flow.get::<bool, _>("unexpired") || dataset_id != request.dataset_id {
+            return Err(AuthServiceError::InvalidCredentials);
+        }
+        let challenge = flow.get::<Vec<u8>, _>("recovery_challenge");
+        let recovery_public_key = flow
+            .get::<Option<Vec<u8>>, _>("recovery_public_key")
+            .ok_or(AuthServiceError::InvalidCredentials)?;
+        let recovery_proof = recovery_account_proof_message(&request, &challenge);
+        if !verify_device_signature(&recovery_public_key, &recovery_signature, &recovery_proof) {
+            return Err(AuthServiceError::InvalidCredentials);
+        }
+        let device_proof = registration_device_proof_message(
+            request.flow_id,
+            request.device_id,
+            request.dataset_id,
+            &registration_upload,
+        );
+        if !verify_device_signature(&device_public_key, &device_signature, &device_proof) {
+            return Err(AuthServiceError::InvalidRequest);
+        }
+
+        query::<Postgres>(
+            "UPDATE account_sessions SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE account_id = $1 AND revoked_at IS NULL",
+        )
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE account_devices SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE account_id = $1 AND revoked_at IS NULL",
+        )
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "INSERT INTO account_devices (device_id, account_id, public_key, key_algorithm) \
+             VALUES ($1, $2, $3, 'p256_ecdsa_sha256_spki')",
+        )
+        .bind(request.device_id)
+        .bind(account_id)
+        .bind(device_public_key)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE accounts SET opaque_password_file = $2, wrapped_account_key = $3, \
+                    recovery_wrapped_account_key = $4 \
+             WHERE account_id = $1",
+        )
+        .bind(account_id)
+        .bind(password_file)
+        .bind(wrapped_account_key)
+        .bind(recovery_wrapped_account_key)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE dataset_key_wraps SET wrapped_key = $3, created_at = CURRENT_TIMESTAMP \
+             WHERE dataset_id = $1 AND account_id = $2 AND key_epoch = 1",
+        )
+        .bind(dataset_id)
+        .bind(account_id)
+        .bind(wrapped_dataset_key)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE account_recovery_flows \
+             SET consumed_at = CURRENT_TIMESTAMP, request_hash = $2 WHERE flow_id = $1",
+        )
+        .bind(request.flow_id)
+        .bind(request_hash.as_slice())
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(RecoveryFinishResponse {
+            account_id,
+            device_id: request.device_id,
+            dataset_id,
+        })
+    }
+
     pub async fn revoke_session(&self, bearer_token: &str) -> Result<(), AuthServiceError> {
         let token_hash = decode_and_hash_token(bearer_token)?;
         query::<Postgres>(
@@ -418,6 +635,28 @@ impl AuthService {
         }
 
         let deletion_id = Uuid::new_v4();
+        // Record the erasure in the independent ledger before removing any
+        // account data. The ledger has no FK to accounts or datasets and is
+        // consequently retained for restore/replay auditing.
+        let ledger = query::<Postgres>(
+            "INSERT INTO deletion_ledger (deletion_id, account_id, dataset_count) \
+             VALUES ($1, $2, $3) RETURNING ledger_id",
+        )
+        .bind(deletion_id)
+        .bind(account_id)
+        .bind(i32::try_from(datasets.len()).map_err(|_| AuthServiceError::Conflict)?)
+        .fetch_one(&mut *transaction)
+        .await?;
+        let ledger_id = ledger.get::<i64, _>("ledger_id");
+        for dataset_id in &datasets {
+            query::<Postgres>(
+                "INSERT INTO deletion_ledger_datasets (ledger_id, dataset_id) VALUES ($1, $2)",
+            )
+            .bind(ledger_id)
+            .bind(dataset_id)
+            .execute(&mut *transaction)
+            .await?;
+        }
         let deletion = query::<Postgres>(
             "INSERT INTO deletion_manifests \
              (deletion_id, requested_account_id, completed_at) \
@@ -441,7 +680,28 @@ impl AuthService {
                 .bind(dataset_id)
                 .execute(&mut *transaction)
                 .await?;
+            // Keep an independent, append-only record so a restored live
+            // manifest cannot silently resurrect this dataset's ciphertext.
+            query::<Postgres>(
+                "INSERT INTO deletion_ledger
+                 (deletion_id, requested_account_id, dataset_id, event)
+                 VALUES ($1, $2, $3, 'dataset_deleted')",
+            )
+            .bind(deletion_id)
+            .bind(account_id)
+            .bind(dataset_id)
+            .execute(&mut *transaction)
+            .await?;
         }
+        query::<Postgres>(
+            "INSERT INTO deletion_ledger
+             (deletion_id, requested_account_id, event)
+             VALUES ($1, $2, 'account_deleted')",
+        )
+        .bind(deletion_id)
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
         query::<Postgres>("DELETE FROM accounts WHERE account_id = $1")
             .bind(account_id)
             .execute(&mut *transaction)
@@ -540,6 +800,8 @@ pub fn account_router(auth_service: AuthService) -> Router {
         )
         .route(verelle_api::LOGIN_START_PATH, post(login_start))
         .route(verelle_api::LOGIN_FINISH_PATH, post(login_finish))
+        .route(verelle_api::RECOVERY_START_PATH, post(recovery_start))
+        .route(verelle_api::RECOVERY_FINISH_PATH, post(recovery_finish))
         .route(verelle_api::CURRENT_SESSION_PATH, delete(logout))
         .route(verelle_api::CURRENT_ACCOUNT_PATH, delete(delete_account))
         .layer(DefaultBodyLimit::max(AUTH_BODY_LIMIT_BYTES))
@@ -572,6 +834,20 @@ async fn login_finish(
     Json(request): Json<LoginFinishRequest>,
 ) -> Result<Json<LoginFinishResponse>, AuthServiceError> {
     Ok(Json(service.login_finish(request).await?))
+}
+
+async fn recovery_start(
+    State(service): State<AuthService>,
+    Json(request): Json<RecoveryStartRequest>,
+) -> Result<Json<RecoveryStartResponse>, AuthServiceError> {
+    Ok(Json(service.recovery_start(request).await?))
+}
+
+async fn recovery_finish(
+    State(service): State<AuthService>,
+    Json(request): Json<RecoveryFinishRequest>,
+) -> Result<Json<RecoveryFinishResponse>, AuthServiceError> {
+    Ok(Json(service.recovery_finish(request).await?))
 }
 
 async fn logout(
