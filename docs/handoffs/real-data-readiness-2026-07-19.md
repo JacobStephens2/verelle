@@ -70,6 +70,17 @@ states that new-device and lost-browser recovery are not ready.
 - That exact object was streamed into a fresh PostgreSQL database with
   `ON_ERROR_STOP=1`; migrations 1 and 2 and the expected zero account/operation
   counts were restored successfully. The disposable database was then removed.
+- A live headless-Chrome run against the DigitalOcean origin completed OPAQUE
+  registration, browser P-256 proof, recovery-code acknowledgement, encrypted
+  cycle-start recording and sync, logout, password-plus-device relogin, and
+  authenticated account deletion. Chrome reported no page or console errors.
+- That live run exposed and closed an IndexedDB completion-listener race before
+  the final pass. Three interrupted `.invalid` harness accounts were removed
+  with the same sole-member deletion transaction and manifest records; they held
+  no health data. The successful harness account deleted itself through the
+  public API. Final live counts were zero accounts, datasets, operations,
+  sessions, and consent rows, with the identifier-only deletion manifests
+  retained.
 
 ## Residual gates and risks
 
