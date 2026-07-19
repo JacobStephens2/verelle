@@ -41,6 +41,10 @@ class VerelleSyncWorker(
     companion object {
         private const val UNIQUE_WORK_NAME = "verelle-foreground-sync"
 
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(UNIQUE_WORK_NAME)
+        }
+
         fun enqueue(context: Context) {
             val enrollment = runCatching { SyncEnrollmentStore(context).load() }.getOrNull()
                 ?: return

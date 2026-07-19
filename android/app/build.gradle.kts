@@ -13,13 +13,14 @@ val generatedJniLibs = layout.buildDirectory.dir("generated/jniLibs")
 android {
     namespace = "app.verelle"
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "app.verelle"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-local-recording"
+        versionCode = 3
+        versionName = "0.3.0-account-enrollment"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

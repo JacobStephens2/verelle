@@ -14,11 +14,16 @@ use std::{
 };
 use thiserror::Error;
 use uuid::Uuid;
+use verelle_api::{login_device_proof_message, registration_device_proof_message};
+use verelle_auth::{
+    AuthProtocolError, account_credential_identifier, client_login_finish, client_login_start,
+    client_registration_finish, client_registration_start, derive_account_wrapping_key,
+};
 use verelle_core::{
     CycleChart, CycleStartBasis, GoldenFixture, MarkerType, MonitorReading, Observation,
     ObservationValue, build_charts,
 };
-use verelle_crypto::SecretKey;
+use verelle_crypto::{RecoveryCode, SecretKey, recovery_public_key, wrap_secret_key};
 use verelle_store::{RemoteOperation, RemotePage, Store};
 use verelle_sync::{
     HybridClock, PlainOperation, TransportOp, decrypt_operation, encrypt_operation,
@@ -82,6 +87,38 @@ pub struct FfiPullPage {
     pub more: bool,
 }
 
+/// Opaque client state is returned to Kotlin only for the duration of one
+/// registration HTTP exchange. It must never be persisted.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiOpaqueRegistrationStart {
+    pub state: Vec<u8>,
+    pub request: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiAccountRegistrationMaterial {
+    pub registration_upload: Vec<u8>,
+    pub server_public_key: Vec<u8>,
+    pub wrapped_account_key: Vec<u8>,
+    pub recovery_wrapped_account_key: Vec<u8>,
+    pub recovery_public_key: Vec<u8>,
+    pub wrapped_dataset_key: Vec<u8>,
+    pub recovery_code: String,
+}
+
+/// Opaque client state is returned to Kotlin only for the duration of one
+/// login HTTP exchange. It must never be persisted.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiOpaqueLoginStart {
+    pub state: Vec<u8>,
+    pub request: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiOpaqueLoginFinish {
+    pub credential_finalization: Vec<u8>,
+}
+
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FixtureReplayError {
     #[error("fixture JSON is invalid")]
@@ -127,6 +164,24 @@ pub enum LocalRepositoryError {
     InvalidEnvelope,
     #[error("the pull page failed authentication or validation")]
     InvalidPullPage,
+    #[error("the account identifier is invalid")]
+    InvalidAccountIdentifier,
+    #[error("the account authentication exchange is invalid")]
+    InvalidAuthenticationExchange,
+    #[error("account key protection failed")]
+    AccountKeyProtection,
+}
+
+#[derive(Debug, Error, uniffi::Error)]
+pub enum AccountAuthError {
+    #[error("the account identifier is invalid")]
+    InvalidAccountIdentifier,
+    #[error("the OPAQUE authentication exchange is invalid")]
+    InvalidAuthenticationExchange,
+    #[error("the pinned server key did not match")]
+    ServerKeyChanged,
+    #[error("an enrollment identifier is invalid")]
+    InvalidEnrollmentIdentifier,
 }
 
 #[derive(uniffi::Object)]
@@ -302,6 +357,80 @@ impl LocalRepository {
             .collect())
     }
 
+    pub fn dataset_id(&self) -> Result<String, LocalRepositoryError> {
+        Ok(self.lock()?.dataset_id.to_string())
+    }
+
+    /// Completes OPAQUE registration and creates the account/recovery wraps
+    /// around this repository's existing dataset key. Plain account and
+    /// dataset keys never cross the `UniFFI` boundary.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted byte buffers.
+    pub fn finish_account_registration(
+        &self,
+        mut state: Vec<u8>,
+        mut password: Vec<u8>,
+        account_identifier: String,
+        registration_response: Vec<u8>,
+    ) -> Result<FfiAccountRegistrationMaterial, LocalRepositoryError> {
+        let Ok(credential_identifier) = account_credential_identifier(&account_identifier) else {
+            state.fill(0);
+            password.fill(0);
+            return Err(LocalRepositoryError::InvalidAccountIdentifier);
+        };
+        let finished = client_registration_finish(
+            &state,
+            &password,
+            &credential_identifier,
+            &registration_response,
+        )
+        .map_err(|_| LocalRepositoryError::InvalidAuthenticationExchange);
+        state.fill(0);
+        password.fill(0);
+        let finished = finished?;
+        let password_wrapping_key = SecretKey::from_bytes(
+            derive_account_wrapping_key(finished.export_key)
+                .map_err(|_| LocalRepositoryError::AccountKeyProtection)?,
+        );
+        let account_data_key = SecretKey::random();
+        let recovery_code = RecoveryCode::generate();
+        let wrapped_account_key = wrap_secret_key(
+            &password_wrapping_key,
+            LOCAL_KEY_EPOCH,
+            b"account/password-wrap",
+            &account_data_key,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let wrapped_recovery_key = wrap_secret_key(
+            &recovery_code
+                .wrapping_key()
+                .map_err(|_| LocalRepositoryError::AccountKeyProtection)?,
+            LOCAL_KEY_EPOCH,
+            b"account/recovery-wrap",
+            &account_data_key,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let inner = self.lock()?;
+        let wrapped_dataset_key = wrap_secret_key(
+            &account_data_key,
+            LOCAL_KEY_EPOCH,
+            b"dataset/account-wrap",
+            &inner.data_key,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let recovery_public_key = recovery_public_key(&account_data_key)
+            .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+
+        Ok(FfiAccountRegistrationMaterial {
+            registration_upload: finished.upload,
+            server_public_key: finished.server_public_key,
+            wrapped_account_key: wrapped_account_key.to_bytes(),
+            recovery_wrapped_account_key: wrapped_recovery_key.to_bytes(),
+            recovery_public_key,
+            wrapped_dataset_key: wrapped_dataset_key.to_bytes(),
+            recovery_code: recovery_code.as_str().to_owned(),
+        })
+    }
+
     pub fn pending_outbox_count(&self) -> Result<u64, LocalRepositoryError> {
         let count = self
             .lock()?
@@ -377,6 +506,108 @@ impl LocalRepository {
             })
             .map_err(|_| LocalRepositoryError::InvalidPullPage)
     }
+}
+
+#[uniffi::export]
+#[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted byte buffers.
+pub fn opaque_registration_start(
+    mut password: Vec<u8>,
+) -> Result<FfiOpaqueRegistrationStart, AccountAuthError> {
+    let started = client_registration_start(&password)
+        .map_err(|_| AccountAuthError::InvalidAuthenticationExchange);
+    password.fill(0);
+    let started = started?;
+    Ok(FfiOpaqueRegistrationStart {
+        state: started.state,
+        request: started.request,
+    })
+}
+
+#[uniffi::export]
+#[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted byte buffers.
+pub fn opaque_login_start(mut password: Vec<u8>) -> Result<FfiOpaqueLoginStart, AccountAuthError> {
+    let started =
+        client_login_start(&password).map_err(|_| AccountAuthError::InvalidAuthenticationExchange);
+    password.fill(0);
+    let started = started?;
+    Ok(FfiOpaqueLoginStart {
+        state: started.state,
+        request: started.request,
+    })
+}
+
+#[uniffi::export]
+#[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+pub fn opaque_login_finish(
+    mut state: Vec<u8>,
+    mut password: Vec<u8>,
+    account_identifier: String,
+    credential_response: Vec<u8>,
+    expected_server_public_key: Vec<u8>,
+) -> Result<FfiOpaqueLoginFinish, AccountAuthError> {
+    let Ok(credential_identifier) = account_credential_identifier(&account_identifier) else {
+        state.fill(0);
+        password.fill(0);
+        return Err(AccountAuthError::InvalidAccountIdentifier);
+    };
+    let finished = client_login_finish(
+        &state,
+        &password,
+        &credential_identifier,
+        &credential_response,
+        &expected_server_public_key,
+    );
+    state.fill(0);
+    password.fill(0);
+    let mut finished = finished.map_err(|error| match error {
+        AuthProtocolError::ServerKeyChanged => AccountAuthError::ServerKeyChanged,
+        _ => AccountAuthError::InvalidAuthenticationExchange,
+    })?;
+    finished.export_key.fill(0);
+    finished.server_public_key.fill(0);
+    finished.session_key.fill(0);
+    Ok(FfiOpaqueLoginFinish {
+        credential_finalization: finished.finalization,
+    })
+}
+
+#[uniffi::export]
+#[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+pub fn account_registration_device_proof(
+    flow_id: String,
+    device_id: String,
+    dataset_id: String,
+    registration_upload: Vec<u8>,
+) -> Result<Vec<u8>, AccountAuthError> {
+    let flow_id = parse_enrollment_id(&flow_id)?;
+    let device_id = parse_enrollment_id(&device_id)?;
+    let dataset_id = parse_enrollment_id(&dataset_id)?;
+    Ok(registration_device_proof_message(
+        flow_id,
+        device_id,
+        dataset_id,
+        &registration_upload,
+    ))
+}
+
+#[uniffi::export]
+#[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+pub fn account_login_device_proof(
+    flow_id: String,
+    device_challenge: Vec<u8>,
+) -> Result<Vec<u8>, AccountAuthError> {
+    let flow_id = parse_enrollment_id(&flow_id)?;
+    if device_challenge.is_empty() {
+        return Err(AccountAuthError::InvalidAuthenticationExchange);
+    }
+    Ok(login_device_proof_message(flow_id, &device_challenge))
+}
+
+fn parse_enrollment_id(value: &str) -> Result<Uuid, AccountAuthError> {
+    Uuid::parse_str(value)
+        .ok()
+        .filter(|value| !value.is_nil())
+        .ok_or(AccountAuthError::InvalidEnrollmentIdentifier)
 }
 
 impl From<TransportOp> for FfiTransportOperation {
@@ -525,6 +756,10 @@ pub fn replay_fixture(fixture_json: String) -> Result<Vec<FfiChart>, FixtureRepl
 #[cfg(test)]
 mod tests {
     use super::*;
+    use verelle_auth::{
+        generate_server_setup, server_login_finish, server_login_start, server_registration_finish,
+        server_registration_start,
+    };
 
     #[test]
     fn fixture_replay_matches_the_compact_rust_chart() {
@@ -624,6 +859,88 @@ mod tests {
         assert!(matches!(
             LocalRepository::open(path, vec![5_u8; 32], "device-a".to_owned()),
             Err(LocalRepositoryError::KeyMismatch)
+        ));
+    }
+
+    #[test]
+    fn android_opaque_boundary_registers_and_logs_in_with_a_pinned_server_key() {
+        let password = b"correct horse battery staple";
+        let email = "founder@example.com";
+        let identifier = account_credential_identifier(email).unwrap();
+        let setup = generate_server_setup();
+        let repository = LocalRepository::open(
+            tempfile::NamedTempFile::new()
+                .unwrap()
+                .path()
+                .to_string_lossy()
+                .into_owned(),
+            vec![6_u8; 32],
+            Uuid::new_v4().to_string(),
+        )
+        .unwrap();
+
+        let registration = opaque_registration_start(password.to_vec()).unwrap();
+        let registration_response =
+            server_registration_start(&setup, &identifier, &registration.request).unwrap();
+        let material = repository
+            .finish_account_registration(
+                registration.state,
+                password.to_vec(),
+                email.to_owned(),
+                registration_response,
+            )
+            .unwrap();
+        let password_file = server_registration_finish(&material.registration_upload).unwrap();
+        assert!(!material.recovery_code.is_empty());
+        assert!(!material.wrapped_account_key.is_empty());
+        assert!(!material.wrapped_dataset_key.is_empty());
+
+        let login = opaque_login_start(password.to_vec()).unwrap();
+        let server_login =
+            server_login_start(&setup, Some(&password_file), &identifier, &login.request).unwrap();
+        let client_login = opaque_login_finish(
+            login.state,
+            password.to_vec(),
+            email.to_owned(),
+            server_login.response,
+            material.server_public_key,
+        )
+        .unwrap();
+        assert!(
+            server_login_finish(
+                &server_login.state,
+                &identifier,
+                &client_login.credential_finalization,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn android_opaque_login_rejects_a_changed_server_key() {
+        let password = b"correct horse battery staple";
+        let email = "founder@example.com";
+        let identifier = account_credential_identifier(email).unwrap();
+        let setup = generate_server_setup();
+        let registration = opaque_registration_start(password.to_vec()).unwrap();
+        let response =
+            server_registration_start(&setup, &identifier, &registration.request).unwrap();
+        let finished =
+            client_registration_finish(&registration.state, password, &identifier, &response)
+                .unwrap();
+        let password_file = server_registration_finish(&finished.upload).unwrap();
+        let login = opaque_login_start(password.to_vec()).unwrap();
+        let server_login =
+            server_login_start(&setup, Some(&password_file), &identifier, &login.request).unwrap();
+        assert!(matches!(
+            opaque_login_finish(
+                login.state,
+                password.to_vec(),
+                email.to_owned(),
+                server_login.response,
+                vec![0; 32],
+            ),
+            Err(AccountAuthError::ServerKeyChanged)
         ));
     }
 }

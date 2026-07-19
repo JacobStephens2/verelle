@@ -17,6 +17,8 @@ thiserror.workspace = true
 uniffi.workspace = true
 uuid.workspace = true
 verelle-core = { path = "../verelle-core" }
+verelle-api = { path = "../verelle-api" }
+verelle-auth = { path = "../verelle-auth" }
 verelle-crypto = { path = "../verelle-crypto" }
 verelle-store = { path = "../verelle-store" }
 verelle-sync = { path = "../verelle-sync" }

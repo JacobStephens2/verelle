@@ -16,6 +16,9 @@ data class SyncEnrollment(
     val datasetId: String,
     val bearerToken: String,
     val expiresAtUnixSeconds: Long,
+    val email: String = "",
+    val deviceId: String = "",
+    val serverPublicKey: String = "",
 )
 
 class SyncEnrollmentStore(
@@ -49,6 +52,9 @@ class SyncEnrollmentStore(
             .put("dataset_id", enrollment.datasetId)
             .put("bearer_token", enrollment.bearerToken)
             .put("expires_at_unix_seconds", enrollment.expiresAtUnixSeconds)
+            .put("email", enrollment.email)
+            .put("device_id", enrollment.deviceId)
+            .put("server_public_key", enrollment.serverPublicKey)
             .toString()
             .toByteArray(Charsets.UTF_8)
         try {
@@ -64,6 +70,26 @@ class SyncEnrollmentStore(
             ) { "The protected sync enrollment could not be persisted" }
         } finally {
             plaintext.fill(0)
+        }
+    }
+
+    /**
+     * Removes the locally provisioned sync credential and its wrapping key.
+     *
+     * This only forgets the credential on this device. Server-side session
+     * revocation remains part of the account lifecycle rather than this local
+     * persistence primitive.
+     */
+    @Synchronized
+    fun clear() {
+        check(
+            preferences.edit()
+                .remove(CIPHERTEXT)
+                .remove(IV)
+                .commit(),
+        ) { "The protected sync enrollment could not be removed" }
+        if (keyStore.containsAlias(alias)) {
+            keyStore.deleteEntry(alias)
         }
     }
 
@@ -106,16 +132,36 @@ class SyncEnrollmentStore(
             datasetId = value.getString("dataset_id"),
             bearerToken = value.getString("bearer_token"),
             expiresAtUnixSeconds = value.getLong("expires_at_unix_seconds"),
+            email = value.optString("email"),
+            deviceId = value.optString("device_id"),
+            serverPublicKey = value.optString("server_public_key"),
         ).also(::validate)
     }
 
     private fun validate(enrollment: SyncEnrollment) {
-        UUID.fromString(enrollment.datasetId)
-        require(enrollment.bearerToken.length in 32..512) { "The sync token is invalid" }
+        val parsedDatasetId = UUID.fromString(enrollment.datasetId)
+        require(parsedDatasetId.toString() == enrollment.datasetId) {
+            "The dataset ID must be a canonical UUID"
+        }
+        val pendingFirstLogin = enrollment.bearerToken.isEmpty() && enrollment.expiresAtUnixSeconds == 0L
+        val activeSession = enrollment.bearerToken.length in 32..512 && enrollment.expiresAtUnixSeconds > 0L
+        require(pendingFirstLogin || activeSession) { "The sync session is invalid" }
         require(enrollment.bearerToken.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
             "The sync token is invalid"
         }
-        require(enrollment.expiresAtUnixSeconds > 0) { "The sync expiry is invalid" }
+        if (enrollment.email.isNotEmpty() || enrollment.deviceId.isNotEmpty() || enrollment.serverPublicKey.isNotEmpty()) {
+            require(enrollment.email.contains('@')) { "The enrolled account email is invalid" }
+            val parsedDeviceId = UUID.fromString(enrollment.deviceId)
+            require(parsedDeviceId.toString() == enrollment.deviceId) {
+                "The enrolled device ID must be a canonical UUID"
+            }
+            require(enrollment.serverPublicKey.length in 32..512) { "The server key pin is invalid" }
+            require(enrollment.serverPublicKey.all { it.isLetterOrDigit() || it == '-' || it == '_' }) {
+                "The server key pin is invalid"
+            }
+        } else {
+            require(!pendingFirstLogin) { "Pending login requires account enrollment metadata" }
+        }
     }
 
     companion object {

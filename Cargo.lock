@@ -3746,6 +3746,8 @@ dependencies = [
  "thiserror 2.0.18",
  "uniffi",
  "uuid",
+ "verelle-api",
+ "verelle-auth",
  "verelle-core",
  "verelle-crypto",
  "verelle-store",

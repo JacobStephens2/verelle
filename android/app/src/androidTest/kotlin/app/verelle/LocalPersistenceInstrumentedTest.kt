@@ -10,6 +10,8 @@ import java.security.KeyStore
 import java.util.UUID
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -95,6 +97,104 @@ class LocalPersistenceInstrumentedTest {
                 if (containsAlias(alias)) {
                     deleteEntry(alias)
                 }
+            }
+        }
+    }
+
+    @Test
+    fun syncEnrollmentRejectsInvalidValuesBeforePersistingAnything() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-sync-test-$suffix"
+        val preferences = "verelle-sync-test-$suffix"
+        val store = SyncEnrollmentStore(context, alias, preferences)
+
+        try {
+            assertThrows(IllegalArgumentException::class.java) {
+                store.save(SyncEnrollment("1-1-1-1-1", "a".repeat(43), 2_000_000_000))
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                store.save(SyncEnrollment(UUID.randomUUID().toString(), "not a bearer token", 2_000_000_000))
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                store.save(SyncEnrollment(UUID.randomUUID().toString(), "a".repeat(43), 0))
+            }
+
+            assertTrue(context.getSharedPreferences(preferences, Context.MODE_PRIVATE).all.isEmpty())
+            assertEquals(false, androidKeyStore().containsAlias(alias))
+        } finally {
+            clearEnrollmentTestState(alias, preferences)
+        }
+    }
+
+    @Test
+    fun syncEnrollmentTamperingFailsClosed() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-sync-test-$suffix"
+        val preferences = "verelle-sync-test-$suffix"
+        val store = SyncEnrollmentStore(context, alias, preferences)
+        val enrollment = SyncEnrollment(
+            datasetId = UUID.randomUUID().toString(),
+            bearerToken = "b".repeat(43),
+            expiresAtUnixSeconds = 2_000_000_000,
+        )
+
+        try {
+            store.save(enrollment)
+            val rawPreferences = context.getSharedPreferences(preferences, Context.MODE_PRIVATE)
+            val ciphertext = android.util.Base64.decode(
+                rawPreferences.getString("ciphertext", null),
+                android.util.Base64.NO_WRAP,
+            )
+            ciphertext[0] = (ciphertext[0].toInt() xor 1).toByte()
+            assertTrue(
+                rawPreferences.edit().putString(
+                    "ciphertext",
+                    android.util.Base64.encodeToString(ciphertext, android.util.Base64.NO_WRAP),
+                ).commit(),
+            )
+
+            assertThrows(Exception::class.java) { SyncEnrollmentStore(context, alias, preferences).load() }
+        } finally {
+            clearEnrollmentTestState(alias, preferences)
+        }
+    }
+
+    @Test
+    fun clearingSyncEnrollmentRemovesCiphertextAndWrappingKey() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-sync-test-$suffix"
+        val preferences = "verelle-sync-test-$suffix"
+        val store = SyncEnrollmentStore(context, alias, preferences)
+
+        try {
+            store.save(
+                SyncEnrollment(
+                    datasetId = UUID.randomUUID().toString(),
+                    bearerToken = "c".repeat(43),
+                    expiresAtUnixSeconds = 2_000_000_000,
+                ),
+            )
+            assertTrue(androidKeyStore().containsAlias(alias))
+
+            store.clear()
+
+            assertEquals(null, store.load())
+            assertTrue(context.getSharedPreferences(preferences, Context.MODE_PRIVATE).all.isEmpty())
+            assertEquals(false, androidKeyStore().containsAlias(alias))
+        } finally {
+            clearEnrollmentTestState(alias, preferences)
+        }
+    }
+
+    private fun androidKeyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply {
+        load(null)
+    }
+
+    private fun clearEnrollmentTestState(alias: String, preferences: String) {
+        context.getSharedPreferences(preferences, Context.MODE_PRIVATE).edit().clear().commit()
+        androidKeyStore().apply {
+            if (containsAlias(alias)) {
+                deleteEntry(alias)
             }
         }
     }

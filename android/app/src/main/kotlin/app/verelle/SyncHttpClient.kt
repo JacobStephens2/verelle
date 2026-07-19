@@ -23,28 +23,33 @@ class SyncHttpClient {
         }
 
         var pulled = pullUntilCaughtUp(repository, enrollment, initialBatch.afterCursor)
-        val pending = repository.syncBatch(MAX_OPERATIONS.toUInt())
-        val pushed = if (pending.operations.isEmpty()) {
-            0
-        } else {
+        var pushed = 0
+        repeat(MAX_PUSH_BATCHES) {
+            val pending = repository.syncBatch(MAX_OPERATIONS.toUInt())
+            if (pending.operations.isEmpty()) {
+                return SyncResult(pushed = pushed, pulled = pulled)
+            }
             val accepted = push(enrollment, pending.operations)
             val queuedIds = pending.operations.map { it.operationId }.toSet()
-            check(accepted.isNotEmpty() && accepted.toSet().size == accepted.size) {
+            check(
+                accepted.isNotEmpty() &&
+                    accepted.toSet().size == accepted.size &&
+                    accepted.toSet() == queuedIds,
+            ) {
                 "The sync acknowledgement is invalid"
             }
-            check(accepted.all(queuedIds::contains)) { "The server acknowledged an unknown operation" }
             repository.acknowledgePushed(accepted)
-            accepted.size
-        }
-
-        if (pushed > 0) {
+            pushed += accepted.size
             pulled += pullUntilCaughtUp(
                 repository,
                 enrollment,
                 repository.syncBatch(MAX_OPERATIONS.toUInt()).afterCursor,
             )
         }
-        return SyncResult(pushed = pushed, pulled = pulled)
+        if (repository.syncBatch(1u).operations.isEmpty()) {
+            return SyncResult(pushed = pushed, pulled = pulled)
+        }
+        throw SyncHttpException("The sync request exceeded the push batch limit", retryable = true)
     }
 
     private fun pullUntilCaughtUp(
@@ -201,6 +206,7 @@ class SyncHttpClient {
         private const val API_ORIGIN = "https://verelle.app"
         private const val MAX_OPERATIONS = 100
         private const val MAX_PULL_PAGES = 100
+        private const val MAX_PUSH_BATCHES = 100
         private const val MAX_REQUEST_BYTES = 1_500_000
         private const val MAX_RESPONSE_BYTES = 1_500_000
         private const val CONNECT_TIMEOUT_MS = 5_000
