@@ -7,7 +7,7 @@ jni_out="${2:-$repo_root/android/app/build/generated/jniLibs}"
 
 ndk_root="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
 if [[ -z "$ndk_root" && -n "${ANDROID_HOME:-}" && -d "$ANDROID_HOME/ndk" ]]; then
-    ndk_root="$(find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+    ndk_root="$(find -L "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
 fi
 if [[ -z "$ndk_root" || ! -x "$ndk_root/ndk-build" ]]; then
     echo "Set ANDROID_NDK_HOME to an installed Android NDK." >&2

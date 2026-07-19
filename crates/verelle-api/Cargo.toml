@@ -1,0 +1,19 @@
+[package]
+name = "verelle-api"
+description = "Versioned HTTP wire contract shared by Verelle clients and server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+base64.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+verelle-sync = { path = "../verelle-sync" }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

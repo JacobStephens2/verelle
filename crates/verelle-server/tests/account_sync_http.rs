@@ -1,0 +1,251 @@
+use axum::{
+    Router,
+    body::Body,
+    http::{Request, StatusCode, header::AUTHORIZATION},
+};
+use chrono::NaiveDate;
+use http_body_util::BodyExt;
+use serde::{Serialize, de::DeserializeOwned};
+use sqlx_core::query::query;
+use sqlx_postgres::Postgres;
+use std::{env, time::Duration};
+use tower::ServiceExt;
+use uuid::Uuid;
+use verelle_api::{
+    LoginFinishRequest, LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage,
+    PullResponse, PushRequest, PushResponse, RegistrationFinishRequest, RegistrationFinishResponse,
+    RegistrationStartRequest, RegistrationStartResponse, TransportOperation,
+    dataset_operations_path,
+};
+use verelle_auth::{
+    account_credential_identifier, client_login_finish, client_login_start,
+    client_registration_finish, client_registration_start, derive_account_wrapping_key,
+    generate_server_setup,
+};
+use verelle_core::{CycleStartBasis, Observation, ObservationValue, VersionStamp};
+use verelle_crypto::{RecoveryCode, SecretKey, wrap_secret_key};
+use verelle_server::{
+    accounts::{AuthService, account_router},
+    database::Database,
+    http_api::authenticated_sync_router,
+    relay::PostgresRelay,
+};
+use verelle_sync::{PlainOperation, decrypt_operation, encrypt_operation};
+
+async fn post_json<T: Serialize, R: DeserializeOwned>(
+    router: &Router,
+    uri: &str,
+    bearer: Option<&str>,
+    body: &T,
+) -> (StatusCode, R) {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json");
+    if let Some(bearer) = bearer {
+        builder = builder.header(AUTHORIZATION, format!("Bearer {bearer}"));
+    }
+    let response = router
+        .clone()
+        .oneshot(
+            builder
+                .body(Body::from(serde_json::to_vec(body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+#[tokio::test]
+#[ignore = "requires an isolated TEST_DATABASE_URL"]
+#[allow(clippy::too_many_lines)] // One linear protocol transcript is easier to audit intact.
+async fn opaque_account_and_authenticated_http_sync_round_trip() {
+    let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
+    let database = Database::connect(&database_url, 4, Duration::from_secs(2))
+        .await
+        .unwrap();
+    database.migrate().await.unwrap();
+    query::<Postgres>(
+        "TRUNCATE opaque_auth_flows, account_sessions, dataset_key_wraps, \
+         dataset_memberships, account_devices, accounts, encrypted_operations, sync_datasets CASCADE",
+    )
+    .execute(database.pool())
+    .await
+    .unwrap();
+
+    let server_setup = generate_server_setup();
+    let auth = AuthService::new(database.clone(), server_setup).unwrap();
+    let router = account_router(auth.clone()).merge(authenticated_sync_router(
+        PostgresRelay::new(database.clone()),
+        auth.clone(),
+    ));
+    let email = "founder@example.com";
+    let password = b"correct horse battery staple";
+    let credential_identifier = account_credential_identifier(email).unwrap();
+
+    let registration = client_registration_start(password).unwrap();
+    let (status, registration_started): (_, RegistrationStartResponse) = post_json(
+        &router,
+        verelle_api::REGISTRATION_START_PATH,
+        None,
+        &RegistrationStartRequest {
+            account_identifier: email.to_owned(),
+            registration_request: OpaqueMessage::from_bytes(&registration.request),
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let registration_finished = client_registration_finish(
+        &registration.state,
+        password,
+        &credential_identifier,
+        &registration_started.registration_response.decode().unwrap(),
+    )
+    .unwrap();
+    let wrapping_key = SecretKey::from_bytes(
+        derive_account_wrapping_key(registration_finished.export_key.clone()).unwrap(),
+    );
+    let account_data_key = SecretKey::random();
+    let dataset_key = SecretKey::random();
+    let recovery_code = RecoveryCode::generate();
+    let (status, account): (_, RegistrationFinishResponse) = post_json(
+        &router,
+        verelle_api::REGISTRATION_FINISH_PATH,
+        None,
+        &RegistrationFinishRequest {
+            flow_id: registration_started.flow_id,
+            registration_upload: OpaqueMessage::from_bytes(&registration_finished.upload),
+            device_public_key: OpaqueMessage::from_bytes(&[7_u8; 32]),
+            wrapped_account_key: OpaqueMessage::from_bytes(
+                &wrap_secret_key(
+                    &wrapping_key,
+                    1,
+                    b"account/password-wrap",
+                    &account_data_key,
+                )
+                .unwrap()
+                .to_bytes(),
+            ),
+            recovery_wrapped_account_key: OpaqueMessage::from_bytes(
+                &wrap_secret_key(
+                    &recovery_code.wrapping_key().unwrap(),
+                    1,
+                    b"account/recovery-wrap",
+                    &account_data_key,
+                )
+                .unwrap()
+                .to_bytes(),
+            ),
+            wrapped_dataset_key: OpaqueMessage::from_bytes(
+                &wrap_secret_key(&account_data_key, 1, b"dataset/account-wrap", &dataset_key)
+                    .unwrap()
+                    .to_bytes(),
+            ),
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let login = client_login_start(password).unwrap();
+    let (status, login_started): (_, LoginStartResponse) = post_json(
+        &router,
+        verelle_api::LOGIN_START_PATH,
+        None,
+        &LoginStartRequest {
+            account_identifier: email.to_owned(),
+            credential_request: OpaqueMessage::from_bytes(&login.request),
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let login_finished = client_login_finish(
+        &login.state,
+        password,
+        &credential_identifier,
+        &login_started.credential_response.decode().unwrap(),
+        &registration_finished.server_public_key,
+    )
+    .unwrap();
+    let (status, session): (_, LoginFinishResponse) = post_json(
+        &router,
+        verelle_api::LOGIN_FINISH_PATH,
+        None,
+        &LoginFinishRequest {
+            flow_id: login_started.flow_id,
+            credential_finalization: OpaqueMessage::from_bytes(&login_finished.finalization),
+            device_id: account.device_id,
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(session.account_id, account.account_id);
+    let bearer = session.access_token.message;
+
+    let operation = PlainOperation::upsert(Observation {
+        id: Uuid::new_v4(),
+        date: NaiveDate::from_ymd_opt(2026, 7, 19).unwrap(),
+        value: ObservationValue::CycleStart {
+            cycle_id: Uuid::new_v4(),
+            basis: CycleStartBasis::Menses,
+            method_cycle_number: Some(1),
+            postpartum_cycle_number: None,
+        },
+        recorded_by: account.device_id.to_string(),
+        version: VersionStamp::new(1, 0, account.device_id.to_string()),
+    });
+    let encrypted = encrypt_operation(&dataset_key, 1, account.dataset_id, &operation).unwrap();
+    let operations_path = dataset_operations_path(account.dataset_id);
+    let (status, pushed): (_, PushResponse) = post_json(
+        &router,
+        &operations_path,
+        Some(&bearer),
+        &PushRequest {
+            operations: vec![TransportOperation::from_transport(&encrypted)],
+        },
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(pushed.accepted[0].server_sequence, 1);
+
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("{operations_path}?after=0&limit=100"))
+                .header(AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let page: PullResponse =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let transport_page = page.into_transport_page().unwrap();
+    assert_eq!(transport_page.next_cursor, 1);
+    assert_eq!(
+        decrypt_operation(
+            &dataset_key,
+            account.dataset_id,
+            &transport_page.operations[0].operation,
+        )
+        .unwrap(),
+        operation
+    );
+
+    auth.revoke_session(&bearer).await.unwrap();
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri(format!("{operations_path}?after=0&limit=100"))
+                .header(AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}

@@ -5,8 +5,9 @@ Marquette Method. The v1 core records observations and lays them out as a chart;
 it deliberately does **not** compute fertility status, fertile windows, day
 classifications, or conception guidance.
 
-The repository currently contains the implementation-ready foundation from
-Phases 0, S, and 1 of [the delivery plan](docs/plans/verelle-plan.md):
+The repository currently contains the shared foundation plus verified Android,
+web, and gated-server walking slices from
+[the delivery plan](docs/plans/verelle-plan.md):
 
 - `verelle-core`: observation vocabulary, cycle bookkeeping, mechanical
   user-marked Peak counts, JSON/CSV export, and golden chart rendering;
@@ -19,18 +20,25 @@ Phases 0, S, and 1 of [the delivery plan](docs/plans/verelle-plan.md):
   commits, transactional pull watermarks, durable HLC seed, and epoch requeue;
 - `verelle-ffi`: the typed UniFFI boundary used by native platform shells;
 - `verelle-cli`: fixture replay, validation, and local-store export;
-- `android/`: an Android/Compose architecture spike that renders the regular
-  golden fixture through generated Kotlin bindings and native Rust libraries;
+- `android/`: an Android/Compose local-recording app backed by Rust SQLite,
+  encrypted pending operations, and an Android-Keystore-wrapped data key;
+- `verelle-web`: a Leptos CSR app that records synthetic facts in the browser,
+  renders charts through the shared Rust core, and verifies the crypto path in
+  WebAssembly;
+- `verelle-server`: an Axum/Postgres foundation with liveness/readiness routes
+  and tested opaque relay persistence, but deliberately no public account or
+  sync endpoints;
 - `docs/specs`: the Phase S lifecycle drafts and shared invariant matrix.
 
-Production account auth, PostgreSQL relay, native/web shells, billing, and
-infrastructure intentionally remain downstream of the external OQ-9/OQ-10
-reviews and platform decision named in the plan. The lifecycle drafts do not
-claim those gates are closed.
+Production account auth and sync APIs, browser encryption-at-rest, billing,
+export/recovery, reminders, and infrastructure intentionally remain downstream
+of the external OQ-9/OQ-10 reviews and the later gates named in the plan. The
+current apps accept synthetic test data only; the lifecycle drafts do not claim
+those gates are closed.
 
 ## Run it
 
-Requires Rust 1.85 or newer.
+Requires Rust 1.88 or newer.
 
 ```sh
 cargo test --workspace
@@ -50,8 +58,30 @@ cd android
 ./gradlew connectedDebugAndroidTest
 ```
 
-The spike uses fixture data only. It does not yet record data, persist data,
-schedule reminders, or satisfy the Phase 2 real-device acceptance gate.
+The Android app records and persists synthetic cycle starts and monitor readings
+through the shared Rust store. It does not yet export/recover data, schedule
+reminders, or satisfy the Phase 2 real-device acceptance gate. See
+[the phone-install handoff](docs/handoffs/android-phone-install.md).
+
+Build the Leptos app with stable Trunk 0.21:
+
+```sh
+cd crates/verelle-web
+trunk build --release
+trunk serve
+```
+
+Run the gated server foundation against an empty Postgres database:
+
+```sh
+DATABASE_URL=postgresql://localhost/verelle_dev \
+  cargo run -p verelle-server
+curl http://127.0.0.1:3000/healthz
+curl http://127.0.0.1:3000/readyz
+```
+
+The server binds to loopback by default. Do not expose it publicly: account,
+session, and sync HTTP routes remain absent by design under ADR 0003/OQ-9.
 
 Before committing, run the same checks as CI:
 
