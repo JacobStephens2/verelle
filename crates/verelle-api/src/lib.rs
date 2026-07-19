@@ -6,6 +6,7 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 use verelle_sync::{SequencedTransportOp, TransportOp, TransportPage};
@@ -16,6 +17,8 @@ pub const REGISTRATION_FINISH_PATH: &str = "/api/v1/accounts/opaque/finish";
 pub const LOGIN_START_PATH: &str = "/api/v1/sessions/opaque/start";
 pub const LOGIN_FINISH_PATH: &str = "/api/v1/sessions/opaque/finish";
 pub const CURRENT_SESSION_PATH: &str = "/api/v1/sessions/current";
+pub const CURRENT_ACCOUNT_PATH: &str = "/api/v1/accounts/current";
+pub const HEALTH_DATA_CONSENT_VERSION: &str = "2026-07-19";
 pub const MAX_AUTH_MESSAGE_BYTES: usize = 4096;
 pub const MAX_PUSH_OPERATIONS: usize = 100;
 pub const MAX_ENVELOPE_BYTES: usize = 256 * 1024;
@@ -81,11 +84,21 @@ pub struct RegistrationStartResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistrationFinishRequest {
     pub flow_id: Uuid,
+    pub device_id: Uuid,
+    pub dataset_id: Uuid,
     pub registration_upload: OpaqueMessage,
     pub device_public_key: OpaqueMessage,
+    pub device_signature: OpaqueMessage,
     pub wrapped_account_key: OpaqueMessage,
     pub recovery_wrapped_account_key: OpaqueMessage,
     pub wrapped_dataset_key: OpaqueMessage,
+    pub health_data_consent: HealthDataConsent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthDataConsent {
+    pub policy_version: String,
+    pub affirmative: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,6 +111,7 @@ pub struct RegistrationFinishResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoginStartRequest {
     pub account_identifier: String,
+    pub device_id: Uuid,
     pub credential_request: OpaqueMessage,
 }
 
@@ -105,6 +119,7 @@ pub struct LoginStartRequest {
 pub struct LoginStartResponse {
     pub flow_id: Uuid,
     pub credential_response: OpaqueMessage,
+    pub device_challenge: OpaqueMessage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +127,7 @@ pub struct LoginFinishRequest {
     pub flow_id: Uuid,
     pub credential_finalization: OpaqueMessage,
     pub device_id: Uuid,
+    pub device_signature: OpaqueMessage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +136,38 @@ pub struct LoginFinishResponse {
     pub account_id: Uuid,
     pub device_id: Uuid,
     pub expires_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccountDeletionResponse {
+    pub deletion_id: Uuid,
+    pub deleted_at_unix_seconds: i64,
+}
+
+pub fn registration_device_proof_message(
+    flow_id: Uuid,
+    device_id: Uuid,
+    dataset_id: Uuid,
+    registration_upload: &[u8],
+) -> Vec<u8> {
+    const DOMAIN: &[u8] = b"verelle/device-registration/v1";
+    let upload_hash = Sha256::digest(registration_upload);
+    let mut message = Vec::with_capacity(DOMAIN.len() + 16 * 3 + upload_hash.len());
+    message.extend_from_slice(DOMAIN);
+    message.extend_from_slice(flow_id.as_bytes());
+    message.extend_from_slice(device_id.as_bytes());
+    message.extend_from_slice(dataset_id.as_bytes());
+    message.extend_from_slice(&upload_hash);
+    message
+}
+
+pub fn login_device_proof_message(flow_id: Uuid, challenge: &[u8]) -> Vec<u8> {
+    const DOMAIN: &[u8] = b"verelle/device-login/v1";
+    let mut message = Vec::with_capacity(DOMAIN.len() + 16 + challenge.len());
+    message.extend_from_slice(DOMAIN);
+    message.extend_from_slice(flow_id.as_bytes());
+    message.extend_from_slice(challenge);
+    message
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,5 +364,25 @@ mod tests {
         ] {
             assert!(!json.contains(forbidden));
         }
+    }
+
+    #[test]
+    fn device_proof_messages_bind_every_protocol_identifier() {
+        let flow = Uuid::new_v4();
+        let device = Uuid::new_v4();
+        let dataset = Uuid::new_v4();
+        let registration = registration_device_proof_message(flow, device, dataset, b"upload");
+        assert_ne!(
+            registration,
+            registration_device_proof_message(flow, device, Uuid::new_v4(), b"upload")
+        );
+        assert_ne!(
+            registration,
+            registration_device_proof_message(flow, device, dataset, b"different")
+        );
+        assert_ne!(
+            login_device_proof_message(flow, b"challenge"),
+            login_device_proof_message(flow, b"different")
+        );
     }
 }

@@ -23,10 +23,9 @@ web, and gated-server walking slices from
 - `android/`: an Android/Compose local-recording app backed by Rust SQLite,
   encrypted pending operations, an Android-Keystore-wrapped data key, and a
   reviewed-session-gated WorkManager sync transport;
-- `verelle-web`: a Leptos CSR app that records synthetic facts in the browser,
-  persists them as AES-GCM ciphertext in IndexedDB under a non-extractable
-  WebCrypto key, renders charts through the shared Rust core, and includes the
-  reviewed-session-gated sync transport;
+- `verelle-web`: a Leptos CSR app with OPAQUE registration/login, P-256 browser
+  device proof, affirmative health-data consent, an AES-GCM encrypted IndexedDB
+  vault, end-to-end encrypted chart sync, and authenticated account deletion;
 - `verelle-server`: an Axum/Postgres service with liveness/readiness, RFC 9807
   OPAQUE account/session routes, and authenticated opaque relay persistence;
 - `docs/specs`: the Phase S lifecycle drafts and shared invariant matrix.
@@ -34,9 +33,11 @@ web, and gated-server walking slices from
 Jacob Stephens explicitly waived the independent OQ-9 review requirement for
 incomplete public API activation on 2026-07-19. That owner decision does not
 close the known cryptographic/lifecycle findings or authorize real health data.
-Account-key recovery, client enrollment, billing, export/recovery, reminders,
-OQ-10, and remaining infrastructure remain downstream. The current apps accept
-synthetic test data only.
+Web client enrollment and authenticated deletion are now implemented. Executable
+recovery/new-device enrollment, export, Android account UI, OQ-10, and remaining
+launch infrastructure remain downstream. Android still accepts synthetic test
+data only; the web account flow is available for founder verification but is not
+an external-beta or production-readiness claim.
 
 ## Run it
 
@@ -86,7 +87,9 @@ curl http://127.0.0.1:3000/readyz
 The server binds to loopback by default. Mounting account/session/sync routes
 requires an OPAQUE server setup, an immutable approval-or-waiver reference, and
 the explicit reviewed-API environment flag. The colocated deployment has an
-owner waiver for public reachability but is not approved for real data.
+owner waiver for public reachability. See the
+[real-data readiness handoff](docs/handoffs/real-data-readiness-2026-07-19.md)
+for the implemented controls and remaining gates.
 
 Before committing, run the same checks as CI:
 

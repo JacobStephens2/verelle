@@ -31,6 +31,7 @@ csv = "1"
 hkdf = "0.12"
 leptos = "0.8.20"
 opaque-ke = { version = "=4.0.1", features = ["argon2", "std"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 proptest = "1"
 rand = "0.8"
 rusqlite = { version = "0.37", features = ["bundled"] }

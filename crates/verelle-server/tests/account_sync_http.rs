@@ -5,17 +5,23 @@ use axum::{
 };
 use chrono::NaiveDate;
 use http_body_util::BodyExt;
+use p256::{
+    ecdsa::{Signature, SigningKey, signature::Signer},
+    pkcs8::EncodePublicKey,
+};
+use rand::rngs::OsRng;
 use serde::{Serialize, de::DeserializeOwned};
-use sqlx_core::query::query;
+use sqlx_core::{query::query, row::Row};
 use sqlx_postgres::Postgres;
 use std::{env, time::Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
 use verelle_api::{
+    AccountDeletionResponse, ApiErrorBody, HEALTH_DATA_CONSENT_VERSION, HealthDataConsent,
     LoginFinishRequest, LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage,
     PullResponse, PushRequest, PushResponse, RegistrationFinishRequest, RegistrationFinishResponse,
     RegistrationStartRequest, RegistrationStartResponse, TransportOperation,
-    dataset_operations_path,
+    dataset_operations_path, login_device_proof_message, registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, client_login_finish, client_login_start,
@@ -59,6 +65,28 @@ async fn post_json<T: Serialize, R: DeserializeOwned>(
     (status, serde_json::from_slice(&bytes).unwrap())
 }
 
+async fn delete_json<R: DeserializeOwned>(
+    router: &Router,
+    uri: &str,
+    bearer: &str,
+) -> (StatusCode, R) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(uri)
+                .header(AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap())
+}
+
 #[tokio::test]
 #[ignore = "requires an isolated TEST_DATABASE_URL"]
 #[allow(clippy::too_many_lines)] // One linear protocol transcript is easier to audit intact.
@@ -69,7 +97,9 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
         .unwrap();
     database.migrate().await.unwrap();
     query::<Postgres>(
-        "TRUNCATE opaque_auth_flows, account_sessions, dataset_key_wraps, \
+        "TRUNCATE deletion_manifest_datasets, deletion_manifests, account_consents, \
+         auth_start_attempts, \
+         opaque_auth_flows, account_sessions, dataset_key_wraps, \
          dataset_memberships, account_devices, accounts, encrypted_operations, sync_datasets CASCADE",
     )
     .execute(database.pool())
@@ -85,6 +115,13 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
     let email = "founder@example.com";
     let password = b"correct horse battery staple";
     let credential_identifier = account_credential_identifier(email).unwrap();
+    let device_signing_key = SigningKey::random(&mut OsRng);
+    let device_public_key = device_signing_key
+        .verifying_key()
+        .to_public_key_der()
+        .unwrap();
+    let device_id = Uuid::new_v4();
+    let dataset_id = Uuid::new_v4();
 
     let registration = client_registration_start(password).unwrap();
     let (status, registration_started): (_, RegistrationStartResponse) = post_json(
@@ -111,43 +148,80 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
     let account_data_key = SecretKey::random();
     let dataset_key = SecretKey::random();
     let recovery_code = RecoveryCode::generate();
+    let registration_proof = registration_device_proof_message(
+        registration_started.flow_id,
+        device_id,
+        dataset_id,
+        &registration_finished.upload,
+    );
+    let registration_signature: Signature = device_signing_key.sign(&registration_proof);
+    let registration_finish_request = RegistrationFinishRequest {
+        flow_id: registration_started.flow_id,
+        device_id,
+        dataset_id,
+        registration_upload: OpaqueMessage::from_bytes(&registration_finished.upload),
+        device_public_key: OpaqueMessage::from_bytes(device_public_key.as_bytes()),
+        device_signature: OpaqueMessage::from_bytes(&registration_signature.to_bytes()),
+        wrapped_account_key: OpaqueMessage::from_bytes(
+            &wrap_secret_key(
+                &wrapping_key,
+                1,
+                b"account/password-wrap",
+                &account_data_key,
+            )
+            .unwrap()
+            .to_bytes(),
+        ),
+        recovery_wrapped_account_key: OpaqueMessage::from_bytes(
+            &wrap_secret_key(
+                &recovery_code.wrapping_key().unwrap(),
+                1,
+                b"account/recovery-wrap",
+                &account_data_key,
+            )
+            .unwrap()
+            .to_bytes(),
+        ),
+        wrapped_dataset_key: OpaqueMessage::from_bytes(
+            &wrap_secret_key(&account_data_key, 1, b"dataset/account-wrap", &dataset_key)
+                .unwrap()
+                .to_bytes(),
+        ),
+        health_data_consent: HealthDataConsent {
+            policy_version: HEALTH_DATA_CONSENT_VERSION.to_owned(),
+            affirmative: true,
+        },
+    };
+    let mut invalid_device_proof = registration_finish_request.clone();
+    invalid_device_proof.device_signature.message = OpaqueMessage::from_bytes(&[7_u8; 64]).message;
+    let (status, _): (_, ApiErrorBody) = post_json(
+        &router,
+        verelle_api::REGISTRATION_FINISH_PATH,
+        None,
+        &invalid_device_proof,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let mut refused_consent = registration_finish_request.clone();
+    refused_consent.health_data_consent.affirmative = false;
+    let (status, _): (_, ApiErrorBody) = post_json(
+        &router,
+        verelle_api::REGISTRATION_FINISH_PATH,
+        None,
+        &refused_consent,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     let (status, account): (_, RegistrationFinishResponse) = post_json(
         &router,
         verelle_api::REGISTRATION_FINISH_PATH,
         None,
-        &RegistrationFinishRequest {
-            flow_id: registration_started.flow_id,
-            registration_upload: OpaqueMessage::from_bytes(&registration_finished.upload),
-            device_public_key: OpaqueMessage::from_bytes(&[7_u8; 32]),
-            wrapped_account_key: OpaqueMessage::from_bytes(
-                &wrap_secret_key(
-                    &wrapping_key,
-                    1,
-                    b"account/password-wrap",
-                    &account_data_key,
-                )
-                .unwrap()
-                .to_bytes(),
-            ),
-            recovery_wrapped_account_key: OpaqueMessage::from_bytes(
-                &wrap_secret_key(
-                    &recovery_code.wrapping_key().unwrap(),
-                    1,
-                    b"account/recovery-wrap",
-                    &account_data_key,
-                )
-                .unwrap()
-                .to_bytes(),
-            ),
-            wrapped_dataset_key: OpaqueMessage::from_bytes(
-                &wrap_secret_key(&account_data_key, 1, b"dataset/account-wrap", &dataset_key)
-                    .unwrap()
-                    .to_bytes(),
-            ),
-        },
+        &registration_finish_request,
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(account.device_id, device_id);
+    assert_eq!(account.dataset_id, dataset_id);
 
     let login = client_login_start(password).unwrap();
     let (status, login_started): (_, LoginStartResponse) = post_json(
@@ -156,6 +230,7 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
         None,
         &LoginStartRequest {
             account_identifier: email.to_owned(),
+            device_id,
             credential_request: OpaqueMessage::from_bytes(&login.request),
         },
     )
@@ -169,6 +244,9 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
         &registration_finished.server_public_key,
     )
     .unwrap();
+    let login_challenge = login_started.device_challenge.decode().unwrap();
+    let login_proof = login_device_proof_message(login_started.flow_id, &login_challenge);
+    let login_signature: Signature = device_signing_key.sign(&login_proof);
     let (status, session): (_, LoginFinishResponse) = post_json(
         &router,
         verelle_api::LOGIN_FINISH_PATH,
@@ -177,12 +255,36 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
             flow_id: login_started.flow_id,
             credential_finalization: OpaqueMessage::from_bytes(&login_finished.finalization),
             device_id: account.device_id,
+            device_signature: OpaqueMessage::from_bytes(&login_signature.to_bytes()),
         },
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(session.account_id, account.account_id);
     let bearer = session.access_token.message;
+
+    let repeated_start = RegistrationStartRequest {
+        account_identifier: email.to_owned(),
+        registration_request: OpaqueMessage::from_bytes(&registration.request),
+    };
+    for _ in 0..8 {
+        let (status, _): (_, RegistrationStartResponse) = post_json(
+            &router,
+            verelle_api::REGISTRATION_START_PATH,
+            None,
+            &repeated_start,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+    let (status, _): (_, ApiErrorBody) = post_json(
+        &router,
+        verelle_api::REGISTRATION_START_PATH,
+        None,
+        &repeated_start,
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
 
     let operation = PlainOperation::upsert(Observation {
         id: Uuid::new_v4(),
@@ -236,7 +338,34 @@ async fn opaque_account_and_authenticated_http_sync_round_trip() {
         operation
     );
 
-    auth.revoke_session(&bearer).await.unwrap();
+    let (status, deletion): (_, AccountDeletionResponse) =
+        delete_json(&router, verelle_api::CURRENT_ACCOUNT_PATH, &bearer).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!deletion.deletion_id.is_nil());
+    let deletion_datasets = query::<Postgres>(
+        "SELECT COUNT(*)::BIGINT AS count FROM deletion_manifest_datasets \
+         WHERE deletion_id = $1 AND dataset_id = $2",
+    )
+    .bind(deletion.deletion_id)
+    .bind(dataset_id)
+    .fetch_one(database.pool())
+    .await
+    .unwrap()
+    .get::<i64, _>("count");
+    assert_eq!(deletion_datasets, 1);
+    let live_accounts = query::<Postgres>("SELECT COUNT(*)::BIGINT AS count FROM accounts")
+        .fetch_one(database.pool())
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+    assert_eq!(live_accounts, 0);
+    let live_datasets = query::<Postgres>("SELECT COUNT(*)::BIGINT AS count FROM sync_datasets")
+        .fetch_one(database.pool())
+        .await
+        .unwrap()
+        .get::<i64, _>("count");
+    assert_eq!(live_datasets, 0);
+
     let response = router
         .oneshot(
             Request::builder()

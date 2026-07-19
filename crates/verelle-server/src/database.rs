@@ -23,6 +23,15 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             Cow::Borrowed(include_str!("../migrations/0002_accounts_and_sessions.sql")),
             false,
         ),
+        Migration::new(
+            3,
+            Cow::Borrowed("device proof consent and deletion"),
+            MigrationType::Simple,
+            Cow::Borrowed(include_str!(
+                "../migrations/0003_device_proof_consent_deletion.sql"
+            )),
+            false,
+        ),
     ]),
     ..Migrator::DEFAULT
 });

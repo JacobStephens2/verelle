@@ -12,6 +12,15 @@ extern "C" {
 
     #[wasm_bindgen(catch, js_name = clearEncryptedState)]
     fn clear_encrypted_state() -> Result<Promise, JsValue>;
+
+    #[wasm_bindgen(catch, js_name = devicePublicKey)]
+    fn device_public_key() -> Result<Promise, JsValue>;
+
+    #[wasm_bindgen(catch, js_name = signDeviceMessage)]
+    fn sign_device_message(value: &str) -> Result<Promise, JsValue>;
+
+    #[wasm_bindgen(catch, js_name = destroyBrowserVault)]
+    fn destroy_browser_vault() -> Result<Promise, JsValue>;
 }
 
 pub async fn load() -> Result<Option<String>, String> {
@@ -48,5 +57,35 @@ pub async fn clear() -> Result<(), String> {
     )
     .await
     .map_err(|_| "Encrypted browser storage could not be cleared".to_owned())?;
+    Ok(())
+}
+
+pub async fn public_device_key() -> Result<String, String> {
+    JsFuture::from(
+        device_public_key().map_err(|_| "Browser device identity is unavailable".to_owned())?,
+    )
+    .await
+    .map_err(|_| "Browser device identity could not be loaded".to_owned())?
+    .as_string()
+    .ok_or_else(|| "Browser device identity is invalid".to_owned())
+}
+
+pub async fn sign_device(message_base64url: &str) -> Result<String, String> {
+    JsFuture::from(
+        sign_device_message(message_base64url)
+            .map_err(|_| "Browser device signing is unavailable".to_owned())?,
+    )
+    .await
+    .map_err(|_| "Browser device signing failed".to_owned())?
+    .as_string()
+    .ok_or_else(|| "Browser device signature is invalid".to_owned())
+}
+
+pub async fn destroy() -> Result<(), String> {
+    JsFuture::from(
+        destroy_browser_vault().map_err(|_| "Browser vault deletion is unavailable".to_owned())?,
+    )
+    .await
+    .map_err(|_| "Browser vault deletion failed".to_owned())?;
     Ok(())
 }

@@ -7,6 +7,12 @@ pub mod sync_state;
 pub mod sync_transport;
 
 #[cfg(target_arch = "wasm32")]
+mod account_transport;
+
+#[cfg(target_arch = "wasm32")]
+mod account;
+
+#[cfg(target_arch = "wasm32")]
 pub mod sync_runtime;
 
 pub use model::{observation_label, upsert_observation};
