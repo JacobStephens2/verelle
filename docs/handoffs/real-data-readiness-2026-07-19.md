@@ -48,6 +48,10 @@ states that new-device and lost-browser recovery are not ready.
 - The distinct Consumer Health Data Privacy Policy is published from the
   homepage and names the collected categories, purposes, sources, processors,
   sale/sharing posture, rights channels, deletion, withdrawal, and appeal path.
+- Authoritative Porkbun DNS points at the DigitalOcean origin. During deployment,
+  a recursive resolver still returned the prior Cloudflare edge addresses and
+  Cloudflare injected seven-day network-error reporting; the consent and policy
+  therefore disclose Cloudflare as a transient processor during propagation.
 
 ## Verification evidence
 
