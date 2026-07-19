@@ -11,7 +11,8 @@ Adopt RFC 9807 OPAQUE-3DH through an exact pin to `opaque-ke` 4.0.1, using:
 - Ristretto255 for the OPRF and 3DH group;
 - SHA-512 for the 3DH hash;
 - Argon2id v1.3 as the client-side key-stretching function;
-- TLS 1.3 as the confidential registration transport;
+- HTTPS as the confidential registration transport; Apache currently accepts
+  TLS 1.2 and TLS 1.3, and the minimum-version policy is part of review;
 - explicit client identity (normalized account identifier), server identity
   (`verelle.app`), and protocol context (`verelle/auth/v1`);
 - the library's dummy-login path for unknown identifiers;
@@ -43,6 +44,11 @@ Therefore this document selects the implementation candidate but does not claim
 OQ-9 sign-off. A qualified reviewer must examine the exact pin, parameters,
 protocol transcript binding, application state machines, recovery interaction,
 test vectors, and deviations before public account/sync routes are mounted.
+
+The prepared reviewer handoff is
+[the OQ-9 external review packet](oq9-external-review-packet.md). It targets the
+exact implementation commit and records the known gaps; it has not yet been
+sent because no reviewer identity or contact channel has been supplied.
 
 ## Required sign-off record
 

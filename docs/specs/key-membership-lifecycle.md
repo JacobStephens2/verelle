@@ -28,12 +28,15 @@ and account-key wrapping uses. The server stores only the PAKE registration
 record and cannot use it directly as a bearer credential. Successful login
 produces an opaque, random server session; only its hash is stored server-side.
 
-The repository’s `derive_account_secrets` implements and tests the local
-Argon2id + HKDF separation and envelope primitives. It does **not** implement a
-PAKE or authorize sending `auth_key()` to a server. Selecting exact suite,
-parameters, library, recovery interaction, and downgrade policy is an OQ-9
-review deliverable. Plain email/password submission to an Axum endpoint and a
-home-grown HMAC challenge are prohibited fallbacks.
+The repository now contains a candidate RFC 9807 OPAQUE implementation in
+`verelle-auth` and a fail-closed Axum account/session implementation. Public
+routes remain disabled, and the production clients do not yet expose account
+enrollment. The older `derive_account_secrets` helper remains a local primitive,
+is not part of the OPAQUE transcript, and must not become a second authentication
+path. Exact suite, parameters, library, recovery interaction, server-key
+custody, and downgrade policy remain OQ-9 review deliverables. Plain
+email/password submission to an Axum endpoint and a home-grown HMAC challenge
+are prohibited fallbacks.
 
 ## Account creation and first device
 
@@ -147,5 +150,5 @@ normal op ID/HLC and uses the same outbox; it is not a phone-only shadow record.
 OQ-9 sign-off must record reviewer, qualifications/scheme pedigree, date, threat
 model, exact PAKE suite/library/versions, Argon2 parameters, device-key algorithms,
 key-wrap format, recovery design, deviations, test vectors, and all unresolved
-findings. Until then the spec status remains draft and server auth remains absent.
-
+findings. Until then the spec status remains draft and public server auth remains
+disabled by configuration.
