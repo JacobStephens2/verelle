@@ -37,21 +37,24 @@ async function openDatabase() {
 
 async function getRecord(database, key) {
   const transaction = database.transaction(STORE_NAME, "readonly");
+  const completed = transactionComplete(transaction);
   const result = await requestResult(transaction.objectStore(STORE_NAME).get(key));
-  await transactionComplete(transaction);
+  await completed;
   return result;
 }
 
 async function putRecord(database, key, value) {
   const transaction = database.transaction(STORE_NAME, "readwrite");
+  const completed = transactionComplete(transaction);
   await requestResult(transaction.objectStore(STORE_NAME).put(value, key));
-  await transactionComplete(transaction);
+  await completed;
 }
 
 async function deleteRecord(database, key) {
   const transaction = database.transaction(STORE_NAME, "readwrite");
+  const completed = transactionComplete(transaction);
   await requestResult(transaction.objectStore(STORE_NAME).delete(key));
-  await transactionComplete(transaction);
+  await completed;
 }
 
 async function getOrCreateWrappingKey(database) {
@@ -197,11 +200,12 @@ export function destroyBrowserVault() {
     const database = await openDatabase();
     try {
       const transaction = database.transaction(STORE_NAME, "readwrite");
+      const completed = transactionComplete(transaction);
       const store = transaction.objectStore(STORE_NAME);
       store.delete(STATE_RECORD);
       store.delete(DEVICE_PRIVATE_KEY_RECORD);
       store.delete(DEVICE_PUBLIC_KEY_RECORD);
-      await transactionComplete(transaction);
+      await completed;
     } finally {
       database.close();
     }
