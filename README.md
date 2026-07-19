@@ -17,7 +17,10 @@ Phases 0, S, and 1 of [the delivery plan](docs/plans/verelle-plan.md):
   reference model for idempotency/epoch/redaction contracts;
 - `verelle-store`: SQLite migrations, atomic operation/materialization/outbox
   commits, transactional pull watermarks, durable HLC seed, and epoch requeue;
+- `verelle-ffi`: the typed UniFFI boundary used by native platform shells;
 - `verelle-cli`: fixture replay, validation, and local-store export;
+- `android/`: an Android/Compose architecture spike that renders the regular
+  golden fixture through generated Kotlin bindings and native Rust libraries;
 - `docs/specs`: the Phase S lifecycle drafts and shared invariant matrix.
 
 Production account auth, PostgreSQL relay, native/web shells, billing, and
@@ -35,6 +38,20 @@ cargo run -p verelle-cli -- validate-fixtures fixtures
 cargo run -p verelle-cli -- chart fixtures/regular-cycle.json
 cargo run -p verelle-cli -- export-fixture fixtures/regular-cycle.json csv
 ```
+
+The Android spike requires JDK 17+, Android SDK 36, an Android NDK, and the four
+Rust Android targets. Point `ANDROID_HOME` and `ANDROID_NDK_HOME` at those tools,
+then build or test from `android/`; Gradle invokes the workspace-pinned UniFFI
+generator and `cargo-ndk` automatically:
+
+```sh
+cd android
+./gradlew assembleDebug
+./gradlew connectedDebugAndroidTest
+```
+
+The spike uses fixture data only. It does not yet record data, persist data,
+schedule reminders, or satisfy the Phase 2 real-device acceptance gate.
 
 Before committing, run the same checks as CI:
 
