@@ -88,6 +88,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
 
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

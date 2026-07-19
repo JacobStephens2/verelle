@@ -18,6 +18,12 @@ database.
 The surface remains record-and-display only. It contains no computed fertility
 status, window, day classification, eligibility logic, or guidance.
 
+The Android client now also contains a dormant typed sync path: Rust emits and
+accepts typed transport pages, WorkManager runs a network-constrained
+pull-before-push worker, and Android Keystore protects the enrollment dataset ID
+and bearer session. No enrollment session is provisioned while OQ-9 remains
+open, so the worker exits without contacting the reviewed API.
+
 ## Verification
 
 | Gate | Result |
@@ -26,8 +32,9 @@ status, window, day classification, eligibility logic, or guidance.
 | strict `verelle-ffi` clippy | PASS |
 | `assembleDebug` and test APK | PASS; four Android ABIs |
 | `lintDebug` | PASS; zero errors |
-| API 35 `connectedDebugAndroidTest` | PASS; 4 tests |
+| API 35 `connectedDebugAndroidTest` | PASS; 5 tests |
 | Keystore wrapped-key recreation | PASS on emulator |
+| Keystore wrapped sync enrollment recreation | PASS; plaintext bearer absent from preferences |
 | Rust repository reopen | PASS; chart and encrypted outbox retained |
 | Actual force-stop/cold relaunch | PASS; cycle, Low reading, and 2 pending ops reappeared |
 

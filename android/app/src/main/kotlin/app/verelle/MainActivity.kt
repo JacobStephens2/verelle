@@ -28,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,7 +36,6 @@ import app.verelle.ffi.FfiChart
 import app.verelle.ffi.FfiChartDay
 import app.verelle.ffi.FfiMonitorReading
 import app.verelle.ffi.LocalRepository
-import java.io.File
 import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val repository = runCatching { openLocalRepository() }
+        val repository = runCatching { LocalRepositoryProvider(this).open() }
         localRepository = repository.getOrNull()
         setContent {
             MaterialTheme {
@@ -66,22 +66,15 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun openLocalRepository(): LocalRepository {
-        val dataKey = LocalDataKeyManager(this).getOrCreateDataKey()
-        return try {
-            LocalRepository.open(
-                databasePath = File(noBackupFilesDir, "verelle.sqlite").absolutePath,
-                keyMaterial = dataKey,
-                deviceId = LocalDeviceIdentity(this).getOrCreate(),
-            )
-        } finally {
-            dataKey.fill(0)
-        }
+    override fun onStart() {
+        super.onStart()
+        VerelleSyncWorker.enqueue(this)
     }
 }
 
 @Composable
 private fun RecordAndChartScreen(repository: LocalRepository) {
+    val context = LocalContext.current
     var charts by remember(repository) {
         mutableStateOf(repository.charts())
     }
@@ -96,6 +89,7 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
     fun reload() {
         charts = repository.charts()
         pendingCount = repository.pendingOutboxCount()
+        VerelleSyncWorker.enqueue(context)
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {

@@ -21,17 +21,19 @@ web, and gated-server walking slices from
 - `verelle-ffi`: the typed UniFFI boundary used by native platform shells;
 - `verelle-cli`: fixture replay, validation, and local-store export;
 - `android/`: an Android/Compose local-recording app backed by Rust SQLite,
-  encrypted pending operations, and an Android-Keystore-wrapped data key;
+  encrypted pending operations, an Android-Keystore-wrapped data key, and a
+  reviewed-session-gated WorkManager sync transport;
 - `verelle-web`: a Leptos CSR app that records synthetic facts in the browser,
-  renders charts through the shared Rust core, and verifies the crypto path in
-  WebAssembly;
+  persists them as AES-GCM ciphertext in IndexedDB under a non-extractable
+  WebCrypto key, renders charts through the shared Rust core, and includes the
+  reviewed-session-gated sync transport;
 - `verelle-server`: an Axum/Postgres foundation with liveness/readiness routes
   and tested opaque relay persistence, but deliberately no public account or
   sync endpoints;
 - `docs/specs`: the Phase S lifecycle drafts and shared invariant matrix.
 
-Production account auth and sync APIs, browser encryption-at-rest, billing,
-export/recovery, reminders, and infrastructure intentionally remain downstream
+Production account auth and sync enablement, account-key recovery, billing,
+export/recovery, reminders, and remaining infrastructure intentionally remain downstream
 of the external OQ-9/OQ-10 reviews and the later gates named in the plan. The
 current apps accept synthetic test data only; the lifecycle drafts do not claim
 those gates are closed.
@@ -59,7 +61,8 @@ cd android
 ```
 
 The Android app records and persists synthetic cycle starts and monitor readings
-through the shared Rust store. It does not yet export/recover data, schedule
+through the shared Rust store. Its sync worker stays dormant until reviewed
+account credentials are enrolled. It does not yet export/recover data, schedule
 reminders, or satisfy the Phase 2 real-device acceptance gate. See
 [the phone-install handoff](docs/handoffs/android-phone-install.md).
 

@@ -33,10 +33,13 @@ interop test cannot honestly run while ADR 0003 and OQ-9 prohibit production
 authentication and the server exposes no sync route. That test remains pending;
 its absence is not replaced with an unauthenticated temporary endpoint.
 
-The preview stores only synthetic plaintext observations in browser
-`localStorage`. Real-data use requires a reviewed encrypted browser persistence
-design, export/recovery, and the remaining privacy gates. The UI names this
-limitation prominently.
+The preview now stores synthetic observations as AES-GCM ciphertext in IndexedDB
+under a non-extractable WebCrypto key. A browser test verifies ciphertext-only
+state, removal of the legacy `localStorage` payload/key, and persistence across
+reload. This protects at-rest browser files from casual inspection; it does not
+protect against same-origin script compromise, replace the reviewed account-key
+lifecycle, or provide recovery. Real-data use remains behind OQ-9, export/recovery,
+and the remaining privacy gates. The UI names this limitation prominently.
 
 ## Consequences
 

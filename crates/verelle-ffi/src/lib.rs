@@ -5,6 +5,7 @@
 //! from its secure storage. No exported type represents protocol interpretation
 //! or computed fertility status.
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::NaiveDate;
 use sha2::{Digest, Sha256};
 use std::{
@@ -18,8 +19,10 @@ use verelle_core::{
     ObservationValue, build_charts,
 };
 use verelle_crypto::SecretKey;
-use verelle_store::Store;
-use verelle_sync::{HybridClock, PlainOperation, encrypt_operation};
+use verelle_store::{RemoteOperation, RemotePage, Store};
+use verelle_sync::{
+    HybridClock, PlainOperation, TransportOp, decrypt_operation, encrypt_operation,
+};
 
 uniffi::setup_scaffolding!();
 
@@ -49,6 +52,34 @@ pub struct FfiChart {
     pub method_cycle_number: u32,
     pub postpartum_cycle_number: Option<u32>,
     pub days: Vec<FfiChartDay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiTransportOperation {
+    pub operation_id: String,
+    pub key_epoch: u64,
+    pub envelope_base64url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiSyncBatch {
+    pub dataset_id: String,
+    pub after_cursor: u64,
+    pub operations: Vec<FfiTransportOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiSequencedTransportOperation {
+    pub server_sequence: u64,
+    pub operation: FfiTransportOperation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiPullPage {
+    pub after_cursor: u64,
+    pub next_cursor: u64,
+    pub operations: Vec<FfiSequencedTransportOperation>,
+    pub more: bool,
 }
 
 #[derive(Debug, Error, uniffi::Error)]
@@ -88,6 +119,14 @@ pub enum LocalRepositoryError {
     LockUnavailable,
     #[error("the system clock is unavailable")]
     Clock,
+    #[error("the sync batch limit must be greater than zero")]
+    InvalidSyncLimit,
+    #[error("a sync operation identifier is invalid")]
+    InvalidOperationId,
+    #[error("a sync envelope is invalid")]
+    InvalidEnvelope,
+    #[error("the pull page failed authentication or validation")]
+    InvalidPullPage,
 }
 
 #[derive(uniffi::Object)]
@@ -272,6 +311,102 @@ impl LocalRepository {
             .len();
         u64::try_from(count).map_err(|_| LocalRepositoryError::Storage)
     }
+
+    pub fn sync_batch(&self, max_operations: u32) -> Result<FfiSyncBatch, LocalRepositoryError> {
+        if max_operations == 0 {
+            return Err(LocalRepositoryError::InvalidSyncLimit);
+        }
+        let inner = self.lock()?;
+        let operations = inner
+            .store
+            .pending_outbox(max_operations as usize)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .into_iter()
+            .map(FfiTransportOperation::from)
+            .collect();
+        let after_cursor = inner
+            .store
+            .cursor()
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        Ok(FfiSyncBatch {
+            dataset_id: inner.dataset_id.to_string(),
+            after_cursor,
+            operations,
+        })
+    }
+
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted String sequences.
+    pub fn acknowledge_pushed(
+        &self,
+        operation_ids: Vec<String>,
+    ) -> Result<(), LocalRepositoryError> {
+        let operation_ids = operation_ids
+            .into_iter()
+            .map(|operation_id| {
+                Uuid::parse_str(&operation_id).map_err(|_| LocalRepositoryError::InvalidOperationId)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.lock()?
+            .store
+            .acknowledge_pushed(&operation_ids)
+            .map_err(|_| LocalRepositoryError::Storage)
+    }
+
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted records.
+    pub fn apply_pull_page(&self, page: FfiPullPage) -> Result<(), LocalRepositoryError> {
+        let mut inner = self.lock()?;
+        let operations = page
+            .operations
+            .into_iter()
+            .map(|sequenced| {
+                let transport = TransportOp::try_from(sequenced.operation)?;
+                let operation = decrypt_operation(&inner.data_key, inner.dataset_id, &transport)
+                    .map_err(|_| LocalRepositoryError::InvalidPullPage)?;
+                Ok(RemoteOperation {
+                    server_seq: sequenced.server_sequence,
+                    operation,
+                })
+            })
+            .collect::<Result<Vec<_>, LocalRepositoryError>>()?;
+        inner
+            .store
+            .apply_remote_page(RemotePage {
+                after_cursor: page.after_cursor,
+                next_cursor: page.next_cursor,
+                operations,
+            })
+            .map_err(|_| LocalRepositoryError::InvalidPullPage)
+    }
+}
+
+impl From<TransportOp> for FfiTransportOperation {
+    fn from(operation: TransportOp) -> Self {
+        Self {
+            operation_id: operation.op_id.to_string(),
+            key_epoch: operation.key_epoch,
+            envelope_base64url: URL_SAFE_NO_PAD.encode(operation.envelope),
+        }
+    }
+}
+
+impl TryFrom<FfiTransportOperation> for TransportOp {
+    type Error = LocalRepositoryError;
+
+    fn try_from(operation: FfiTransportOperation) -> Result<Self, Self::Error> {
+        let op_id = Uuid::parse_str(&operation.operation_id)
+            .map_err(|_| LocalRepositoryError::InvalidOperationId)?;
+        let envelope = URL_SAFE_NO_PAD
+            .decode(operation.envelope_base64url)
+            .map_err(|_| LocalRepositoryError::InvalidEnvelope)?;
+        if envelope.is_empty() {
+            return Err(LocalRepositoryError::InvalidEnvelope);
+        }
+        Ok(Self {
+            op_id,
+            key_epoch: operation.key_epoch,
+            envelope,
+        })
+    }
 }
 
 impl LocalRepository {
@@ -437,6 +572,40 @@ mod tests {
         assert_eq!(charts[0].days.len(), 2);
         assert_eq!(charts[0].days[1].entries[0].label, "Monitor: Low");
         assert_eq!(reopened.pending_outbox_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn typed_sync_batch_and_pull_echo_advance_the_durable_cursor() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let repository = LocalRepository::open(
+            file.path().to_string_lossy().into_owned(),
+            vec![9_u8; 32],
+            "device-a".to_owned(),
+        )
+        .unwrap();
+        repository
+            .record_cycle_start("2026-07-19".to_owned(), 1)
+            .unwrap();
+
+        let batch = repository.sync_batch(100).unwrap();
+        assert_eq!(batch.after_cursor, 0);
+        assert_eq!(batch.operations.len(), 1);
+        repository
+            .apply_pull_page(FfiPullPage {
+                after_cursor: 0,
+                next_cursor: 1,
+                operations: vec![FfiSequencedTransportOperation {
+                    server_sequence: 1,
+                    operation: batch.operations[0].clone(),
+                }],
+                more: false,
+            })
+            .unwrap();
+
+        assert_eq!(repository.pending_outbox_count().unwrap(), 0);
+        let caught_up = repository.sync_batch(100).unwrap();
+        assert_eq!(caught_up.after_cursor, 1);
+        assert!(caught_up.operations.is_empty());
     }
 
     #[test]

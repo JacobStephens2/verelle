@@ -71,4 +71,31 @@ class LocalPersistenceInstrumentedTest {
             context.getSharedPreferences(preferences, Context.MODE_PRIVATE).edit().clear().commit()
         }
     }
+
+    @Test
+    fun syncEnrollmentIsKeystoreProtectedAndSurvivesStoreRecreation() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-sync-test-$suffix"
+        val preferences = "verelle-sync-test-$suffix"
+        val enrollment = SyncEnrollment(
+            datasetId = UUID.randomUUID().toString(),
+            bearerToken = "a".repeat(43),
+            expiresAtUnixSeconds = 2_000_000_000,
+        )
+
+        try {
+            SyncEnrollmentStore(context, alias, preferences).save(enrollment)
+            assertEquals(enrollment, SyncEnrollmentStore(context, alias, preferences).load())
+            val rawPreferences = context.getSharedPreferences(preferences, Context.MODE_PRIVATE)
+            assertEquals(false, rawPreferences.all.values.any { it.toString().contains(enrollment.bearerToken) })
+        } finally {
+            context.getSharedPreferences(preferences, Context.MODE_PRIVATE).edit().clear().commit()
+            KeyStore.getInstance("AndroidKeyStore").apply {
+                load(null)
+                if (containsAlias(alias)) {
+                    deleteEntry(alias)
+                }
+            }
+        }
+    }
 }

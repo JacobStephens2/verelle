@@ -1,4 +1,4 @@
-use crate::{observation_label, upsert_observation};
+use crate::{encrypted_storage, observation_label, upsert_observation};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::NaiveDate;
 use js_sys::Date;
@@ -9,6 +9,7 @@ use verelle_core::{
     build_charts,
 };
 use verelle_crypto::{EncryptedEnvelope, SecretKey, open, seal};
+use wasm_bindgen_futures::spawn_local;
 use web_sys::{Storage, window};
 
 const LEGACY_PLAINTEXT_STORAGE_KEY: &str = "verelle.synthetic-observations.v1";
@@ -23,19 +24,30 @@ pub fn mount() {
 
 #[component]
 fn App() -> impl IntoView {
-    let loaded = load_observations();
-    let initial_error = loaded.as_ref().err().cloned();
-    let observations = RwSignal::new(loaded.unwrap_or_default());
+    let observations = RwSignal::new(Vec::new());
+    let storage_ready = RwSignal::new(false);
     let date = RwSignal::new(today());
     let cycle_number = RwSignal::new("1".to_owned());
     let selected_reading = RwSignal::new(MonitorReading::Low);
-    let notice = RwSignal::new(initial_error);
+    let notice = RwSignal::new(None::<String>);
     let crypto_ready = browser_crypto_round_trip();
+
+    spawn_local(async move {
+        match load_observations().await {
+            Ok(loaded) => observations.set(loaded),
+            Err(error) => notice.set(Some(error)),
+        }
+        storage_ready.set(true);
+    });
 
     Effect::new(move |_| {
         let current = observations.get();
-        if let Err(error) = save_observations(&current) {
-            notice.set(Some(error));
+        if storage_ready.get() {
+            spawn_local(async move {
+                if let Err(error) = save_observations(&current).await {
+                    notice.set(Some(error));
+                }
+            });
         }
     });
 
@@ -108,17 +120,18 @@ fn App() -> impl IntoView {
     };
 
     let clear_demo = move |_| {
+        storage_ready.set(false);
         observations.set(Vec::new());
-        let result = browser_storage().and_then(|storage| {
-            storage
-                .remove_item(ENCRYPTED_STORAGE_KEY)
-                .and_then(|()| storage.remove_item(LEGACY_PLAINTEXT_STORAGE_KEY))
-                .map_err(|_| "Browser storage could not be cleared".to_owned())
+        spawn_local(async move {
+            let result = encrypted_storage::clear()
+                .await
+                .and_then(|()| clear_legacy_storage());
+            notice.set(Some(match result {
+                Ok(()) => "Synthetic browser data cleared".to_owned(),
+                Err(error) => error,
+            }));
+            storage_ready.set(true);
         });
-        notice.set(Some(match result {
-            Ok(()) => "Synthetic browser data cleared".to_owned(),
-            Err(error) => error,
-        }));
     };
 
     let charts = Memo::new(move |_| build_charts(&observations.get()));
@@ -131,7 +144,7 @@ fn App() -> impl IntoView {
                     <span>"verelle"</span>
                 </a>
                 <div class="topbar-actions">
-                    <span class="local-pill"><span class="status-dot"></span>"Browser local"</span>
+                    <span class="local-pill"><span class="status-dot"></span>"Encrypted browser"</span>
                     <button class="quiet-button" type="button" on:click=load_demo>"Load demo"</button>
                     <button class="quiet-button danger" type="button" on:click=clear_demo>"Clear"</button>
                 </div>
@@ -157,7 +170,7 @@ fn App() -> impl IntoView {
 
                 <div class="safety-banner" role="note">
                     <strong>"Synthetic testing only."</strong>
-                    " Durable browser data is encrypted with a session-held preview key, but accounts and recovery are not ready. Do not enter real health data."
+                    " Durable browser data is encrypted in IndexedDB with a non-extractable browser key, but accounts and recovery are not ready. Do not enter real health data."
                 </div>
 
                 <section class="workspace">
@@ -214,7 +227,7 @@ fn App() -> impl IntoView {
 
                         <div class="local-facts">
                             <div><span>"Saved facts"</span><strong>{move || observations.get().len()}</strong></div>
-                            <div><span>"Cloud sync"</span><strong>"Off"</strong></div>
+                            <div><span>"Cloud sync"</span><strong>"Review gated"</strong></div>
                         </div>
                     </aside>
 
@@ -312,7 +325,7 @@ fn App() -> impl IntoView {
 
             <footer>
                 <span>"Verelle preview"</span>
-                <span>"Record and display only · No analytics · No server connection"</span>
+                <span>"Record and display only · No analytics · Sync review-gated"</span>
             </footer>
         </div>
     }
@@ -412,46 +425,60 @@ fn preview_storage_key() -> Result<SecretKey, String> {
     Ok(SecretKey::from_bytes(key))
 }
 
-fn load_observations() -> Result<Vec<Observation>, String> {
+async fn load_observations() -> Result<Vec<Observation>, String> {
+    if let Some(value) = encrypted_storage::load().await? {
+        let observations = serde_json::from_str(&value)
+            .map_err(|_| "Stored encrypted browser data is invalid".to_owned())?;
+        clear_legacy_storage()?;
+        return Ok(observations);
+    }
+
+    let Some(observations) = load_legacy_observations()? else {
+        return Ok(Vec::new());
+    };
+    let value = serde_json::to_string(&observations)
+        .map_err(|_| "Synthetic observations could not be encoded".to_owned())?;
+    encrypted_storage::save(&value).await?;
+    clear_legacy_storage()?;
+    Ok(observations)
+}
+
+fn load_legacy_observations() -> Result<Option<Vec<Observation>>, String> {
     let storage = browser_storage()?;
-    let key = preview_storage_key()?;
     if let Some(value) = storage
         .get_item(ENCRYPTED_STORAGE_KEY)
         .map_err(|_| "Browser storage could not be read".to_owned())?
     {
-        return decode_observations(&key, &value);
+        let key = preview_storage_key()?;
+        return decode_observations(&key, &value).map(Some);
     }
 
     let Some(legacy) = storage
         .get_item(LEGACY_PLAINTEXT_STORAGE_KEY)
         .map_err(|_| "Legacy browser storage could not be read".to_owned())?
     else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
     let observations: Vec<Observation> =
         serde_json::from_str(&legacy).map_err(|_| "Stored synthetic data is invalid".to_owned())?;
-    let encrypted = encode_observations(&key, &observations)?;
-    storage
-        .set_item(ENCRYPTED_STORAGE_KEY, &encrypted)
-        .and_then(|()| storage.remove_item(LEGACY_PLAINTEXT_STORAGE_KEY))
-        .map_err(|_| "Legacy browser data could not be encrypted".to_owned())?;
-    Ok(observations)
+    Ok(Some(observations))
 }
 
-fn save_observations(observations: &[Observation]) -> Result<(), String> {
-    let key = preview_storage_key()?;
-    let value = encode_observations(&key, observations)?;
-    browser_storage()?
-        .set_item(ENCRYPTED_STORAGE_KEY, &value)
-        .map_err(|_| "Browser storage could not be written".to_owned())
-}
-
-fn encode_observations(key: &SecretKey, observations: &[Observation]) -> Result<String, String> {
-    let plaintext = serde_json::to_vec(observations)
+async fn save_observations(observations: &[Observation]) -> Result<(), String> {
+    let value = serde_json::to_string(observations)
         .map_err(|_| "Synthetic observations could not be encoded".to_owned())?;
-    let envelope = seal(key, 1, STORAGE_CONTEXT, &plaintext)
-        .map_err(|_| "Synthetic observations could not be encrypted".to_owned())?;
-    Ok(URL_SAFE_NO_PAD.encode(envelope.to_bytes()))
+    encrypted_storage::save(&value).await
+}
+
+fn clear_legacy_storage() -> Result<(), String> {
+    let local = browser_storage()?;
+    local
+        .remove_item(ENCRYPTED_STORAGE_KEY)
+        .and_then(|()| local.remove_item(LEGACY_PLAINTEXT_STORAGE_KEY))
+        .map_err(|_| "Legacy browser storage could not be cleared".to_owned())?;
+    browser_session_storage()?
+        .remove_item(SESSION_KEY_STORAGE_KEY)
+        .map_err(|_| "Legacy browser session storage could not be cleared".to_owned())
 }
 
 fn decode_observations(key: &SecretKey, encoded: &str) -> Result<Vec<Observation>, String> {
@@ -463,23 +490,4 @@ fn decode_observations(key: &SecretKey, encoded: &str) -> Result<Vec<Observation
     let plaintext = open(key, 1, STORAGE_CONTEXT, &envelope)
         .map_err(|_| "Stored synthetic data cannot be unlocked in this session".to_owned())?;
     serde_json::from_slice(&plaintext).map_err(|_| "Stored synthetic data is invalid".to_owned())
-}
-
-#[cfg(test)]
-mod storage_tests {
-    use super::*;
-
-    #[test]
-    fn encrypted_browser_payload_round_trips_without_plaintext() {
-        let fixture: GoldenFixture =
-            serde_json::from_str(include_str!("../../../fixtures/regular-cycle.json")).unwrap();
-        let key = SecretKey::from_bytes([17_u8; 32]);
-        let encoded = encode_observations(&key, &fixture.observations).unwrap();
-        assert!(!encoded.contains("monitor"));
-        assert_eq!(
-            decode_observations(&key, &encoded).unwrap(),
-            fixture.observations
-        );
-        assert!(decode_observations(&SecretKey::from_bytes([18_u8; 32]), &encoded).is_err());
-    }
 }

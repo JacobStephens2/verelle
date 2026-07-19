@@ -56,8 +56,8 @@ this integration.
 - **Authentication:** gated. The current candidate is RFC 9807 OPAQUE through the exact
   `opaque-ke` pin, but [OQ-9 remains open](../reviews/oq9-opaque-adoption-assessment.md) until
   an external qualified review records parameters, vectors, recovery, and deviations.
-- **Browser storage:** encrypted durable storage is a prerequisite to real web accounts; the
-  current preview's plaintext `localStorage` is synthetic-only.
+- **Browser storage:** the synthetic preview now uses encrypted IndexedDB with a non-extractable
+  WebCrypto key. Reviewed account-key custody and recovery remain prerequisites to real web use.
 
 ## 4. Architecture
 
@@ -80,7 +80,7 @@ independent backups, and a restore/deletion drill.
    service, loopback bind, Apache same-origin proxy, health/readiness, and fail-closed public
    routes. Gate: service active, listener loopback-only, `/api/v1` returns structured
    `blocked_oq9`, Apache config passes.
-2. **Protocol and relay interop (in progress):** shared wire types, authenticated Axum router,
+2. **Protocol and relay interop (complete):** shared wire types, authenticated Axum router,
    synthetic authorizer tests, push/pull/idempotency/cursor integration. Gate: workspace tests,
    ignored PostgreSQL relay test, and synthetic HTTP round-trip.
 3. **OQ-9 review (blocked externally):** qualified applied-cryptography review or documented
@@ -88,12 +88,14 @@ independent backups, and a restore/deletion drill.
 4. **Account/device lifecycle:** enable reviewed OPAQUE, session revocation, device enrollment,
    couple membership, recovery, epoch rotation, rate limits, and audit events. Gate: adversarial
    key-lifecycle suite.
-5. **Android transport:** expose typed outbox/cursor pull/push methods through UniFFI and run a
-   foreground sync worker with retry/backoff. Gate: two Android devices converge with response
-   loss and process death.
-6. **Web durable storage and transport:** replace plaintext `localStorage` with reviewed
-   encrypted IndexedDB/OPFS/key handling, then connect registration/login/sync. Gate: web ↔
-   Android crypto and merge interop; no plaintext health fields in browser storage.
+5. **Android transport (implementation complete; acceptance open):** typed outbox/cursor
+   pull/push records are exposed through UniFFI and a foreground-triggered WorkManager worker
+   uses HTTPS with retry/backoff. Keystore-protected enrollment keeps it dormant until review.
+   Gate: two Android devices converge with response loss and process death.
+6. **Web durable storage and transport (implementation complete; acceptance open):** synthetic
+   state is encrypted in IndexedDB under a non-extractable WebCrypto key; legacy plaintext is
+   migrated and removed; reviewed-session sync orchestration compiles behind the gate. Gate:
+   account enrollment plus web ↔ Android crypto/merge interop; no plaintext health fields.
 7. **Operations:** independent encrypted PostgreSQL backups, restore/deletion drill, metrics,
    rate/load tests, and incident runbook. Gate: NFR-S2/NFR-S4 and restore criteria pass.
 8. **Enablement:** set the reviewed API environment only after gates 3–7; deploy, smoke-test,
@@ -115,8 +117,8 @@ independent, and restored before real data use.
 
 - OQ-9 redesign invalidates the wire/auth schema: keep the reviewed API flag off and version the
   contract until sign-off.
-- Browser key handling leaves plaintext behind: block web account enablement and grep/test the
-  storage path before deployment.
+- Browser key handling regresses or same-origin code is compromised: keep account enablement
+  blocked, retain strict CSP, and run the ciphertext/legacy-removal browser test per release.
 - Shared-host contention causes sync latency or outages: measure resource use and revisit OQ-7
   before beta.
 - A restore resurrects deleted ciphertext: require manifest reapplication in the restore gate.
@@ -127,7 +129,7 @@ independent, and restored before real data use.
   account and sync routes.
 - **OQ-10, Jacob + privacy counsel:** deletion/retention parameters; blocks real-data backup,
   restore, and public beta.
-- **Browser storage design, Jacob:** encrypted IndexedDB/OPFS/key custody; blocks web real-data
-  use.
-- **Android sync scheduling, Jacob:** foreground-first worker and push freshness policy; blocks
-  the two-phone gate.
+- **Browser account-key custody, Jacob + OQ-9 reviewer:** connect the encrypted local vault to the
+  reviewed account/recovery lifecycle; blocks web real-data use.
+- **Android account enrollment, Jacob + OQ-9 reviewer:** install reviewed dataset/session material
+  into the existing Keystore-protected worker path; blocks the two-phone gate.
