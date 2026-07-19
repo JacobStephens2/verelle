@@ -24,7 +24,7 @@ Audit timestamp: `2026-07-19T00:28:58-0400` (America/New_York)
 | Ansible | Missing: `ansible` was not found |
 
 Xcode, Swift, an iOS simulator runtime, and the required Apple Rust targets are
-available for a future iOS walking-skeleton assignment if OQ-2 selects iPhone.
+available for the future Phase 4 iOS implementation selected by OQ-2.
 No tool was installed or upgraded during this audit. Homebrew 6.0.11 is
 available; after Jacob's approval, the smallest package-manager installation
 command for the two missing operator tools is:
@@ -80,15 +80,19 @@ its value in chat or repository files.
 
 ## OQ-2 and recommendation
 
-OQ-2 is unresolved: the founding couple's two phone platforms, first
-walking-skeleton target, and watch platforms have not been selected.
+OQ-2 was resolved by Jacob on 2026-07-19 after the workstation audit:
 
-**Recommendation: blocked.** Do not choose iOS Phase 2 or Android Phase 2 until
-Jacob records OQ-2. The Mac is technically capable of Apple architecture work,
-but that capability does not resolve the product/platform gate. DigitalOcean
-operator work is separately blocked by the missing token injection, missing
-registered SSH-key match, missing OpenTofu and Ansible, absent reviewed `infra/`
-configuration, and unresolved OQ-7.
+- Founding phone 1: Android.
+- Founding phone 2: iOS.
+- Phase 2 walking-skeleton target: Android.
+- Phase 4 second phone: iOS.
+- Phase 8 watch platforms: Wear OS and watchOS.
+
+**Recommendation: Android Phase 2 on Linux.** The Mac is technically ready for
+the later iOS work, but no iOS/UniFFI spike should precede the selected Android
+walking skeleton. DigitalOcean operator work is separately blocked by the
+missing token injection, missing registered SSH-key match, missing OpenTofu and
+Ansible, absent reviewed `infra/` configuration, and unresolved OQ-7.
 
 ## Actions explicitly not taken
 
