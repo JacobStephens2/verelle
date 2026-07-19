@@ -37,12 +37,14 @@ The relay table contains only dataset/operation identifiers, sequence and epoch
 metadata, ciphertext, and timestamps. Logical record keys, civil dates,
 readings, observations, and chart values have no columns and must never be added.
 
-## Reviewed API gate
+## Public API activation gate
 
 `VERELLE_REVIEWED_API_ENABLED=true` is accepted only when both a valid
 `VERELLE_OPAQUE_SERVER_SETUP` and nonempty `VERELLE_OQ9_REVIEW_REFERENCE` are
-present. The colocated household deployment keeps this false until the external
-review record is complete; see
+present. The reference must identify either an independent review record or an
+explicit owner waiver. The colocated deployment uses the documented 2026-07-19
+owner waiver for incomplete public activation; this does not make it suitable
+for real health data. See
 [`ADR 0003`](../../docs/adrs/0003-production-auth-gated.md),
 [`ADR 0005`](../../docs/adrs/0005-colocated-household-api.md), and
 [`deploy/systemd`](../../deploy/systemd).

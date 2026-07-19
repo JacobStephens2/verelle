@@ -18,6 +18,12 @@ treated as OQ-9 approval. The public API must remain `blocked_oq9` until a signe
 review record closes every blocking finding and the downstream lifecycle gates
 are implemented.
 
+After this packet was prepared, Jacob Stephens explicitly waived the independent
+review requirement for incomplete public activation. That
+[owner waiver](oq9-owner-waiver-2026-07-19.md) overrides the activation stop in
+the preceding paragraph only; it does not resolve or accept findings on behalf
+of an independent reviewer. This packet remains open for external review.
+
 ## Review request and boundaries
 
 Please review implementation code at the exact implementation target, not the

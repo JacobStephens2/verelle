@@ -1,6 +1,6 @@
 # OQ-9 OPAQUE adoption assessment
 
-- Status: **candidate selected; external application review still open**
+- Status: **candidate selected; independent review waived by owner for incomplete public activation**
 - Date: 2026-07-19
 - Scope: account registration/login and password-derived account-key wrapping
 
@@ -49,6 +49,12 @@ The prepared reviewer handoff is
 [the OQ-9 external review packet](oq9-external-review-packet.md). It targets the
 exact implementation commit and records the known gaps; it has not yet been
 sent because no reviewer identity or contact channel has been supplied.
+
+On 2026-07-19 Jacob Stephens explicitly waived the independent-review
+requirement and authorized enabling the incomplete public API despite those
+documented gaps. See the
+[owner waiver and risk acceptance](oq9-owner-waiver-2026-07-19.md). This permits
+activation as an owner decision; it is not independent cryptographic sign-off.
 
 ## Required sign-off record
 

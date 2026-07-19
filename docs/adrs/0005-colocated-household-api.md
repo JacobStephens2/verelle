@@ -13,10 +13,11 @@ uses a dedicated database and least-privilege login role. The service does not
 share application credentials, writable directories, or database ownership with
 another site on the host.
 
-The API is not mounted merely because the service exists. Production account and
-sync routes remain fail-closed until ADR 0003's OQ-9 authentication gate is
-recorded as reviewed, browser storage is encrypted, and the deployment gate is
-green. Health and readiness checks may be exercised locally during preparation.
+The API is not mounted merely because the service exists. Account and sync
+routes require ADR 0003's immutable approval-or-waiver reference, encrypted
+browser storage, and an explicit deployment flag. On 2026-07-19 the owner
+authorized incomplete public activation through a documented waiver. Public
+reachability does not make the service ready for real health data or beta use.
 
 ## Isolation and operations
 

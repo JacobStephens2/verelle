@@ -1,8 +1,8 @@
 //! Server foundation for Verelle.
 //!
-//! Only liveness/readiness routes are exposed. Postgres relay primitives are
-//! available for verification, but production account and sync HTTP APIs stay
-//! absent until ADR 0003 / OQ-9 is closed.
+//! Liveness/readiness routes are always exposed. Account and sync routes are
+//! mounted only when an OPAQUE setup, immutable approval-or-waiver reference,
+//! and explicit activation flag satisfy the ADR 0003 deployment gate.
 
 pub mod accounts;
 pub mod config;

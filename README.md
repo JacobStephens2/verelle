@@ -27,16 +27,16 @@ web, and gated-server walking slices from
   persists them as AES-GCM ciphertext in IndexedDB under a non-extractable
   WebCrypto key, renders charts through the shared Rust core, and includes the
   reviewed-session-gated sync transport;
-- `verelle-server`: an Axum/Postgres foundation with liveness/readiness routes
-  and tested opaque relay persistence, but deliberately no public account or
-  sync endpoints;
+- `verelle-server`: an Axum/Postgres service with liveness/readiness, RFC 9807
+  OPAQUE account/session routes, and authenticated opaque relay persistence;
 - `docs/specs`: the Phase S lifecycle drafts and shared invariant matrix.
 
-Production account auth and sync enablement, account-key recovery, billing,
-export/recovery, reminders, and remaining infrastructure intentionally remain downstream
-of the external OQ-9/OQ-10 reviews and the later gates named in the plan. The
-current apps accept synthetic test data only; the lifecycle drafts do not claim
-those gates are closed.
+Jacob Stephens explicitly waived the independent OQ-9 review requirement for
+incomplete public API activation on 2026-07-19. That owner decision does not
+close the known cryptographic/lifecycle findings or authorize real health data.
+Account-key recovery, client enrollment, billing, export/recovery, reminders,
+OQ-10, and remaining infrastructure remain downstream. The current apps accept
+synthetic test data only.
 
 ## Run it
 
@@ -83,8 +83,10 @@ curl http://127.0.0.1:3000/healthz
 curl http://127.0.0.1:3000/readyz
 ```
 
-The server binds to loopback by default. Do not expose it publicly: account,
-session, and sync HTTP routes remain absent by design under ADR 0003/OQ-9.
+The server binds to loopback by default. Mounting account/session/sync routes
+requires an OPAQUE server setup, an immutable approval-or-waiver reference, and
+the explicit reviewed-API environment flag. The colocated deployment has an
+owner waiver for public reachability but is not approved for real data.
 
 Before committing, run the same checks as CI:
 
@@ -100,7 +102,7 @@ monitor-displayed Peak does not create a `P` annotation; only an explicit
 
 ## Repository status
 
-This is pre-release health-adjacent software. Do not entrust real data to it or
-deploy a production sync service until the pending external reviews, instructor
-chart review, platform shells, backup/deletion drill, and launch criteria in the
-plan are complete.
+This is pre-release health-adjacent software. Public API reachability is an
+owner-accepted incomplete test deployment, not a production-readiness claim. Do
+not entrust real data to it until client enrollment, the pending reviews,
+instructor chart review, backup/deletion drill, and launch criteria are complete.

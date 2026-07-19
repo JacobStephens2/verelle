@@ -4,9 +4,9 @@
 
 Connect the Android and web local-first clients to the existing blind relay through a
 versioned same-origin `/api/v1` contract. The household deployment is colocated on the
-Stephens Page host with Axum bound to loopback and Apache terminating TLS. Public account and
-sync routes stay disabled until the OQ-9 applied-cryptography review and the browser encrypted
-storage gate are recorded.
+Stephens Page host with Axum bound to loopback and Apache terminating TLS. Browser encrypted
+storage is complete. On 2026-07-19 the owner waived independent OQ-9 review and authorized
+incomplete public API activation; real-data and household-release gates remain open.
 
 ## 2. Outcome and requirements
 
@@ -53,9 +53,9 @@ this integration.
   is reversible and is revisited before closed beta or the load gate.
 - **Transport:** versioned JSON carrying base64url opaque authentication messages and encrypted
   envelopes. Shared `verelle-api` prevents Android/web/server drift.
-- **Authentication:** gated. The current candidate is RFC 9807 OPAQUE through the exact
-  `opaque-ke` pin, but [OQ-9 remains open](../reviews/oq9-opaque-adoption-assessment.md) until
-  an external qualified review records parameters, vectors, recovery, and deviations.
+- **Authentication:** RFC 9807 OPAQUE through the exact `opaque-ke` pin. Independent OQ-9
+  review was [waived by the owner](../reviews/oq9-owner-waiver-2026-07-19.md) for incomplete
+  public activation; the security findings and real-data restrictions remain open.
 - **Browser storage:** the synthetic preview now uses encrypted IndexedDB with a non-extractable
   WebCrypto key. Reviewed account-key custody and recovery remain prerequisites to real web use.
 
@@ -83,8 +83,9 @@ independent backups, and a restore/deletion drill.
 2. **Protocol and relay interop (complete):** shared wire types, authenticated Axum router,
    synthetic authorizer tests, push/pull/idempotency/cursor integration. Gate: workspace tests,
    ignored PostgreSQL relay test, and synthetic HTTP round-trip.
-3. **OQ-9 review (blocked externally):** qualified applied-cryptography review or documented
-   verbatim audited-scheme adoption. Gate: signed review record in the Phase S matrix.
+3. **OQ-9 review (owner-waived for public activation):** an independent applied-cryptography
+   review was not performed. Jacob Stephens explicitly accepted the documented gaps. The
+   independent review remains recommended and the waiver does not close real-data gates.
 4. **Account/device lifecycle:** enable reviewed OPAQUE, session revocation, device enrollment,
    couple membership, recovery, epoch rotation, rate limits, and audit events. Gate: adversarial
    key-lifecycle suite.
@@ -98,9 +99,9 @@ independent backups, and a restore/deletion drill.
    account enrollment plus web ↔ Android crypto/merge interop; no plaintext health fields.
 7. **Operations:** independent encrypted PostgreSQL backups, restore/deletion drill, metrics,
    rate/load tests, and incident runbook. Gate: NFR-S2/NFR-S4 and restore criteria pass.
-8. **Enablement:** set the reviewed API environment only after gates 3–7; deploy, smoke-test,
-   and monitor. Rollback is reverting the environment flag and service binary; data migrations
-   remain additive.
+8. **Enablement (owner-authorized exception):** public activation was explicitly authorized
+   before gates 4–7, with known gaps. Deploy, smoke-test, and monitor. Rollback is reverting the
+   environment flag and service binary; data migrations remain additive.
 9. **Household release:** install the Android build, enroll both devices, run the two-phone gate,
    and begin real-data use only after all gates are logged.
 
@@ -115,8 +116,8 @@ independent, and restored before real data use.
 
 ## 7. Risks and pre-mortem
 
-- OQ-9 redesign invalidates the wire/auth schema: keep the reviewed API flag off and version the
-  contract until sign-off.
+- OQ-9 redesign invalidates the wire/auth schema: the owner accepted this risk for public test
+  activation; keep the contract versioned and disable the flag immediately if a review rejects it.
 - Browser key handling regresses or same-origin code is compromised: keep account enablement
   blocked, retain strict CSP, and run the ciphertext/legacy-removal browser test per release.
 - Shared-host contention causes sync latency or outages: measure resource use and revisit OQ-7
@@ -125,8 +126,8 @@ independent, and restored before real data use.
 
 ## 8. Open questions
 
-- **OQ-9, Jacob + qualified reviewer:** exact reviewed authentication/key lifecycle; blocks public
-  account and sync routes.
+- **OQ-9, Jacob + qualified reviewer:** independent review remains open; the owner waiver removed
+  it only as a public-reachability blocker, not as a real-data or production-readiness gate.
 - **OQ-10, Jacob + privacy counsel:** deletion/retention parameters; blocks real-data backup,
   restore, and public beta.
 - **Browser account-key custody, Jacob + OQ-9 reviewer:** connect the encrypted local vault to the

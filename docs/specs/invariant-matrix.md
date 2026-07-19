@@ -33,11 +33,15 @@ it does not close OQ-9/OQ-10 or authorize production use.
 
 ## Sign-off record
 
-- Engineering author review: pending.
+- Engineering author review: Jacob Stephens, 2026-07-19; owner approved moving
+  forward with the incomplete public API.
 - Certified instructor chart-format review (A-4): pending.
-- Applied-cryptography review (OQ-9): pending.
+- Applied-cryptography review (OQ-9): independent review not performed; explicitly
+  waived by Jacob Stephens on 2026-07-19 for incomplete public activation. Known
+  findings remain open.
 - Privacy-counsel parameters (OQ-10): pending.
 - Phase 7 legal copy/annotation review (OQ-3): pending.
 
-No blank row is implicitly approved. The production server, external beta, and
-real-data restore drill remain downstream of the named gates.
+No blank row is implicitly approved. Public API reachability is an explicit
+owner exception; production readiness, external beta, and real-data restore
+remain downstream of the named gates.
