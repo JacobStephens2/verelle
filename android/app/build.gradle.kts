@@ -19,8 +19,8 @@ android {
         applicationId = "app.verelle"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3.0-account-enrollment"
+        versionCode = 4
+        versionName = "0.4.0-account-recovery"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -94,4 +94,7 @@ dependencies {
 
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

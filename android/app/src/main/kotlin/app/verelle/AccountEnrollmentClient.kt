@@ -4,6 +4,7 @@ import android.util.Base64
 import app.verelle.ffi.LocalRepository
 import app.verelle.ffi.accountLoginDeviceProof
 import app.verelle.ffi.accountRegistrationDeviceProof
+import app.verelle.ffi.opaqueAccountRecoveryFinish
 import app.verelle.ffi.opaqueLoginFinish
 import app.verelle.ffi.opaqueLoginStart
 import app.verelle.ffi.opaqueRegistrationStart
@@ -17,6 +18,13 @@ data class AccountEnrollmentResult(
     val enrollment: SyncEnrollment,
     val recoveryCode: String,
     /** Non-null when account creation succeeded but the initial session did not. */
+    val loginError: String? = null,
+)
+
+data class AccountRecoveryResult(
+    val enrollment: SyncEnrollment,
+    val recoveryCode: String,
+    /** Non-null when recovery succeeded but the initial session did not. */
     val loginError: String? = null,
 )
 
@@ -149,6 +157,186 @@ class AccountEnrollmentClient(
         )
     }
 
+    /**
+     * Replaces the account password, recovery code, and enrolled device after
+     * proving possession of the offline recovery code. The account key remains
+     * behind the Rust boundary throughout the exchange.
+     */
+    fun recover(
+        repository: LocalRepository,
+        localDataKeyManager: LocalDataKeyManager,
+        enrollmentStore: SyncEnrollmentStore,
+        pendingRecoveryStore: PendingAccountRecoveryStore,
+        email: String,
+        recoveryCode: String,
+        newPassword: String,
+    ): AccountRecoveryResult {
+        require(repository.isPristine()) {
+            "Recovery requires an empty local chart; export or remove local data first"
+        }
+        require(!pendingRecoveryStore.hasPending()) {
+            "A previously started account recovery must be resumed first"
+        }
+        validatePassword(newPassword)
+        val normalizedEmail = email.trim().lowercase()
+        val registration = withPasswordBytes(newPassword, ::opaqueRegistrationStart)
+        val started = try {
+            post(
+                RECOVERY_START_PATH,
+                JSONObject()
+                    .put("account_identifier", normalizedEmail)
+                    .put("registration_request", opaque(registration.request)),
+            )
+        } catch (error: Exception) {
+            registration.state.fill(0)
+            throw error
+        }
+        val flowId = started.getString("flow_id")
+        val datasetId = started.getString("dataset_id")
+        val devicePublicKey = deviceSigningKey.publicKeySpki()
+        val material = try {
+            withPasswordBytes(newPassword) { passwordBytes ->
+                opaqueAccountRecoveryFinish(
+                    state = registration.state,
+                    password = passwordBytes,
+                    accountIdentifier = normalizedEmail,
+                    registrationResponse = decodeOpaque(started, "registration_response"),
+                    recoveryCode = recoveryCode,
+                    recoveryWrappedAccountKey = decodeOpaque(
+                        started,
+                        "recovery_wrapped_account_key",
+                    ),
+                    wrappedDatasetKey = decodeOpaque(started, "wrapped_dataset_key"),
+                    flowId = flowId,
+                    deviceId = deviceId,
+                    datasetId = datasetId,
+                    recoveryChallenge = decodeOpaque(started, "recovery_challenge"),
+                    devicePublicKey = devicePublicKey,
+                )
+            }
+        } finally {
+            registration.state.fill(0)
+        }
+        val deviceProof = accountRegistrationDeviceProof(
+            flowId = flowId,
+            deviceId = deviceId,
+            datasetId = datasetId,
+            registrationUpload = material.registrationUpload,
+        )
+        val finishRequest = JSONObject()
+                .put("flow_id", flowId)
+                .put("device_id", deviceId)
+                .put("dataset_id", datasetId)
+                .put("registration_upload", opaque(material.registrationUpload))
+                .put("device_public_key", opaque(devicePublicKey))
+                .put("device_signature", opaque(deviceSigningKey.sign(deviceProof)))
+                .put("recovery_signature", opaque(material.recoverySignature))
+                .put("wrapped_account_key", opaque(material.wrappedAccountKey))
+                .put(
+                    "recovery_wrapped_account_key",
+                    opaque(material.recoveryWrappedAccountKey),
+                )
+                .put("wrapped_dataset_key", opaque(material.wrappedDatasetKey))
+        val baseEnrollment = SyncEnrollment(
+            datasetId = datasetId,
+            bearerToken = "",
+            expiresAtUnixSeconds = 0,
+            email = normalizedEmail,
+            deviceId = deviceId,
+            serverPublicKey = encode(material.serverPublicKey),
+        )
+        val pending = PendingAccountRecovery(
+            finishRequestJson = finishRequest.toString(),
+            enrollment = baseEnrollment,
+            recoveryCode = material.recoveryCode,
+            recoveredDatasetKey = material.recoveredDatasetKey,
+        )
+
+        // The encrypted journal is durable before either the local identity or
+        // the server account changes. It makes every later step replayable.
+        try {
+            pendingRecoveryStore.save(pending)
+            try {
+                if (repository.datasetId() != pending.enrollment.datasetId) {
+                    repository.adoptRecoveredDataset(
+                        pending.recoveredDatasetKey,
+                        pending.enrollment.datasetId,
+                    )
+                }
+            } catch (error: Exception) {
+                // The server is unchanged at this point. A concurrent local
+                // write makes this prepared journal definitively unusable and
+                // safe to discard; storage/commit ambiguity retains it.
+                if (
+                    repository.datasetId() != pending.enrollment.datasetId &&
+                    !repository.isPristine()
+                ) {
+                    pendingRecoveryStore.clearAfterAcknowledgement()
+                }
+                throw error
+            }
+            localDataKeyManager.replaceDataKey(pending.recoveredDatasetKey)
+        } finally {
+            material.recoveredDatasetKey.fill(0)
+        }
+        finishRecoveryRequest(pending)
+        enrollmentStore.save(baseEnrollment)
+        val login = runCatching {
+            login(baseEnrollment, newPassword).also(enrollmentStore::save)
+        }
+        return AccountRecoveryResult(
+            enrollment = login.getOrDefault(baseEnrollment),
+            recoveryCode = material.recoveryCode,
+            loginError = login.exceptionOrNull()?.message,
+        )
+    }
+
+    /** Replays a journaled recovery after process death or an ambiguous HTTP response. */
+    fun resumePendingRecovery(
+        repository: LocalRepository,
+        localDataKeyManager: LocalDataKeyManager,
+        enrollmentStore: SyncEnrollmentStore,
+        pendingRecoveryStore: PendingAccountRecoveryStore,
+    ): AccountRecoveryResult? {
+        val pending = pendingRecoveryStore.load() ?: return null
+        try {
+            adoptPendingLocally(repository, localDataKeyManager, pending)
+            finishRecoveryRequest(pending)
+            enrollmentStore.save(pending.enrollment)
+            return AccountRecoveryResult(
+                enrollment = pending.enrollment,
+                recoveryCode = pending.recoveryCode,
+                loginError = "Sign in with the replacement password to start encrypted sync",
+            )
+        } finally {
+            pending.recoveredDatasetKey.fill(0)
+        }
+    }
+
+    private fun adoptPendingLocally(
+        repository: LocalRepository,
+        localDataKeyManager: LocalDataKeyManager,
+        pending: PendingAccountRecovery,
+    ) {
+        if (repository.datasetId() != pending.enrollment.datasetId) {
+            repository.adoptRecoveredDataset(
+                pending.recoveredDatasetKey,
+                pending.enrollment.datasetId,
+            )
+        }
+        localDataKeyManager.replaceDataKey(pending.recoveredDatasetKey)
+    }
+
+    private fun finishRecoveryRequest(pending: PendingAccountRecovery) {
+        val finished = post(RECOVERY_FINISH_PATH, JSONObject(pending.finishRequestJson))
+        check(finished.getString("device_id") == pending.enrollment.deviceId) {
+            "The account service returned a different device"
+        }
+        check(finished.getString("dataset_id") == pending.enrollment.datasetId) {
+            "The account service returned a different encrypted dataset"
+        }
+    }
+
     private fun post(path: String, body: JSONObject): JSONObject {
         val connection = URL("$API_ORIGIN$path").openConnection() as HttpURLConnection
         try {
@@ -222,6 +410,8 @@ class AccountEnrollmentClient(
         private const val REGISTRATION_FINISH_PATH = "/api/v1/accounts/opaque/finish"
         private const val LOGIN_START_PATH = "/api/v1/sessions/opaque/start"
         private const val LOGIN_FINISH_PATH = "/api/v1/sessions/opaque/finish"
+        private const val RECOVERY_START_PATH = "/api/v1/recoveries/opaque/start"
+        private const val RECOVERY_FINISH_PATH = "/api/v1/recoveries/opaque/finish"
         private const val HEALTH_DATA_CONSENT_VERSION = "2026-07-19"
         private const val BASE64_FLAGS = Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
         private const val MAX_BODY_BYTES = 32 * 1024

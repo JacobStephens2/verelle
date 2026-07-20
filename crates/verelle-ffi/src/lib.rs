@@ -14,7 +14,10 @@ use std::{
 };
 use thiserror::Error;
 use uuid::Uuid;
-use verelle_api::{login_device_proof_message, registration_device_proof_message};
+use verelle_api::{
+    OpaqueMessage, RecoveryFinishRequest, login_device_proof_message,
+    recovery_account_proof_message, registration_device_proof_message,
+};
 use verelle_auth::{
     AuthProtocolError, account_credential_identifier, client_login_finish, client_login_start,
     client_registration_finish, client_registration_start, derive_account_wrapping_key,
@@ -23,7 +26,10 @@ use verelle_core::{
     CycleChart, CycleStartBasis, GoldenFixture, MarkerType, MonitorReading, Observation,
     ObservationValue, build_charts,
 };
-use verelle_crypto::{RecoveryCode, SecretKey, recovery_public_key, wrap_secret_key};
+use verelle_crypto::{
+    EncryptedEnvelope, RecoveryCode, SecretKey, recovery_public_key, sign_recovery_message,
+    unwrap_secret_key, wrap_secret_key,
+};
 use verelle_store::{RemoteOperation, RemotePage, Store};
 use verelle_sync::{
     HybridClock, PlainOperation, TransportOp, decrypt_operation, encrypt_operation,
@@ -119,6 +125,23 @@ pub struct FfiOpaqueLoginFinish {
     pub credential_finalization: Vec<u8>,
 }
 
+/// Replacement account material created after recovery-code authorization.
+///
+/// The random account key never crosses the native boundary. The recovered
+/// dataset key must be handed directly to Android's Keystore-backed local-key
+/// store and zeroized by the caller after persistence.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiAccountRecoveryMaterial {
+    pub registration_upload: Vec<u8>,
+    pub server_public_key: Vec<u8>,
+    pub wrapped_account_key: Vec<u8>,
+    pub recovery_wrapped_account_key: Vec<u8>,
+    pub wrapped_dataset_key: Vec<u8>,
+    pub recovery_signature: Vec<u8>,
+    pub recovered_dataset_key: Vec<u8>,
+    pub recovery_code: String,
+}
+
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FixtureReplayError {
     #[error("fixture JSON is invalid")]
@@ -166,6 +189,10 @@ pub enum LocalRepositoryError {
     InvalidPullPage,
     #[error("the account identifier is invalid")]
     InvalidAccountIdentifier,
+    #[error("the recovered dataset identifier is invalid")]
+    InvalidDatasetIdentifier,
+    #[error("the local repository already contains chart data")]
+    RepositoryNotPristine,
     #[error("the account authentication exchange is invalid")]
     InvalidAuthenticationExchange,
     #[error("account key protection failed")]
@@ -182,6 +209,10 @@ pub enum AccountAuthError {
     ServerKeyChanged,
     #[error("an enrollment identifier is invalid")]
     InvalidEnrollmentIdentifier,
+    #[error("the recovery response or recovery code is invalid")]
+    InvalidRecoveryMaterial,
+    #[error("account key protection failed")]
+    AccountKeyProtection,
 }
 
 #[derive(uniffi::Object)]
@@ -359,6 +390,67 @@ impl LocalRepository {
 
     pub fn dataset_id(&self) -> Result<String, LocalRepositoryError> {
         Ok(self.lock()?.dataset_id.to_string())
+    }
+
+    pub fn is_pristine(&self) -> Result<bool, LocalRepositoryError> {
+        self.lock()?
+            .store
+            .is_pristine()
+            .map_err(|_| LocalRepositoryError::Storage)
+    }
+
+    /// Atomically adopts the key and server dataset identity recovered from an
+    /// existing account. A repository that has ever recorded or pulled an
+    /// operation is rejected so local health data cannot be silently replaced.
+    /// The caller must persist the same key with Android's
+    /// `LocalDataKeyManager` before treating recovery as locally complete.
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+    pub fn adopt_recovered_dataset(
+        &self,
+        mut key_material: Vec<u8>,
+        dataset_id: String,
+    ) -> Result<(), LocalRepositoryError> {
+        if key_material.len() != 32 {
+            key_material.fill(0);
+            return Err(LocalRepositoryError::InvalidKey);
+        }
+        let dataset_id = match Uuid::parse_str(&dataset_id) {
+            Ok(value) if !value.is_nil() && value.to_string() == dataset_id => value,
+            _ => {
+                key_material.fill(0);
+                return Err(LocalRepositoryError::InvalidDatasetIdentifier);
+            }
+        };
+        let mut key_bytes = [0_u8; 32];
+        key_bytes.copy_from_slice(&key_material);
+        let fingerprint = Sha256::digest(&key_material).to_vec();
+        key_material.fill(0);
+
+        let mut inner = self.lock()?;
+        if !inner
+            .store
+            .is_pristine()
+            .map_err(|_| LocalRepositoryError::Storage)?
+        {
+            return Err(LocalRepositoryError::RepositoryNotPristine);
+        }
+        inner
+            .store
+            .set_settings_atomically(&[
+                (
+                    LOCAL_DATASET_ID_SETTING,
+                    serde_json::to_value(dataset_id).map_err(|_| LocalRepositoryError::Storage)?,
+                ),
+                (
+                    LOCAL_KEY_FINGERPRINT_SETTING,
+                    serde_json::to_value(&fingerprint)
+                        .map_err(|_| LocalRepositoryError::Storage)?,
+                ),
+            ])
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        inner.dataset_id = dataset_id;
+        inner.data_key = SecretKey::from_bytes(key_bytes);
+        Ok(())
     }
 
     /// Completes OPAQUE registration and creates the account/recovery wraps
@@ -568,6 +660,130 @@ pub fn opaque_login_finish(
     finished.session_key.fill(0);
     Ok(FfiOpaqueLoginFinish {
         credential_finalization: finished.finalization,
+    })
+}
+
+/// Completes the new OPAQUE registration used by lost-device recovery and
+/// rotates every client-side account wrap. The account data key remains inside
+/// Rust; only the recovered dataset key needed by Android's local encrypted
+/// store is returned.
+#[uniffi::export]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+pub fn opaque_account_recovery_finish(
+    mut state: Vec<u8>,
+    mut password: Vec<u8>,
+    account_identifier: String,
+    registration_response: Vec<u8>,
+    recovery_code: String,
+    recovery_wrapped_account_key: Vec<u8>,
+    wrapped_dataset_key: Vec<u8>,
+    flow_id: String,
+    device_id: String,
+    dataset_id: String,
+    recovery_challenge: Vec<u8>,
+    device_public_key: Vec<u8>,
+) -> Result<FfiAccountRecoveryMaterial, AccountAuthError> {
+    let Ok(credential_identifier) = account_credential_identifier(&account_identifier) else {
+        state.fill(0);
+        password.fill(0);
+        return Err(AccountAuthError::InvalidAccountIdentifier);
+    };
+    let finished = client_registration_finish(
+        &state,
+        &password,
+        &credential_identifier,
+        &registration_response,
+    );
+    state.fill(0);
+    password.fill(0);
+    let finished = finished.map_err(|_| AccountAuthError::InvalidAuthenticationExchange)?;
+
+    let recovery_code = RecoveryCode::parse(recovery_code)
+        .map_err(|_| AccountAuthError::InvalidRecoveryMaterial)?;
+    let recovery_wrap = EncryptedEnvelope::from_bytes(&recovery_wrapped_account_key)
+        .map_err(|_| AccountAuthError::InvalidRecoveryMaterial)?;
+    let account_data_key = unwrap_secret_key(
+        &recovery_code
+            .wrapping_key()
+            .map_err(|_| AccountAuthError::InvalidRecoveryMaterial)?,
+        LOCAL_KEY_EPOCH,
+        b"account/recovery-wrap",
+        &recovery_wrap,
+    )
+    .map_err(|_| AccountAuthError::InvalidRecoveryMaterial)?;
+    let dataset_wrap = EncryptedEnvelope::from_bytes(&wrapped_dataset_key)
+        .map_err(|_| AccountAuthError::InvalidRecoveryMaterial)?;
+    let dataset_key = unwrap_secret_key(
+        &account_data_key,
+        LOCAL_KEY_EPOCH,
+        b"dataset/account-wrap",
+        &dataset_wrap,
+    )
+    .map_err(|_| AccountAuthError::InvalidRecoveryMaterial)?;
+
+    let password_wrapping_key = SecretKey::from_bytes(
+        derive_account_wrapping_key(finished.export_key)
+            .map_err(|_| AccountAuthError::AccountKeyProtection)?,
+    );
+    let wrapped_account_key = wrap_secret_key(
+        &password_wrapping_key,
+        LOCAL_KEY_EPOCH,
+        b"account/password-wrap",
+        &account_data_key,
+    )
+    .map_err(|_| AccountAuthError::AccountKeyProtection)?;
+    let new_recovery_code = RecoveryCode::generate();
+    let new_recovery_wrap = wrap_secret_key(
+        &new_recovery_code
+            .wrapping_key()
+            .map_err(|_| AccountAuthError::AccountKeyProtection)?,
+        LOCAL_KEY_EPOCH,
+        b"account/recovery-wrap",
+        &account_data_key,
+    )
+    .map_err(|_| AccountAuthError::AccountKeyProtection)?;
+    let new_dataset_wrap = wrap_secret_key(
+        &account_data_key,
+        LOCAL_KEY_EPOCH,
+        b"dataset/account-wrap",
+        &dataset_key,
+    )
+    .map_err(|_| AccountAuthError::AccountKeyProtection)?;
+
+    let flow_id = parse_enrollment_id(&flow_id)?;
+    let device_id = parse_enrollment_id(&device_id)?;
+    let dataset_id = parse_enrollment_id(&dataset_id)?;
+    if recovery_challenge.is_empty() || device_public_key.is_empty() {
+        return Err(AccountAuthError::InvalidRecoveryMaterial);
+    }
+    let mut request = RecoveryFinishRequest {
+        flow_id,
+        device_id,
+        dataset_id,
+        registration_upload: OpaqueMessage::from_bytes(&finished.upload),
+        device_public_key: OpaqueMessage::from_bytes(&device_public_key),
+        // Neither signature is included in the recovery proof. The device
+        // signature is produced by Android Keystore after this call.
+        device_signature: OpaqueMessage::from_bytes(&[1]),
+        recovery_signature: OpaqueMessage::from_bytes(&[1]),
+        wrapped_account_key: OpaqueMessage::from_bytes(&wrapped_account_key.to_bytes()),
+        recovery_wrapped_account_key: OpaqueMessage::from_bytes(&new_recovery_wrap.to_bytes()),
+        wrapped_dataset_key: OpaqueMessage::from_bytes(&new_dataset_wrap.to_bytes()),
+    };
+    let recovery_proof = recovery_account_proof_message(&request, &recovery_challenge);
+    let recovery_signature = sign_recovery_message(&account_data_key, &recovery_proof)
+        .map_err(|_| AccountAuthError::AccountKeyProtection)?;
+    request.recovery_signature = OpaqueMessage::from_bytes(&recovery_signature);
+
+    Ok(FfiAccountRecoveryMaterial {
+        registration_upload: finished.upload,
+        server_public_key: finished.server_public_key,
+        wrapped_account_key: wrapped_account_key.to_bytes(),
+        recovery_wrapped_account_key: new_recovery_wrap.to_bytes(),
+        wrapped_dataset_key: new_dataset_wrap.to_bytes(),
+        recovery_signature,
+        recovered_dataset_key: dataset_key.expose().to_vec(),
+        recovery_code: new_recovery_code.as_str().to_owned(),
     })
 }
 
@@ -863,6 +1079,44 @@ mod tests {
     }
 
     #[test]
+    fn pristine_repository_adopts_recovered_dataset_atomically() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_string_lossy().into_owned();
+        let recovered_dataset_id = Uuid::new_v4();
+        let recovered_key = vec![23_u8; 32];
+        let repository =
+            LocalRepository::open(path.clone(), vec![22_u8; 32], "device-a".to_owned()).unwrap();
+
+        repository
+            .adopt_recovered_dataset(recovered_key.clone(), recovered_dataset_id.to_string())
+            .unwrap();
+        assert_eq!(
+            repository.dataset_id().unwrap(),
+            recovered_dataset_id.to_string()
+        );
+        drop(repository);
+
+        let reopened =
+            LocalRepository::open(path.clone(), recovered_key, "device-a".to_owned()).unwrap();
+        assert_eq!(
+            reopened.dataset_id().unwrap(),
+            recovered_dataset_id.to_string()
+        );
+        reopened
+            .record_cycle_start("2026-07-20".to_owned(), 1)
+            .unwrap();
+        assert!(matches!(
+            reopened.adopt_recovered_dataset(vec![24_u8; 32], Uuid::new_v4().to_string()),
+            Err(LocalRepositoryError::RepositoryNotPristine)
+        ));
+        drop(reopened);
+        assert!(matches!(
+            LocalRepository::open(path, vec![24_u8; 32], "device-a".to_owned()),
+            Err(LocalRepositoryError::KeyMismatch)
+        ));
+    }
+
+    #[test]
     fn android_opaque_boundary_registers_and_logs_in_with_a_pinned_server_key() {
         let password = b"correct horse battery staple";
         let email = "founder@example.com";
@@ -914,6 +1168,124 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // Full proof reconstruction is one security assertion.
+    fn android_recovery_rotates_wraps_and_signs_the_server_proof() {
+        let old_password = b"correct horse battery staple";
+        let new_password = b"a different correct horse battery staple";
+        let email = "founder@example.com";
+        let identifier = account_credential_identifier(email).unwrap();
+        let setup = generate_server_setup();
+        let dataset_key = vec![31_u8; 32];
+        let repository = LocalRepository::open(
+            tempfile::NamedTempFile::new()
+                .unwrap()
+                .path()
+                .to_string_lossy()
+                .into_owned(),
+            dataset_key.clone(),
+            Uuid::new_v4().to_string(),
+        )
+        .unwrap();
+        let original = opaque_registration_start(old_password.to_vec()).unwrap();
+        let original_response =
+            server_registration_start(&setup, &identifier, &original.request).unwrap();
+        let original_material = repository
+            .finish_account_registration(
+                original.state,
+                old_password.to_vec(),
+                email.to_owned(),
+                original_response,
+            )
+            .unwrap();
+
+        let flow_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+        let dataset_id = Uuid::new_v4();
+        let challenge = vec![9_u8; 32];
+        let device_public_key = vec![8_u8; 91];
+        let recovery = opaque_registration_start(new_password.to_vec()).unwrap();
+        let recovery_response =
+            server_registration_start(&setup, &identifier, &recovery.request).unwrap();
+        assert!(matches!(
+            opaque_account_recovery_finish(
+                recovery.state.clone(),
+                new_password.to_vec(),
+                email.to_owned(),
+                recovery_response.clone(),
+                RecoveryCode::generate().as_str().to_owned(),
+                original_material.recovery_wrapped_account_key.clone(),
+                original_material.wrapped_dataset_key.clone(),
+                flow_id.to_string(),
+                device_id.to_string(),
+                dataset_id.to_string(),
+                challenge.clone(),
+                device_public_key.clone(),
+            ),
+            Err(AccountAuthError::InvalidRecoveryMaterial)
+        ));
+        let recovered = opaque_account_recovery_finish(
+            recovery.state,
+            new_password.to_vec(),
+            email.to_owned(),
+            recovery_response,
+            original_material.recovery_code.clone(),
+            original_material.recovery_wrapped_account_key.clone(),
+            original_material.wrapped_dataset_key.clone(),
+            flow_id.to_string(),
+            device_id.to_string(),
+            dataset_id.to_string(),
+            challenge.clone(),
+            device_public_key.clone(),
+        )
+        .unwrap();
+        assert_eq!(recovered.recovered_dataset_key, dataset_key);
+        assert_ne!(recovered.recovery_code, original_material.recovery_code);
+        assert!(server_registration_finish(&recovered.registration_upload).is_ok());
+
+        let original_code = RecoveryCode::parse(original_material.recovery_code).unwrap();
+        let original_wrap =
+            EncryptedEnvelope::from_bytes(&original_material.recovery_wrapped_account_key).unwrap();
+        let account_key = unwrap_secret_key(
+            &original_code.wrapping_key().unwrap(),
+            LOCAL_KEY_EPOCH,
+            b"account/recovery-wrap",
+            &original_wrap,
+        )
+        .unwrap();
+        let request = RecoveryFinishRequest {
+            flow_id,
+            device_id,
+            dataset_id,
+            registration_upload: OpaqueMessage::from_bytes(&recovered.registration_upload),
+            device_public_key: OpaqueMessage::from_bytes(&device_public_key),
+            device_signature: OpaqueMessage::from_bytes(&[1]),
+            recovery_signature: OpaqueMessage::from_bytes(&recovered.recovery_signature),
+            wrapped_account_key: OpaqueMessage::from_bytes(&recovered.wrapped_account_key),
+            recovery_wrapped_account_key: OpaqueMessage::from_bytes(
+                &recovered.recovery_wrapped_account_key,
+            ),
+            wrapped_dataset_key: OpaqueMessage::from_bytes(&recovered.wrapped_dataset_key),
+        };
+        let expected_proof = recovery_account_proof_message(&request, &challenge);
+        assert_eq!(
+            recovered.recovery_signature,
+            sign_recovery_message(&account_key, &expected_proof).unwrap()
+        );
+
+        let replacement_code = RecoveryCode::parse(recovered.recovery_code).unwrap();
+        let replacement_wrap =
+            EncryptedEnvelope::from_bytes(&recovered.recovery_wrapped_account_key).unwrap();
+        let replacement_account_key = unwrap_secret_key(
+            &replacement_code.wrapping_key().unwrap(),
+            LOCAL_KEY_EPOCH,
+            b"account/recovery-wrap",
+            &replacement_wrap,
+        )
+        .unwrap();
+        assert_eq!(replacement_account_key.expose(), account_key.expose());
     }
 
     #[test]

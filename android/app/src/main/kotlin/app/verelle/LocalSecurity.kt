@@ -41,19 +41,34 @@ class LocalDataKeyManager(
 
         val dataKey = ByteArray(32).also(SecureRandom()::nextBytes)
         try {
-            val cipher = Cipher.getInstance(WRAP_TRANSFORMATION).apply {
-                init(Cipher.ENCRYPT_MODE, getOrCreateWrappingKey())
-            }
-            val ciphertext = cipher.doFinal(dataKey)
-            val committed = preferences.edit()
-                .putString(CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
-                .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-                .commit()
-            check(committed) { "The protected local key could not be persisted" }
+            persistDataKey(dataKey)
             return dataKey.copyOf()
         } finally {
             dataKey.fill(0)
         }
+    }
+
+    /**
+     * Atomically replaces the Keystore-wrapped local data key after native
+     * recovery has successfully adopted the matching server dataset ID.
+     * The caller remains responsible for zeroizing [dataKey].
+     */
+    @Synchronized
+    fun replaceDataKey(dataKey: ByteArray) {
+        require(dataKey.size == 32) { "The recovered local data key has an invalid size" }
+        persistDataKey(dataKey)
+    }
+
+    private fun persistDataKey(dataKey: ByteArray) {
+        val cipher = Cipher.getInstance(WRAP_TRANSFORMATION).apply {
+            init(Cipher.ENCRYPT_MODE, getOrCreateWrappingKey())
+        }
+        val ciphertext = cipher.doFinal(dataKey)
+        val committed = preferences.edit()
+            .putString(CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
+            .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .commit()
+        check(committed) { "The protected local key could not be persisted" }
     }
 
     private fun decrypt(encodedCiphertext: String, encodedIv: String): ByteArray {

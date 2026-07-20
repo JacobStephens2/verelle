@@ -62,6 +62,41 @@ class LocalPersistenceInstrumentedTest {
     }
 
     @Test
+    fun recoveredDataKeyAtomicallyReplacesTheFreshInstallKey() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-test-$suffix"
+        val preferences = "verelle-test-$suffix"
+        val manager = LocalDataKeyManager(context, alias, preferences)
+        val original = manager.getOrCreateDataKey()
+        val recovered = ByteArray(32) { 29 }
+
+        try {
+            manager.replaceDataKey(recovered)
+            assertArrayEquals(
+                recovered,
+                LocalDataKeyManager(context, alias, preferences).getOrCreateDataKey(),
+            )
+            assertThrows(IllegalArgumentException::class.java) {
+                manager.replaceDataKey(ByteArray(31))
+            }
+            assertArrayEquals(
+                recovered,
+                LocalDataKeyManager(context, alias, preferences).getOrCreateDataKey(),
+            )
+            assertEquals(false, original.contentEquals(recovered))
+        } finally {
+            original.fill(0)
+            recovered.fill(0)
+            context.getSharedPreferences(preferences, Context.MODE_PRIVATE).edit().clear().commit()
+            androidKeyStore().apply {
+                if (containsAlias(alias)) {
+                    deleteEntry(alias)
+                }
+            }
+        }
+    }
+
+    @Test
     fun deviceIdentityIsStableAcrossManagerRecreation() {
         val preferences = "verelle-device-test-${UUID.randomUUID()}"
         try {
@@ -183,6 +218,153 @@ class LocalPersistenceInstrumentedTest {
             assertEquals(false, androidKeyStore().containsAlias(alias))
         } finally {
             clearEnrollmentTestState(alias, preferences)
+        }
+    }
+
+    @Test
+    fun pendingRecoveryCodeSurvivesRecreationUntilAcknowledgement() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-recovery-code-test-$suffix"
+        val preferences = "verelle-recovery-code-test-$suffix"
+        val code = "a".repeat(43)
+
+        try {
+            PendingRecoveryCodeStore(context, alias, preferences).save(code)
+            val rawPreferences = context.getSharedPreferences(preferences, Context.MODE_PRIVATE)
+            assertEquals(false, rawPreferences.all.values.any { it.toString().contains(code) })
+            assertEquals(
+                code,
+                PendingRecoveryCodeStore(context, alias, preferences).load(),
+            )
+
+            PendingRecoveryCodeStore(context, alias, preferences).clearAfterAcknowledgement()
+
+            assertEquals(null, PendingRecoveryCodeStore(context, alias, preferences).load())
+            assertTrue(rawPreferences.all.isEmpty())
+            assertEquals(false, androidKeyStore().containsAlias(alias))
+        } finally {
+            context.getSharedPreferences(preferences, Context.MODE_PRIVATE).edit().clear().commit()
+            androidKeyStore().apply {
+                if (containsAlias(alias)) deleteEntry(alias)
+            }
+        }
+    }
+
+    @Test
+    fun pendingRecoveryJournalProtectsAndRetainsTheReplacementCodeAndKey() {
+        val suffix = UUID.randomUUID().toString()
+        val alias = "verelle-recovery-test-$suffix"
+        val preferences = "verelle-recovery-test-$suffix"
+        val datasetId = UUID.randomUUID().toString()
+        val deviceId = UUID.randomUUID().toString()
+        val recoveredKey = ByteArray(32) { 41 }
+        val recoveryCode = "r".repeat(43)
+        val finishJson = org.json.JSONObject()
+            .put("dataset_id", datasetId)
+            .put("device_id", deviceId)
+            .put("flow_id", UUID.randomUUID().toString())
+            .toString()
+        val pending = PendingAccountRecovery(
+            finishRequestJson = finishJson,
+            enrollment = SyncEnrollment(
+                datasetId = datasetId,
+                bearerToken = "",
+                expiresAtUnixSeconds = 0,
+                email = "founder@example.com",
+                deviceId = deviceId,
+                serverPublicKey = "s".repeat(43),
+            ),
+            recoveryCode = recoveryCode,
+            recoveredDatasetKey = recoveredKey,
+        )
+
+        try {
+            PendingAccountRecoveryStore(context, alias, preferences).save(pending)
+            val loaded = PendingAccountRecoveryStore(context, alias, preferences).load()!!
+            assertEquals(pending.finishRequestJson, loaded.finishRequestJson)
+            assertEquals(pending.enrollment, loaded.enrollment)
+            assertEquals(recoveryCode, loaded.recoveryCode)
+            assertArrayEquals(recoveredKey, loaded.recoveredDatasetKey)
+            loaded.recoveredDatasetKey.fill(0)
+
+            val raw = context.getSharedPreferences(preferences, Context.MODE_PRIVATE)
+            assertEquals(false, raw.all.values.any { it.toString().contains(recoveryCode) })
+            assertEquals(false, raw.all.values.any { it.toString().contains(datasetId) })
+
+            PendingAccountRecoveryStore(context, alias, preferences).clearAfterAcknowledgement()
+            assertEquals(null, PendingAccountRecoveryStore(context, alias, preferences).load())
+            assertEquals(false, androidKeyStore().containsAlias(alias))
+        } finally {
+            recoveredKey.fill(0)
+            context.getSharedPreferences(preferences, Context.MODE_PRIVATE).edit().clear().commit()
+            androidKeyStore().apply {
+                if (containsAlias(alias)) {
+                    deleteEntry(alias)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun recoveryPreflightLeavesNonPristineRepositoryAndKeyUntouched() {
+        val suffix = UUID.randomUUID().toString()
+        val database = File(context.noBackupFilesDir, "test-$suffix.sqlite")
+        val localAlias = "verelle-local-test-$suffix"
+        val localPreferences = "verelle-local-test-$suffix"
+        val enrollmentAlias = "verelle-enrollment-test-$suffix"
+        val enrollmentPreferences = "verelle-enrollment-test-$suffix"
+        val recoveryAlias = "verelle-recovery-test-$suffix"
+        val recoveryPreferences = "verelle-recovery-test-$suffix"
+        val keyManager = LocalDataKeyManager(context, localAlias, localPreferences)
+        val originalKey = keyManager.getOrCreateDataKey()
+        val pendingStore = PendingAccountRecoveryStore(
+            context,
+            recoveryAlias,
+            recoveryPreferences,
+        )
+
+        try {
+            LocalRepository.open(
+                database.absolutePath,
+                originalKey,
+                UUID.randomUUID().toString(),
+            ).use { repository ->
+                val originalDatasetId = repository.datasetId()
+                repository.recordCycleStart("2026-07-20", 1u)
+                assertThrows(IllegalArgumentException::class.java) {
+                    AccountEnrollmentClient(UUID.randomUUID().toString()).recover(
+                        repository = repository,
+                        localDataKeyManager = keyManager,
+                        enrollmentStore = SyncEnrollmentStore(
+                            context,
+                            enrollmentAlias,
+                            enrollmentPreferences,
+                        ),
+                        pendingRecoveryStore = pendingStore,
+                        email = "founder@example.com",
+                        recoveryCode = "r".repeat(43),
+                        newPassword = "correct horse battery staple",
+                    )
+                }
+                assertEquals(originalDatasetId, repository.datasetId())
+                assertEquals(1uL, repository.pendingOutboxCount())
+            }
+            assertArrayEquals(
+                originalKey,
+                LocalDataKeyManager(context, localAlias, localPreferences).getOrCreateDataKey(),
+            )
+            assertEquals(false, pendingStore.hasPending())
+        } finally {
+            originalKey.fill(0)
+            database.delete()
+            listOf(localPreferences, enrollmentPreferences, recoveryPreferences).forEach {
+                context.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit()
+            }
+            androidKeyStore().apply {
+                listOf(localAlias, enrollmentAlias, recoveryAlias).forEach { alias ->
+                    if (containsAlias(alias)) deleteEntry(alias)
+                }
+            }
         }
     }
 
