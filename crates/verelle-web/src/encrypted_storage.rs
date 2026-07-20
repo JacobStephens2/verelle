@@ -2,7 +2,10 @@ use js_sys::Promise;
 use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 use wasm_bindgen_futures::JsFuture;
 
-#[wasm_bindgen(module = "/src/encrypted_storage.js")]
+// Keep the module filename versioned. wasm-bindgen's generated `snippets/`
+// directory name is not a content hash, so reusing a filename can leave a CDN
+// serving old immutable bytes against a newly generated SRI digest.
+#[wasm_bindgen(module = "/src/encrypted_storage_v2.js")]
 extern "C" {
     #[wasm_bindgen(catch, js_name = loadEncryptedState)]
     fn load_encrypted_state() -> Result<Promise, JsValue>;
