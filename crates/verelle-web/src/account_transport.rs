@@ -174,8 +174,10 @@ async fn response_text(response: &Response) -> Result<String, String> {
 
 fn api_error(status: u16, body: &str) -> String {
     let code = serde_json::from_str::<verelle_api::ApiErrorBody>(body)
-        .map(|value| format!("{:?}", value.error).to_lowercase())
-        .unwrap_or_else(|_| "request_failed".to_owned());
+        .map_or_else(
+            |_| "request_failed".to_owned(),
+            |value| format!("{:?}", value.error).to_lowercase(),
+        );
     match (status, code.as_str()) {
         (401, _) => "The email, password, or device proof was not accepted".to_owned(),
         (409, "conflict") => "An account already exists for this email".to_owned(),

@@ -172,6 +172,7 @@ pub async fn save_vault(vault: &BrowserVault) -> Result<(), String> {
     encrypted_storage::save(&value).await
 }
 
+#[allow(clippy::too_many_lines)] // Keep the audited enrollment sequence linear and reviewable.
 pub async fn register(
     mut vault: BrowserVault,
     email: String,

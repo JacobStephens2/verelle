@@ -14,6 +14,14 @@ use wasm_bindgen_futures::spawn_local;
 
 const WEB_PREVIEW_DEVICE_ID: &str = "web-preview-device";
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AuthEntryMode {
+    #[default]
+    Create,
+    SignIn,
+    Recover,
+}
+
 pub fn mount() {
     mount_to_body(App);
 }
@@ -34,6 +42,7 @@ fn App() -> impl IntoView {
     let recovery_acknowledged = RwSignal::new(false);
     let recovery_code = RwSignal::new(String::new());
     let deletion_confirmation = RwSignal::new(String::new());
+    let auth_entry_mode = RwSignal::new(AuthEntryMode::default());
     let crypto_ready = browser_crypto_round_trip();
 
     spawn_local(async move {
@@ -358,6 +367,13 @@ fn App() -> impl IntoView {
                 </a>
                 <div class="topbar-actions">
                     <span class="local-pill"><span class="status-dot"></span>{move || account_status(&vault.get())}</span>
+                    <Show when=move || !vault.get().active_session()>
+                        <a
+                            class="quiet-button"
+                            href="#account"
+                            on:click=move |_| auth_entry_mode.set(AuthEntryMode::SignIn)
+                        >"Sign in"</a>
+                    </Show>
                     <Show when=move || vault.get().account.is_none() && !vault.get().local_observations.is_empty()>
                         <button class="quiet-button danger" type="button" on:click=clear_preview disabled=move || busy.get()>"Clear preview"</button>
                     </Show>
@@ -386,21 +402,27 @@ fn App() -> impl IntoView {
                     </div>
                 </section>
 
-                <AuthPanel
-                    vault=vault
-                    busy=busy
-                    email=email
-                    password=password
-                    password_confirmation=password_confirmation
-                    health_consent=health_consent
-                    recovery_acknowledged=recovery_acknowledged
-                    recovery_code=recovery_code
-                    notice=notice
-                    register=Callback::new(register)
-                    sign_in=Callback::new(sign_in)
-                    recover_account=Callback::new(recover_account)
-                    acknowledge_recovery=Callback::new(acknowledge_recovery)
-                />
+                <Show
+                    when=move || storage_ready.get()
+                    fallback=move || view! { <section class="account-panel"><p class="form-note">"Opening this browser’s encrypted account…"</p></section> }
+                >
+                    <AuthPanel
+                        vault=vault
+                        busy=busy
+                        email=email
+                        password=password
+                        password_confirmation=password_confirmation
+                        health_consent=health_consent
+                        recovery_acknowledged=recovery_acknowledged
+                        recovery_code=recovery_code
+                        auth_entry_mode=auth_entry_mode
+                        notice=notice
+                        register=Callback::new(register)
+                        sign_in=Callback::new(sign_in)
+                        recover_account=Callback::new(recover_account)
+                        acknowledge_recovery=Callback::new(acknowledge_recovery)
+                    />
+                </Show>
 
                 <div class=move || if can_record.get() { "safety-banner ready" } else { "safety-banner" } role="note">
                     <strong>{move || if can_record.get() { "Encrypted account mode." } else { "Recording locked." }}</strong>
@@ -492,6 +514,7 @@ fn AuthPanel(
     health_consent: RwSignal<bool>,
     recovery_acknowledged: RwSignal<bool>,
     recovery_code: RwSignal<String>,
+    auth_entry_mode: RwSignal<AuthEntryMode>,
     notice: RwSignal<Option<String>>,
     register: Callback<leptos::ev::MouseEvent>,
     sign_in: Callback<leptos::ev::MouseEvent>,
@@ -521,24 +544,75 @@ fn AuthPanel(
     };
 
     view! {
-        <section class="account-panel">
+        <section class="account-panel" id="account">
             <Show when=move || vault.get().account.is_none()>
-                <div><p class="eyebrow">"Private account"</p><h2>"Create your encrypted chart"</h2><p>"Your password is processed with OPAQUE and is never sent to Verelle. This browser creates a non-exportable device signing key."</p></div>
-                <div class="account-form">
-                    <label class="field"><span>"Email"</span><input type="email" autocomplete="email" prop:value=move || email.get() on:input=move |event| email.set(event_target_value(&event))/></label>
-                    <label class="field"><span>"Password (12+ characters)"</span><input type="password" autocomplete="new-password" prop:value=move || password.get() on:input=move |event| password.set(event_target_value(&event))/></label>
-                    <label class="field"><span>"Confirm password"</span><input type="password" autocomplete="new-password" prop:value=move || password_confirmation.get() on:input=move |event| password_confirmation.set(event_target_value(&event))/></label>
-                    <div class="consent-request">
-                        <strong>"Consent to collect consumer health data"</strong>
-                        <p>"Verelle will collect the cycle dates, monitor readings, and other reproductive-health observations you choose to enter; account and device identifiers; and service metadata. It uses them only to create your chart, encrypt and synchronize it, secure your account, operate backups, and honor deletion requests. Chart content is encrypted in this browser before it is sent to the DigitalOcean-hosted service; traffic may transit Cloudflare while DNS changes propagate, and encrypted backups are stored with Amazon Web Services. Verelle does not sell health data, use it for advertising, or disclose it to third parties for their own purposes. You can withdraw consent and delete your account in this app, or contact jacob@stephens.page."</p>
-                        <label class="consent"><input type="checkbox" prop:checked=move || health_consent.get() on:change=move |event| health_consent.set(event_target_checked(&event))/><span>"I affirmatively consent to that collection for those purposes, after reading the separate "<a href="/consumer-health-data-privacy.html" target="_blank" rel="noopener">"Consumer Health Data Privacy Policy"</a>"."</span></label>
-                    </div>
-                    <button class="primary-button" type="button" on:click=move |event| register.run(event) disabled=move || busy.get()><span>"Create encrypted account"</span><span>"→"</span></button>
-                    <hr/>
-                    <strong>"Recover on this browser"</strong>
-                    <p class="form-note">"Enter the offline recovery code and choose a new password. Recovery revokes every old session and enrolled device and issues a replacement recovery code."</p>
-                    <label class="field"><span>"Recovery code"</span><input type="password" autocomplete="off" prop:value=move || recovery_code.get() on:input=move |event| recovery_code.set(event_target_value(&event))/></label>
-                    <button class="quiet-button" type="button" on:click=move |event| recover_account.run(event) disabled=move || busy.get()>"Recover account and replace devices"</button>
+                <div class="auth-entry-shell">
+                    <nav class="auth-entry-tabs" aria-label="Account access">
+                        <button
+                            class=move || auth_entry_tab_class(auth_entry_mode.get() == AuthEntryMode::Create)
+                            type="button"
+                            aria-pressed=move || auth_entry_mode.get() == AuthEntryMode::Create
+                            on:click=move |_| auth_entry_mode.set(AuthEntryMode::Create)
+                        >"Create account"</button>
+                        <button
+                            class=move || auth_entry_tab_class(auth_entry_mode.get() == AuthEntryMode::SignIn)
+                            type="button"
+                            aria-pressed=move || auth_entry_mode.get() == AuthEntryMode::SignIn
+                            on:click=move |_| auth_entry_mode.set(AuthEntryMode::SignIn)
+                        >"Sign in"</button>
+                        <button
+                            class=move || auth_entry_tab_class(auth_entry_mode.get() == AuthEntryMode::Recover)
+                            type="button"
+                            aria-pressed=move || auth_entry_mode.get() == AuthEntryMode::Recover
+                            on:click=move |_| auth_entry_mode.set(AuthEntryMode::Recover)
+                        >"Recover account"</button>
+                    </nav>
+
+                    <Show when=move || auth_entry_mode.get() == AuthEntryMode::Create>
+                        <div class="auth-entry-content" id="create-account-panel">
+                            <div class="auth-entry-intro"><p class="eyebrow">"Private account"</p><h2>"Create your encrypted chart"</h2><p>"Your password is processed with OPAQUE and is never sent to Verelle. This browser creates a non-exportable device signing key."</p></div>
+                            <div class="account-form">
+                                <label class="field"><span>"Email"</span><input type="email" autocomplete="email" prop:value=move || email.get() on:input=move |event| email.set(event_target_value(&event))/></label>
+                                <label class="field"><span>"Password (12+ characters)"</span><input type="password" autocomplete="new-password" prop:value=move || password.get() on:input=move |event| password.set(event_target_value(&event))/></label>
+                                <label class="field"><span>"Confirm password"</span><input type="password" autocomplete="new-password" prop:value=move || password_confirmation.get() on:input=move |event| password_confirmation.set(event_target_value(&event))/></label>
+                                <div class="consent-request">
+                                    <strong>"Consent to collect consumer health data"</strong>
+                                    <p>"Verelle will collect the cycle dates, monitor readings, and other reproductive-health observations you choose to enter; account and device identifiers; and service metadata. It uses them only to create your chart, encrypt and synchronize it, secure your account, operate backups, and honor deletion requests. Chart content is encrypted in this browser before it is sent to the DigitalOcean-hosted service; traffic may transit Cloudflare while DNS changes propagate, and encrypted backups are stored with Amazon Web Services. Verelle does not sell health data, use it for advertising, or disclose it to third parties for their own purposes. You can withdraw consent and delete your account in this app, or contact jacob@stephens.page."</p>
+                                    <label class="consent"><input type="checkbox" prop:checked=move || health_consent.get() on:change=move |event| health_consent.set(event_target_checked(&event))/><span>"I affirmatively consent to that collection for those purposes, after reading the separate "<a href="/consumer-health-data-privacy.html" target="_blank" rel="noopener">"Consumer Health Data Privacy Policy"</a>"."</span></label>
+                                </div>
+                                <button class="primary-button" type="button" on:click=move |event| register.run(event) disabled=move || busy.get()><span>"Create encrypted account"</span><span>"→"</span></button>
+                            </div>
+                        </div>
+                    </Show>
+
+                    <Show when=move || auth_entry_mode.get() == AuthEntryMode::SignIn>
+                        <div class="auth-entry-content" id="sign-in-panel">
+                            <div class="auth-entry-intro"><p class="eyebrow">"Welcome back"</p><h2>"Sign in to Verelle"</h2><p>"Verelle requires both your password and this browser’s enrolled private device key. The device key never leaves the browser."</p></div>
+                            <div class="account-form auth-choice">
+                                <strong>"No enrollment was found in this browser"</strong>
+                                <p>"If you previously signed in here, make sure you are using the same browser profile and have not cleared its site data. A password alone cannot enroll a new browser."</p>
+                                <p>"To use an existing account on this browser, recover it with the offline recovery code. Recovery securely enrolls this browser, replaces the password, and revokes old devices and sessions."</p>
+                                <div class="auth-choice-actions">
+                                    <button class="primary-button" type="button" on:click=move |_| auth_entry_mode.set(AuthEntryMode::Recover)><span>"Use recovery code"</span><span>"→"</span></button>
+                                    <button class="quiet-button" type="button" on:click=move |_| auth_entry_mode.set(AuthEntryMode::Create)>"Create a new account"</button>
+                                </div>
+                            </div>
+                        </div>
+                    </Show>
+
+                    <Show when=move || auth_entry_mode.get() == AuthEntryMode::Recover>
+                        <div class="auth-entry-content" id="recover-account-panel">
+                            <div class="auth-entry-intro"><p class="eyebrow">"New or cleared browser"</p><h2>"Recover and enroll this browser"</h2><p>"Use the recovery code you stored offline. Recovery replaces your password, revokes every old session and device, and issues a new one-time recovery code."</p></div>
+                            <div class="account-form">
+                                <label class="field"><span>"Account email"</span><input type="email" autocomplete="email" prop:value=move || email.get() on:input=move |event| email.set(event_target_value(&event))/></label>
+                                <label class="field"><span>"Recovery code"</span><input type="password" autocomplete="off" prop:value=move || recovery_code.get() on:input=move |event| recovery_code.set(event_target_value(&event))/></label>
+                                <label class="field"><span>"New password (12+ characters)"</span><input type="password" autocomplete="new-password" prop:value=move || password.get() on:input=move |event| password.set(event_target_value(&event))/></label>
+                                <label class="field"><span>"Confirm new password"</span><input type="password" autocomplete="new-password" prop:value=move || password_confirmation.get() on:input=move |event| password_confirmation.set(event_target_value(&event))/></label>
+                                <button class="primary-button" type="button" on:click=move |event| recover_account.run(event) disabled=move || busy.get()><span>"Recover and enroll browser"</span><span>"→"</span></button>
+                                <p class="form-note">"This is the only supported way to move your account to a new browser today. Keep the replacement recovery code offline after recovery completes."</p>
+                            </div>
+                        </div>
+                    </Show>
                 </div>
             </Show>
 
@@ -727,6 +801,14 @@ fn account_status(vault: &BrowserVault) -> &'static str {
         "Sign-in required"
     } else {
         "Local preview"
+    }
+}
+
+fn auth_entry_tab_class(selected: bool) -> &'static str {
+    if selected {
+        "auth-entry-tab selected"
+    } else {
+        "auth-entry-tab"
     }
 }
 
