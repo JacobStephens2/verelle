@@ -10,6 +10,7 @@ use chrono::{NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -43,7 +44,11 @@ const LOCAL_KEY_EPOCH: u64 = 1;
 const LOCAL_DATASET_ID_SETTING: &str = "local_dataset_id";
 const LOCAL_KEY_FINGERPRINT_SETTING: &str = "local_key_fingerprint";
 const LOCAL_ACCOUNT_KEY_SETTING: &str = "local_account_key_wrap";
-const COUPLE_INVITE_VERSION: u8 = 1;
+const LOCAL_CURRENT_EPOCH_SETTING: &str = "local_current_key_epoch";
+const LOCAL_ROOT_EPOCH_SETTING: &str = "local_root_key_epoch";
+const LOCAL_DATASET_KEYRING_SETTING: &str = "local_dataset_keyring";
+const LOCAL_PENDING_ROTATION_SETTING: &str = "local_pending_epoch_rotation";
+const COUPLE_INVITE_VERSION: u8 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiChartEntry {
@@ -81,6 +86,25 @@ pub struct FfiSyncBatch {
     pub dataset_id: String,
     pub after_cursor: u64,
     pub operations: Vec<FfiTransportOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiDatasetUnlinkPreparation {
+    pub request_id: String,
+    pub dataset_id: String,
+    pub expected_epoch: u64,
+    pub new_epoch: u64,
+    pub wrapped_dataset_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PendingEpochRotation {
+    request_id: Uuid,
+    expected_epoch: u64,
+    new_epoch: u64,
+    wrapped_dataset_key: Vec<u8>,
+    local_key_wrap: Vec<u8>,
+    replacements: Vec<TransportOp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -164,6 +188,13 @@ pub struct FfiCoupleInviteAcceptance {
     pub key_epoch: u64,
     pub wrapped_dataset_key: Vec<u8>,
     pub recovered_dataset_key: Vec<u8>,
+    pub recovered_keyring: Vec<FfiEpochKeyMaterial>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiEpochKeyMaterial {
+    pub key_epoch: u64,
+    pub key_material: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,7 +204,13 @@ struct CoupleInviteCode {
     dataset_id: Uuid,
     key_epoch: u64,
     secret_base64url: String,
-    wrapped_dataset_key_base64url: String,
+    wrapped_keys: Vec<CoupleInviteWrappedKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CoupleInviteWrappedKey {
+    key_epoch: u64,
+    wrapped_key_base64url: String,
 }
 
 #[derive(Debug, Error, uniffi::Error)]
@@ -325,6 +362,8 @@ pub enum LocalRepositoryError {
     AccountKeyUnavailable,
     #[error("the couple invite is invalid or expired")]
     InvalidCoupleInvite,
+    #[error("the dataset key rotation is unavailable or inconsistent")]
+    InvalidKeyRotation,
 }
 
 #[derive(Debug, Error, uniffi::Error)]
@@ -350,7 +389,10 @@ pub struct LocalRepository {
 
 struct RepositoryInner {
     store: Store,
+    root_key: SecretKey,
     data_key: SecretKey,
+    historical_keys: BTreeMap<u64, SecretKey>,
+    current_epoch: u64,
     dataset_id: Uuid,
     device_id: String,
     clock: HybridClock,
@@ -398,6 +440,7 @@ impl From<CycleChart> for FfiChart {
 impl LocalRepository {
     #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+    #[allow(clippy::too_many_lines)] // Keyring restoration is intentionally one audited path.
     pub fn open(
         database_path: String,
         mut key_material: Vec<u8>,
@@ -449,7 +492,37 @@ impl LocalRepository {
                 .map_err(|_| LocalRepositoryError::Storage)?;
             dataset_id
         };
-        let data_key = SecretKey::from_bytes(key_bytes);
+        let root_key = SecretKey::from_bytes(key_bytes);
+        let root_epoch = store
+            .setting::<u64>(LOCAL_ROOT_EPOCH_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .unwrap_or(LOCAL_KEY_EPOCH);
+        let current_epoch = store
+            .setting::<u64>(LOCAL_CURRENT_EPOCH_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .unwrap_or(LOCAL_KEY_EPOCH);
+        let wrapped_keyring = store
+            .setting::<BTreeMap<u64, Vec<u8>>>(LOCAL_DATASET_KEYRING_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .unwrap_or_default();
+        let mut historical_keys = BTreeMap::new();
+        historical_keys.insert(root_epoch, root_key.clone());
+        for (epoch, bytes) in wrapped_keyring {
+            let envelope = EncryptedEnvelope::from_bytes(&bytes)
+                .map_err(|_| LocalRepositoryError::KeyMismatch)?;
+            let key = unwrap_secret_key(
+                &root_key,
+                epoch,
+                &local_dataset_key_context(dataset_id, epoch),
+                &envelope,
+            )
+            .map_err(|_| LocalRepositoryError::KeyMismatch)?;
+            historical_keys.insert(epoch, key);
+        }
+        let data_key = historical_keys
+            .get(&current_epoch)
+            .cloned()
+            .ok_or(LocalRepositoryError::KeyMismatch)?;
         let account_key = store
             .setting::<Vec<u8>>(LOCAL_ACCOUNT_KEY_SETTING)
             .map_err(|_| LocalRepositoryError::Storage)?
@@ -457,7 +530,7 @@ impl LocalRepository {
                 let envelope = EncryptedEnvelope::from_bytes(&bytes)
                     .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
                 unwrap_secret_key(
-                    &data_key,
+                    &root_key,
                     LOCAL_KEY_EPOCH,
                     b"local/account-key-wrap",
                     &envelope,
@@ -473,7 +546,10 @@ impl LocalRepository {
         Ok(Arc::new(Self {
             inner: Mutex::new(RepositoryInner {
                 store,
+                root_key,
                 data_key,
+                historical_keys,
+                current_epoch,
                 dataset_id,
                 device_id,
                 clock,
@@ -758,7 +834,7 @@ impl LocalRepository {
         let operation = PlainOperation::tombstone(record_key.clone(), inner.clock.tick(now_ms()?));
         let transport = encrypt_operation(
             &inner.data_key,
-            LOCAL_KEY_EPOCH,
+            inner.current_epoch,
             inner.dataset_id,
             &operation,
         )
@@ -905,7 +981,128 @@ impl LocalRepository {
             .set_settings_atomically(&settings)
             .map_err(|_| LocalRepositoryError::Storage)?;
         inner.dataset_id = dataset_id;
-        inner.data_key = new_data_key;
+        inner.root_key = new_data_key.clone();
+        inner.data_key = new_data_key.clone();
+        inner.historical_keys = BTreeMap::from([(LOCAL_KEY_EPOCH, new_data_key)]);
+        inner.current_epoch = LOCAL_KEY_EPOCH;
+        Ok(())
+    }
+
+    /// Adopts a shared dataset at any epoch, retaining every supplied old key
+    /// for historical ciphertext. The current key becomes the stable local
+    /// root protected by the platform keystore/keychain.
+    #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::too_many_lines)] // Keep key validation and atomic adoption together.
+    pub fn adopt_recovered_dataset_keyring(
+        &self,
+        mut current_key_material: Vec<u8>,
+        dataset_id: String,
+        current_epoch: u64,
+        mut keyring: Vec<FfiEpochKeyMaterial>,
+    ) -> Result<(), LocalRepositoryError> {
+        if current_key_material.len() != 32 || current_epoch == 0 {
+            current_key_material.fill(0);
+            return Err(LocalRepositoryError::InvalidKey);
+        }
+        let dataset_id = Uuid::parse_str(&dataset_id)
+            .ok()
+            .filter(|value| !value.is_nil() && value.to_string() == dataset_id)
+            .ok_or(LocalRepositoryError::InvalidDatasetIdentifier)?;
+        let mut root_bytes = [0_u8; 32];
+        root_bytes.copy_from_slice(&current_key_material);
+        let fingerprint = Sha256::digest(&current_key_material).to_vec();
+        current_key_material.fill(0);
+        let root_key = SecretKey::from_bytes(root_bytes);
+        let mut keys = BTreeMap::new();
+        for item in &mut keyring {
+            if item.key_epoch == 0 || item.key_material.len() != 32 {
+                item.key_material.fill(0);
+                return Err(LocalRepositoryError::InvalidKeyRotation);
+            }
+            let bytes: [u8; 32] = item
+                .key_material
+                .as_slice()
+                .try_into()
+                .map_err(|_| LocalRepositoryError::InvalidKeyRotation)?;
+            item.key_material.fill(0);
+            if keys
+                .insert(item.key_epoch, SecretKey::from_bytes(bytes))
+                .is_some()
+            {
+                return Err(LocalRepositoryError::InvalidKeyRotation);
+            }
+        }
+        if keys.get(&current_epoch).map(SecretKey::expose) != Some(root_key.expose()) {
+            return Err(LocalRepositoryError::InvalidKeyRotation);
+        }
+        let mut inner = self.lock()?;
+        if !inner
+            .store
+            .is_pristine()
+            .map_err(|_| LocalRepositoryError::Storage)?
+        {
+            return Err(LocalRepositoryError::RepositoryNotPristine);
+        }
+        let wrapped_keyring = keys
+            .iter()
+            .filter(|(epoch, _)| **epoch != current_epoch)
+            .map(|(epoch, key)| {
+                wrap_secret_key(
+                    &root_key,
+                    *epoch,
+                    &local_dataset_key_context(dataset_id, *epoch),
+                    key,
+                )
+                .map(|wrapped| (*epoch, wrapped.to_bytes()))
+                .map_err(|_| LocalRepositoryError::AccountKeyProtection)
+            })
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        let mut settings = vec![
+            (
+                LOCAL_DATASET_ID_SETTING,
+                serde_json::to_value(dataset_id).map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+            (
+                LOCAL_KEY_FINGERPRINT_SETTING,
+                serde_json::to_value(&fingerprint).map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+            (
+                LOCAL_ROOT_EPOCH_SETTING,
+                serde_json::to_value(current_epoch).map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+            (
+                LOCAL_CURRENT_EPOCH_SETTING,
+                serde_json::to_value(current_epoch).map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+            (
+                LOCAL_DATASET_KEYRING_SETTING,
+                serde_json::to_value(&wrapped_keyring)
+                    .map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+        ];
+        if let Some(account_key) = &inner.account_key {
+            let local_wrap = wrap_secret_key(
+                &root_key,
+                LOCAL_KEY_EPOCH,
+                b"local/account-key-wrap",
+                account_key,
+            )
+            .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+            settings.push((
+                LOCAL_ACCOUNT_KEY_SETTING,
+                serde_json::to_value(local_wrap.to_bytes())
+                    .map_err(|_| LocalRepositoryError::Storage)?,
+            ));
+        }
+        inner
+            .store
+            .set_settings_atomically(&settings)
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        inner.dataset_id = dataset_id;
+        inner.root_key = root_key.clone();
+        inner.data_key = root_key;
+        inner.historical_keys = keys;
+        inner.current_epoch = current_epoch;
         Ok(())
     }
 
@@ -969,7 +1166,10 @@ impl LocalRepository {
             ])
             .map_err(|_| LocalRepositoryError::Storage)?;
         inner.dataset_id = dataset_id;
-        inner.data_key = new_data_key;
+        inner.root_key = new_data_key.clone();
+        inner.data_key = new_data_key.clone();
+        inner.historical_keys = BTreeMap::from([(LOCAL_KEY_EPOCH, new_data_key)]);
+        inner.current_epoch = LOCAL_KEY_EPOCH;
         inner.account_key = Some(account_key);
         Ok(())
     }
@@ -1025,7 +1225,7 @@ impl LocalRepository {
         let mut inner = self.lock()?;
         let wrapped_dataset_key = wrap_secret_key(
             &account_data_key,
-            LOCAL_KEY_EPOCH,
+            inner.current_epoch,
             b"dataset/account-wrap",
             &inner.data_key,
         )
@@ -1033,7 +1233,7 @@ impl LocalRepository {
         let recovery_public_key = recovery_public_key(&account_data_key)
             .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
         let local_account_key_wrap = wrap_secret_key(
-            &inner.data_key,
+            &inner.root_key,
             LOCAL_KEY_EPOCH,
             b"local/account-key-wrap",
             &account_data_key,
@@ -1070,17 +1270,26 @@ impl LocalRepository {
         let invite_id = Uuid::new_v4();
         let secret = SecretKey::random();
         let context = invite_context(invite_id, inner.dataset_id);
-        let wrapped_dataset_key =
-            wrap_secret_key(&secret, LOCAL_KEY_EPOCH, &context, &inner.data_key)
-                .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let wrapped_keys = inner
+            .historical_keys
+            .iter()
+            .map(|(epoch, key)| {
+                wrap_secret_key(&secret, *epoch, &context, key)
+                    .map(|wrapped| CoupleInviteWrappedKey {
+                        key_epoch: *epoch,
+                        wrapped_key_base64url: URL_SAFE_NO_PAD.encode(wrapped.to_bytes()),
+                    })
+                    .map_err(|_| LocalRepositoryError::AccountKeyProtection)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let verifier = invite_verifier(invite_id, &secret);
         let code = CoupleInviteCode {
             version: COUPLE_INVITE_VERSION,
             invite_id,
             dataset_id: inner.dataset_id,
-            key_epoch: LOCAL_KEY_EPOCH,
+            key_epoch: inner.current_epoch,
             secret_base64url: URL_SAFE_NO_PAD.encode(secret.expose()),
-            wrapped_dataset_key_base64url: URL_SAFE_NO_PAD.encode(wrapped_dataset_key.to_bytes()),
+            wrapped_keys,
         };
         let serialized =
             serde_json::to_vec(&code).map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
@@ -1089,7 +1298,7 @@ impl LocalRepository {
             invite_id: invite_id.to_string(),
             verifier_base64url: URL_SAFE_NO_PAD.encode(verifier),
             dataset_id: inner.dataset_id.to_string(),
-            key_epoch: LOCAL_KEY_EPOCH,
+            key_epoch: inner.current_epoch,
         })
     }
 
@@ -1109,7 +1318,8 @@ impl LocalRepository {
         if code.version != COUPLE_INVITE_VERSION
             || code.invite_id.is_nil()
             || code.dataset_id.is_nil()
-            || code.key_epoch != LOCAL_KEY_EPOCH
+            || code.key_epoch == 0
+            || code.wrapped_keys.is_empty()
         {
             return Err(LocalRepositoryError::InvalidCoupleInvite);
         }
@@ -1120,18 +1330,32 @@ impl LocalRepository {
             .try_into()
             .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
         let secret = SecretKey::from_bytes(secret);
-        let wrapped_bytes = URL_SAFE_NO_PAD
-            .decode(code.wrapped_dataset_key_base64url)
-            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
-        let wrapped = EncryptedEnvelope::from_bytes(&wrapped_bytes)
-            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
-        let dataset_key = unwrap_secret_key(
-            &secret,
-            code.key_epoch,
-            &invite_context(code.invite_id, code.dataset_id),
-            &wrapped,
-        )
-        .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let recovered_keyring = code
+            .wrapped_keys
+            .iter()
+            .map(|item| {
+                let bytes = URL_SAFE_NO_PAD
+                    .decode(&item.wrapped_key_base64url)
+                    .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+                let wrapped = EncryptedEnvelope::from_bytes(&bytes)
+                    .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+                let key = unwrap_secret_key(
+                    &secret,
+                    item.key_epoch,
+                    &invite_context(code.invite_id, code.dataset_id),
+                    &wrapped,
+                )
+                .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+                Ok(FfiEpochKeyMaterial {
+                    key_epoch: item.key_epoch,
+                    key_material: key.expose().to_vec(),
+                })
+            })
+            .collect::<Result<Vec<_>, LocalRepositoryError>>()?;
+        let dataset_key = recovered_keyring
+            .iter()
+            .find(|item| item.key_epoch == code.key_epoch)
+            .ok_or(LocalRepositoryError::InvalidCoupleInvite)?;
         let inner = self.lock()?;
         if !inner
             .store
@@ -1148,7 +1372,13 @@ impl LocalRepository {
             account_key,
             code.key_epoch,
             b"dataset/account-wrap",
-            &dataset_key,
+            &SecretKey::from_bytes(
+                dataset_key
+                    .key_material
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?,
+            ),
         )
         .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
         Ok(FfiCoupleInviteAcceptance {
@@ -1157,7 +1387,8 @@ impl LocalRepository {
             dataset_id: code.dataset_id.to_string(),
             key_epoch: code.key_epoch,
             wrapped_dataset_key: account_wrap.to_bytes(),
-            recovered_dataset_key: dataset_key.expose().to_vec(),
+            recovered_dataset_key: dataset_key.key_material.clone(),
+            recovered_keyring,
         })
     }
 
@@ -1169,6 +1400,142 @@ impl LocalRepository {
             .map_err(|_| LocalRepositoryError::Storage)?
             .len();
         u64::try_from(count).map_err(|_| LocalRepositoryError::Storage)
+    }
+
+    /// Durably prepares an unlink before the membership-changing HTTP call.
+    /// Repeated calls return the same request and key material until committed.
+    pub fn prepare_dataset_unlink(
+        &self,
+    ) -> Result<FfiDatasetUnlinkPreparation, LocalRepositoryError> {
+        let inner = self.lock()?;
+        if let Some(pending) = inner
+            .store
+            .setting::<PendingEpochRotation>(LOCAL_PENDING_ROTATION_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+        {
+            return Ok(unlink_preparation(inner.dataset_id, &pending));
+        }
+        let account_key = inner
+            .account_key
+            .as_ref()
+            .ok_or(LocalRepositoryError::AccountKeyUnavailable)?;
+        let new_epoch = inner
+            .current_epoch
+            .checked_add(1)
+            .ok_or(LocalRepositoryError::InvalidKeyRotation)?;
+        let new_key = SecretKey::random();
+        let wrapped_dataset_key =
+            wrap_secret_key(account_key, new_epoch, b"dataset/account-wrap", &new_key)
+                .map_err(|_| LocalRepositoryError::AccountKeyProtection)?
+                .to_bytes();
+        let local_key_wrap = wrap_secret_key(
+            &inner.root_key,
+            new_epoch,
+            &local_dataset_key_context(inner.dataset_id, new_epoch),
+            &new_key,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?
+        .to_bytes();
+        let replacements = inner
+            .store
+            .queued_plain_operations()
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .into_iter()
+            .map(|operation| {
+                encrypt_operation(&new_key, new_epoch, inner.dataset_id, &operation)
+                    .map_err(|_| LocalRepositoryError::Encryption)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let pending = PendingEpochRotation {
+            request_id: Uuid::new_v4(),
+            expected_epoch: inner.current_epoch,
+            new_epoch,
+            wrapped_dataset_key,
+            local_key_wrap,
+            replacements,
+        };
+        inner
+            .store
+            .set_setting(LOCAL_PENDING_ROTATION_SETTING, &pending)
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        Ok(unlink_preparation(inner.dataset_id, &pending))
+    }
+
+    pub fn pending_dataset_unlink(
+        &self,
+    ) -> Result<Option<FfiDatasetUnlinkPreparation>, LocalRepositoryError> {
+        let inner = self.lock()?;
+        inner
+            .store
+            .setting::<PendingEpochRotation>(LOCAL_PENDING_ROTATION_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)
+            .map(|pending| pending.map(|value| unlink_preparation(inner.dataset_id, &value)))
+    }
+
+    /// Commits a successfully acknowledged server transition. The request and
+    /// returned epoch must exactly match the durable preparation.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn commit_dataset_unlink(
+        &self,
+        request_id: String,
+        server_epoch: u64,
+    ) -> Result<(), LocalRepositoryError> {
+        let request_id =
+            Uuid::parse_str(&request_id).map_err(|_| LocalRepositoryError::InvalidKeyRotation)?;
+        let mut inner = self.lock()?;
+        let pending = inner
+            .store
+            .setting::<PendingEpochRotation>(LOCAL_PENDING_ROTATION_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .ok_or(LocalRepositoryError::InvalidKeyRotation)?;
+        if pending.request_id != request_id
+            || pending.expected_epoch != inner.current_epoch
+            || pending.new_epoch != server_epoch
+        {
+            return Err(LocalRepositoryError::InvalidKeyRotation);
+        }
+        let local_envelope = EncryptedEnvelope::from_bytes(&pending.local_key_wrap)
+            .map_err(|_| LocalRepositoryError::InvalidKeyRotation)?;
+        let new_key = unwrap_secret_key(
+            &inner.root_key,
+            pending.new_epoch,
+            &local_dataset_key_context(inner.dataset_id, pending.new_epoch),
+            &local_envelope,
+        )
+        .map_err(|_| LocalRepositoryError::InvalidKeyRotation)?;
+        let mut keyring = inner
+            .store
+            .setting::<BTreeMap<u64, Vec<u8>>>(LOCAL_DATASET_KEYRING_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .unwrap_or_default();
+        keyring.insert(pending.new_epoch, pending.local_key_wrap.clone());
+        inner
+            .store
+            .commit_epoch_rotation(
+                &pending.replacements,
+                &[
+                    (
+                        LOCAL_CURRENT_EPOCH_SETTING,
+                        serde_json::to_value(pending.new_epoch)
+                            .map_err(|_| LocalRepositoryError::Storage)?,
+                    ),
+                    (
+                        LOCAL_DATASET_KEYRING_SETTING,
+                        serde_json::to_value(&keyring)
+                            .map_err(|_| LocalRepositoryError::Storage)?,
+                    ),
+                ],
+                &[LOCAL_PENDING_ROTATION_SETTING],
+            )
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        inner.current_epoch = pending.new_epoch;
+        inner.data_key = new_key.clone();
+        inner.historical_keys.insert(pending.new_epoch, new_key);
+        Ok(())
+    }
+
+    pub fn current_key_epoch(&self) -> Result<u64, LocalRepositoryError> {
+        Ok(self.lock()?.current_epoch)
     }
 
     pub fn sync_batch(&self, max_operations: u32) -> Result<FfiSyncBatch, LocalRepositoryError> {
@@ -1219,7 +1586,11 @@ impl LocalRepository {
             .into_iter()
             .map(|sequenced| {
                 let transport = TransportOp::try_from(sequenced.operation)?;
-                let operation = decrypt_operation(&inner.data_key, inner.dataset_id, &transport)
+                let key = inner
+                    .historical_keys
+                    .get(&transport.key_epoch)
+                    .ok_or(LocalRepositoryError::InvalidPullPage)?;
+                let operation = decrypt_operation(key, inner.dataset_id, &transport)
                     .map_err(|_| LocalRepositoryError::InvalidPullPage)?;
                 Ok(RemoteOperation {
                     server_seq: sequenced.server_sequence,
@@ -1532,9 +1903,13 @@ impl RepositoryInner {
             version,
         };
         let operation = PlainOperation::upsert(observation);
-        let transport =
-            encrypt_operation(&self.data_key, LOCAL_KEY_EPOCH, self.dataset_id, &operation)
-                .map_err(|_| LocalRepositoryError::Encryption)?;
+        let transport = encrypt_operation(
+            &self.data_key,
+            self.current_epoch,
+            self.dataset_id,
+            &operation,
+        )
+        .map_err(|_| LocalRepositoryError::Encryption)?;
         self.store
             .append_local(&operation, &transport)
             .map_err(|_| LocalRepositoryError::Storage)?;
@@ -1695,6 +2070,26 @@ fn invite_context(invite_id: Uuid, dataset_id: Uuid) -> Vec<u8> {
     context.extend_from_slice(invite_id.as_bytes());
     context.extend_from_slice(dataset_id.as_bytes());
     context
+}
+
+fn local_dataset_key_context(dataset_id: Uuid, epoch: u64) -> Vec<u8> {
+    let mut context = b"local/dataset-key-wrap/v1".to_vec();
+    context.extend_from_slice(dataset_id.as_bytes());
+    context.extend_from_slice(&epoch.to_be_bytes());
+    context
+}
+
+fn unlink_preparation(
+    dataset_id: Uuid,
+    pending: &PendingEpochRotation,
+) -> FfiDatasetUnlinkPreparation {
+    FfiDatasetUnlinkPreparation {
+        request_id: pending.request_id.to_string(),
+        dataset_id: dataset_id.to_string(),
+        expected_epoch: pending.expected_epoch,
+        new_epoch: pending.new_epoch,
+        wrapped_dataset_key: pending.wrapped_dataset_key.clone(),
+    }
 }
 
 fn invite_verifier(invite_id: Uuid, secret: &SecretKey) -> [u8; 32] {
@@ -1921,6 +2316,90 @@ mod tests {
         let caught_up = repository.sync_batch(100).unwrap();
         assert_eq!(caught_up.after_cursor, 1);
         assert!(caught_up.operations.is_empty());
+    }
+
+    #[test]
+    fn unlink_rotation_is_retryable_crash_safe_and_retains_historical_reads() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let path = file.path().to_string_lossy().into_owned();
+        let root = vec![61_u8; 32];
+        let setup = generate_server_setup();
+        let password = b"rotation correct horse battery staple";
+        let email = "rotation@example.com";
+        let dataset_id;
+        let old_transport;
+        let pending;
+        {
+            let repository =
+                LocalRepository::open(path.clone(), root.clone(), "remaining-device".to_owned())
+                    .unwrap();
+            let registration = opaque_registration_start(password.to_vec()).unwrap();
+            let response = server_registration_start(
+                &setup,
+                &account_credential_identifier(email).unwrap(),
+                &registration.request,
+            )
+            .unwrap();
+            repository
+                .finish_account_registration(
+                    registration.state,
+                    password.to_vec(),
+                    email.to_owned(),
+                    response,
+                )
+                .unwrap();
+            repository
+                .record_cycle_start("2026-07-20".to_owned(), 1)
+                .unwrap();
+            dataset_id = Uuid::parse_str(&repository.dataset_id().unwrap()).unwrap();
+            old_transport =
+                TransportOp::try_from(repository.sync_batch(100).unwrap().operations[0].clone())
+                    .unwrap();
+            pending = repository.prepare_dataset_unlink().unwrap();
+            assert_eq!(pending.expected_epoch, 1);
+            assert_eq!(pending.new_epoch, 2);
+            assert_eq!(repository.prepare_dataset_unlink().unwrap(), pending);
+        }
+
+        let repository =
+            LocalRepository::open(path.clone(), root.clone(), "remaining-device".to_owned())
+                .unwrap();
+        assert_eq!(
+            repository.pending_dataset_unlink().unwrap(),
+            Some(pending.clone())
+        );
+        repository
+            .commit_dataset_unlink(pending.request_id.clone(), 2)
+            .unwrap();
+        assert_eq!(repository.current_key_epoch().unwrap(), 2);
+        assert_eq!(
+            repository.sync_batch(100).unwrap().operations[0].key_epoch,
+            2
+        );
+        assert!(repository.pending_dataset_unlink().unwrap().is_none());
+        drop(repository);
+
+        let reopened = LocalRepository::open(path, root, "remaining-device".to_owned()).unwrap();
+        assert_eq!(reopened.current_key_epoch().unwrap(), 2);
+        reopened
+            .apply_pull_page(FfiPullPage {
+                after_cursor: 0,
+                next_cursor: 1,
+                operations: vec![FfiSequencedTransportOperation {
+                    server_sequence: 1,
+                    operation: FfiTransportOperation::from(old_transport),
+                }],
+                more: false,
+            })
+            .unwrap();
+        reopened
+            .record_note("2026-07-20".to_owned(), "new epoch".to_owned())
+            .unwrap();
+        assert_eq!(reopened.sync_batch(100).unwrap().operations[0].key_epoch, 2);
+        assert_eq!(
+            Uuid::parse_str(&reopened.dataset_id().unwrap()).unwrap(),
+            dataset_id
+        );
     }
 
     #[test]

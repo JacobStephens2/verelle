@@ -1,5 +1,5 @@
 use crate::{sync_state::BrowserSyncState, sync_transport};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use thiserror::Error;
 use uuid::Uuid;
 use verelle_crypto::SecretKey;
@@ -11,6 +11,7 @@ pub struct ReviewedSyncSession {
     pub bearer_token: String,
     pub dataset_key: SecretKey,
     pub key_epoch: u64,
+    pub historical_keys: BTreeMap<u64, SecretKey>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +66,7 @@ async fn pull_until_caught_up(
             .map_err(BrowserSyncRuntimeError::Transport)?;
         let more = page.more;
         pulled += page.operations.len();
-        state.apply_pull(&session.dataset_key, session.dataset_id, page)?;
+        state.apply_pull(&session.historical_keys, session.dataset_id, page)?;
         if !more {
             return Ok(pulled);
         }

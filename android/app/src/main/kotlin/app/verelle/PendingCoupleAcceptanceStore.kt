@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import app.verelle.ffi.FfiEpochKeyMaterial
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import java.util.UUID
@@ -19,6 +21,7 @@ data class PendingCoupleAcceptance(
     val targetDatasetId: String,
     val keyEpoch: ULong,
     val recoveredDatasetKey: ByteArray,
+    val recoveredKeyring: List<FfiEpochKeyMaterial>,
 )
 
 class PendingCoupleAcceptanceStore(
@@ -52,6 +55,11 @@ class PendingCoupleAcceptanceStore(
             .put("target_dataset_id", pending.targetDatasetId)
             .put("key_epoch", pending.keyEpoch.toString())
             .put("recovered_dataset_key", encode(pending.recoveredDatasetKey))
+            .put("recovered_keyring", JSONArray().also { array ->
+                pending.recoveredKeyring.forEach { item ->
+                    array.put(JSONObject().put("key_epoch", item.keyEpoch.toString()).put("key_material", encode(item.keyMaterial)))
+                }
+            })
             .put("enrollment", encodeEnrollment(pending.enrollment))
             .toString()
             .toByteArray(Charsets.UTF_8)
@@ -126,12 +134,22 @@ class PendingCoupleAcceptanceStore(
             targetDatasetId = value.getString("target_dataset_id"),
             keyEpoch = value.getString("key_epoch").toULong(),
             recoveredDatasetKey = decodeBytes(value.getString("recovered_dataset_key")),
+            recoveredKeyring = value.getJSONArray("recovered_keyring").let { array ->
+                (0 until array.length()).map { index ->
+                    array.getJSONObject(index).let { item ->
+                        FfiEpochKeyMaterial(item.getString("key_epoch").toULong(), decodeBytes(item.getString("key_material")))
+                    }
+                }
+            },
         ).also(::validate)
     }
 
     private fun validate(pending: PendingCoupleAcceptance) {
         require(pending.recoveredDatasetKey.size == 32) { "The invited dataset key is invalid" }
-        require(pending.keyEpoch == 1uL) { "The invited key epoch is unsupported" }
+        require(pending.keyEpoch > 0uL) { "The invited key epoch is unsupported" }
+        require(pending.recoveredKeyring.any {
+            it.keyEpoch == pending.keyEpoch && it.keyMaterial.contentEquals(pending.recoveredDatasetKey)
+        }) { "The invited current key is missing from the historical keyring" }
         require(pending.enrollment.bearerToken.isNotBlank()) { "Sign in before accepting an invite" }
         require(UUID.fromString(pending.targetDatasetId).toString() == pending.targetDatasetId) {
             "The invited dataset identifier is invalid"

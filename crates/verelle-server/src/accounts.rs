@@ -27,11 +27,12 @@ use uuid::Uuid;
 use verelle_api::{
     AccountDeletionResponse, ApiErrorBody, ApiErrorCode, CoupleInviteCreateRequest,
     CoupleInviteCreateResponse, CoupleInviteRedeemRequest, CoupleInviteRedeemResponse,
-    HEALTH_DATA_CONSENT_VERSION, LoginFinishRequest, LoginFinishResponse, LoginStartRequest,
-    LoginStartResponse, OpaqueMessage, RecoveryFinishRequest, RecoveryFinishResponse,
-    RecoveryStartRequest, RecoveryStartResponse, RegistrationFinishRequest,
-    RegistrationFinishResponse, RegistrationStartRequest, RegistrationStartResponse,
-    login_device_proof_message, recovery_account_proof_message, registration_device_proof_message,
+    DatasetUnlinkRequest, DatasetUnlinkResponse, HEALTH_DATA_CONSENT_VERSION, LoginFinishRequest,
+    LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage,
+    RecoveryFinishRequest, RecoveryFinishResponse, RecoveryStartRequest, RecoveryStartResponse,
+    RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
+    RegistrationStartResponse, login_device_proof_message, recovery_account_proof_message,
+    registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, server_login_finish, server_login_start,
@@ -830,6 +831,161 @@ impl AuthService {
         })
     }
 
+    /// Removes the other active member and advances the encryption epoch in a
+    /// single authorization transaction. The client prepares and durably
+    /// stores its fresh key before this call, making an exact retry safe after
+    /// response loss.
+    #[allow(clippy::too_many_lines)] // Keep the security-sensitive membership transaction linear.
+    pub async fn unlink_dataset(
+        &self,
+        bearer_token: &str,
+        request: DatasetUnlinkRequest,
+    ) -> Result<DatasetUnlinkResponse, AuthServiceError> {
+        if request.request_id.is_nil() || request.dataset_id.is_nil() || request.expected_epoch == 0
+        {
+            return Err(AuthServiceError::InvalidRequest);
+        }
+        let wrapped_key = decode_bounded(&request.wrapped_dataset_key, MAX_WRAPPED_KEY_BYTES)?;
+        let token_hash = decode_and_hash_token(bearer_token)?;
+        let mut transaction = self.database.pool().begin().await?;
+        let account_id = authenticated_account(&mut transaction, &token_hash).await?;
+
+        if let Some(existing) = query::<Postgres>(
+            "SELECT dataset_id, remaining_account_id, departed_account_id, new_epoch, barrier_sequence \
+             FROM dataset_unlinks WHERE request_id = $1",
+        )
+        .bind(request.request_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        {
+            if existing.get::<Uuid, _>("remaining_account_id") != account_id
+                || existing.get::<Uuid, _>("dataset_id") != request.dataset_id
+            {
+                return Err(AuthServiceError::Conflict);
+            }
+            transaction.commit().await?;
+            return Ok(DatasetUnlinkResponse {
+                request_id: request.request_id,
+                dataset_id: request.dataset_id,
+                departed_account_id: existing.get("departed_account_id"),
+                key_epoch: u64::try_from(existing.get::<i64, _>("new_epoch"))
+                    .map_err(|_| AuthServiceError::Conflict)?,
+                barrier_sequence: u64::try_from(existing.get::<i64, _>("barrier_sequence"))
+                    .map_err(|_| AuthServiceError::Conflict)?,
+            });
+        }
+
+        let dataset = query::<Postgres>(
+            "SELECT current_epoch, last_sequence, rotation_pending FROM sync_datasets \
+             WHERE dataset_id = $1 FOR UPDATE",
+        )
+        .bind(request.dataset_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AuthServiceError::Forbidden)?;
+        let current_epoch = dataset.get::<i64, _>("current_epoch");
+        if u64::try_from(current_epoch).ok() != Some(request.expected_epoch)
+            || dataset.get::<bool, _>("rotation_pending")
+        {
+            return Err(AuthServiceError::Conflict);
+        }
+        let members = query::<Postgres>(
+            "SELECT account_id FROM dataset_memberships \
+             WHERE dataset_id = $1 AND removed_at IS NULL ORDER BY joined_at FOR UPDATE",
+        )
+        .bind(request.dataset_id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        if members.len() != 2
+            || !members
+                .iter()
+                .any(|row| row.get::<Uuid, _>("account_id") == account_id)
+        {
+            return Err(AuthServiceError::Conflict);
+        }
+        let departed_account_id = members
+            .iter()
+            .map(|row| row.get::<Uuid, _>("account_id"))
+            .find(|candidate| *candidate != account_id)
+            .ok_or(AuthServiceError::Conflict)?;
+        let new_epoch = current_epoch
+            .checked_add(1)
+            .ok_or(AuthServiceError::Conflict)?;
+        let barrier_sequence = dataset.get::<i64, _>("last_sequence");
+
+        query::<Postgres>(
+            "UPDATE dataset_memberships SET removed_at = CURRENT_TIMESTAMP \
+             WHERE dataset_id = $1 AND account_id = $2 AND removed_at IS NULL",
+        )
+        .bind(request.dataset_id)
+        .bind(departed_account_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "DELETE FROM dataset_key_wraps WHERE dataset_id = $1 AND account_id = $2",
+        )
+        .bind(request.dataset_id)
+        .bind(departed_account_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE account_sessions SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE account_id = $1 AND revoked_at IS NULL",
+        )
+        .bind(departed_account_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE couple_invites SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE dataset_id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL",
+        )
+        .bind(request.dataset_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "INSERT INTO dataset_key_wraps (dataset_id, account_id, key_epoch, wrapped_key) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(request.dataset_id)
+        .bind(account_id)
+        .bind(new_epoch)
+        .bind(wrapped_key)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE sync_datasets SET current_epoch = $2, rotation_barrier_sequence = $3, \
+             rotation_pending = FALSE WHERE dataset_id = $1",
+        )
+        .bind(request.dataset_id)
+        .bind(new_epoch)
+        .bind(barrier_sequence)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "INSERT INTO dataset_unlinks (request_id, dataset_id, remaining_account_id, \
+             departed_account_id, old_epoch, new_epoch, barrier_sequence) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind(request.request_id)
+        .bind(request.dataset_id)
+        .bind(account_id)
+        .bind(departed_account_id)
+        .bind(current_epoch)
+        .bind(new_epoch)
+        .bind(barrier_sequence)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(DatasetUnlinkResponse {
+            request_id: request.request_id,
+            dataset_id: request.dataset_id,
+            departed_account_id,
+            key_epoch: u64::try_from(new_epoch).map_err(|_| AuthServiceError::Conflict)?,
+            barrier_sequence: u64::try_from(barrier_sequence)
+                .map_err(|_| AuthServiceError::Conflict)?,
+        })
+    }
+
     pub async fn delete_account(
         &self,
         bearer_token: &str,
@@ -1030,6 +1186,7 @@ pub fn account_router(auth_service: AuthService) -> Router {
             verelle_api::COUPLE_INVITE_REDEEM_PATH,
             post(redeem_couple_invite),
         )
+        .route(verelle_api::DATASET_UNLINK_PATH, post(unlink_dataset))
         .layer(DefaultBodyLimit::max(AUTH_BODY_LIMIT_BYTES))
         .with_state(auth_service)
 }
@@ -1109,6 +1266,15 @@ async fn redeem_couple_invite(
 ) -> Result<Json<CoupleInviteRedeemResponse>, AuthServiceError> {
     let token = bearer_token(&headers)?;
     Ok(Json(service.redeem_couple_invite(token, request).await?))
+}
+
+async fn unlink_dataset(
+    State(service): State<AuthService>,
+    headers: HeaderMap,
+    Json(request): Json<DatasetUnlinkRequest>,
+) -> Result<Json<DatasetUnlinkResponse>, AuthServiceError> {
+    let token = bearer_token(&headers)?;
+    Ok(Json(service.unlink_dataset(token, request).await?))
 }
 
 fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthServiceError> {

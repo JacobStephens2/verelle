@@ -73,6 +73,13 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             )),
             false,
         ),
+        Migration::new(
+            9,
+            Cow::Borrowed("dataset unlink and epoch audit"),
+            MigrationType::Simple,
+            Cow::Borrowed(include_str!("../migrations/0009_dataset_unlink.sql")),
+            false,
+        ),
     ]),
     ..Migrator::DEFAULT
 });

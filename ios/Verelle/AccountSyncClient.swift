@@ -484,9 +484,11 @@ final class AccountSyncClient: @unchecked Sendable {
         guard try string(response, "dataset_id") == material.datasetId else {
             throw MobileServiceError.invalidResponse
         }
-        try repository.adoptRecoveredDataset(
-            keyMaterial: material.recoveredDatasetKey,
-            datasetId: material.datasetId
+        try repository.adoptRecoveredDatasetKeyring(
+            currentKeyMaterial: material.recoveredDatasetKey,
+            datasetId: material.datasetId,
+            currentEpoch: material.keyEpoch,
+            keyring: material.recoveredKeyring
         )
         var updated = enrollment
         updated.datasetID = material.datasetId

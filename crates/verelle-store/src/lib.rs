@@ -388,6 +388,59 @@ impl Store {
         Ok(())
     }
 
+    /// Commits a prepared key epoch and its complete queued-envelope rewrite
+    /// as one crash-safe `SQLite` transaction.
+    pub fn commit_epoch_rotation(
+        &mut self,
+        replacements: &[TransportOp],
+        settings: &[(&str, serde_json::Value)],
+        remove_settings: &[&str],
+    ) -> Result<(), StoreError> {
+        replacements.iter().try_for_each(TransportOp::validate)?;
+        if replacements
+            .iter()
+            .map(|item| item.key_epoch)
+            .collect::<BTreeSet<_>>()
+            .len()
+            > 1
+        {
+            return Err(StoreError::MixedEpochOutbox);
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let queued_ids = {
+            let mut statement = transaction.prepare("SELECT op_id FROM outbox")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<Result<BTreeSet<_>, _>>()?
+        };
+        let replacement_ids = replacements
+            .iter()
+            .map(|item| item.op_id.to_string())
+            .collect::<BTreeSet<_>>();
+        if queued_ids != replacement_ids || replacement_ids.len() != replacements.len() {
+            return Err(StoreError::OutboxSetMismatch);
+        }
+        for item in replacements {
+            transaction.execute(
+                "UPDATE outbox SET key_epoch = ?1, envelope = ?2, attempt_count = 0 WHERE op_id = ?3",
+                params![to_sql_i64(item.key_epoch)?, &item.envelope, item.op_id.to_string()],
+            )?;
+        }
+        for (key, value) in settings {
+            transaction.execute(
+                "INSERT INTO settings(key, value_json) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                params![key, serde_json::to_string(value)?],
+            )?;
+        }
+        for key in remove_settings {
+            transaction.execute("DELETE FROM settings WHERE key = ?1", [key])?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn mark_push_attempt(&mut self, op_ids: &[Uuid]) -> Result<(), StoreError> {
         let transaction = self
             .connection

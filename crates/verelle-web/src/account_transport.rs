@@ -6,11 +6,11 @@ use web_sys::{Request, RequestInit, RequestMode, Response, window};
 use verelle_api::{
     AccountDeletionResponse, CheckoutSessionRequest, CheckoutSessionResponse,
     CoupleInviteCreateRequest, CoupleInviteCreateResponse, CoupleInviteRedeemRequest,
-    CoupleInviteRedeemResponse, EntitlementResponse, LoginFinishRequest, LoginFinishResponse,
-    LoginStartRequest, LoginStartResponse, RecoveryFinishRequest, RecoveryFinishResponse,
-    RecoveryStartRequest, RecoveryStartResponse, RedactOperationsRequest, RedactOperationsResponse,
-    RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
-    RegistrationStartResponse,
+    CoupleInviteRedeemResponse, DatasetUnlinkRequest, DatasetUnlinkResponse, EntitlementResponse,
+    LoginFinishRequest, LoginFinishResponse, LoginStartRequest, LoginStartResponse,
+    RecoveryFinishRequest, RecoveryFinishResponse, RecoveryStartRequest, RecoveryStartResponse,
+    RedactOperationsRequest, RedactOperationsResponse, RegistrationFinishRequest,
+    RegistrationFinishResponse, RegistrationStartRequest, RegistrationStartResponse,
 };
 
 const MAX_RESPONSE_CHARS: usize = 1_500_000;
@@ -121,6 +121,19 @@ pub async fn redeem_couple_invite(
     request_json(
         "POST",
         verelle_api::COUPLE_INVITE_REDEEM_PATH,
+        Some(bearer_token),
+        Some(request),
+    )
+    .await
+}
+
+pub async fn unlink_dataset(
+    bearer_token: &str,
+    request: &DatasetUnlinkRequest,
+) -> Result<DatasetUnlinkResponse, String> {
+    request_json(
+        "POST",
+        verelle_api::DATASET_UNLINK_PATH,
         Some(bearer_token),
         Some(request),
     )

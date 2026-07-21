@@ -53,6 +53,7 @@ class CoupleEnrollmentClient {
             targetDatasetId = material.datasetId,
             keyEpoch = material.keyEpoch,
             recoveredDatasetKey = material.recoveredDatasetKey,
+            recoveredKeyring = material.recoveredKeyring,
         )
         try {
             pendingStore.save(pending)
@@ -95,9 +96,11 @@ class CoupleEnrollmentClient {
             "The account service returned a different key epoch"
         }
         if (repository.datasetId() != pending.targetDatasetId) {
-            repository.adoptRecoveredDataset(
+            repository.adoptRecoveredDatasetKeyring(
                 pending.recoveredDatasetKey,
                 pending.targetDatasetId,
+                pending.keyEpoch,
+                pending.recoveredKeyring,
             )
         }
         keyManager.replaceDataKey(pending.recoveredDatasetKey)

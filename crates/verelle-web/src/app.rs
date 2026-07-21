@@ -467,6 +467,33 @@ fn App() -> impl IntoView {
         });
     };
 
+    let unlink_partner = move |_| {
+        if busy.get_untracked()
+            || !web_sys::window()
+                .and_then(|window| window.confirm_with_message("Unlink your partner now? Their existing downloaded history cannot be erased, but their server access will be revoked and future entries will use a new encryption key.").ok())
+                .unwrap_or(false)
+        {
+            return;
+        }
+        busy.set(true);
+        let mut current = vault.get_untracked();
+        spawn_local(async move {
+            match current.unlink_partner().await {
+                Ok(()) => {
+                    vault.set(current);
+                    notice.set(Some(
+                        "Partner unlinked; sessions revoked and chart key advanced".to_owned(),
+                    ));
+                }
+                Err(error) => {
+                    vault.set(current);
+                    notice.set(Some(error));
+                }
+            }
+            busy.set(false);
+        });
+    };
+
     let checkout_monthly = move |_| {
         begin_checkout(vault, busy, notice, verelle_api::BillingInterval::Monthly);
     };
@@ -681,6 +708,10 @@ fn App() -> impl IntoView {
                             <div>
                                 <label class="field"><span>"Invitation code"</span><textarea autocomplete="off" prop:value=move || couple_invite_code.get() on:input=move |event| couple_invite_code.set(event_target_value(&event))></textarea></label>
                                 <button class="quiet-button" type="button" on:click=accept_couple_invite disabled=move || busy.get() || couple_invite_code.get().trim().is_empty()>"Accept shared chart"</button>
+                            </div>
+                            <div>
+                                <p>"Unlinking immediately revokes the other account’s server sessions and advances the chart key. Copies already downloaded to another device cannot be erased remotely."</p>
+                                <button class="danger-button" type="button" on:click=unlink_partner disabled=move || busy.get()>"Unlink partner"</button>
                             </div>
                         </div>
                     </section>

@@ -19,12 +19,12 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use verelle_api::{
     AccountDeletionResponse, ApiErrorBody, CoupleInviteCreateRequest, CoupleInviteCreateResponse,
-    CoupleInviteRedeemRequest, CoupleInviteRedeemResponse, HEALTH_DATA_CONSENT_VERSION,
-    HealthDataConsent, LoginFinishRequest, LoginFinishResponse, LoginStartRequest,
-    LoginStartResponse, OpaqueMessage, PullResponse, PushRequest, PushResponse,
-    RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
-    RegistrationStartResponse, TransportOperation, dataset_operations_path,
-    login_device_proof_message, registration_device_proof_message,
+    CoupleInviteRedeemRequest, CoupleInviteRedeemResponse, DatasetUnlinkRequest,
+    DatasetUnlinkResponse, HEALTH_DATA_CONSENT_VERSION, HealthDataConsent, LoginFinishRequest,
+    LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage, PullResponse,
+    PushRequest, PushResponse, RegistrationFinishRequest, RegistrationFinishResponse,
+    RegistrationStartRequest, RegistrationStartResponse, TransportOperation,
+    dataset_operations_path, login_device_proof_message, registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, client_login_finish, client_login_start,
@@ -246,6 +246,56 @@ async fn couple_invite_redeems_once_and_discards_only_a_pristine_joiner_dataset(
             .get::<Vec<u8>, _>("verifier_hash");
     assert_eq!(stored_verifier, Sha256::digest(verifier).as_slice());
     assert_ne!(stored_verifier, verifier);
+
+    let unlink_request = DatasetUnlinkRequest {
+        request_id: Uuid::new_v4(),
+        dataset_id: owner_dataset,
+        expected_epoch: 1,
+        wrapped_dataset_key: OpaqueMessage::from_bytes(&[71_u8; 64]),
+    };
+    let (status, unlinked): (_, DatasetUnlinkResponse) = post_json(
+        &router,
+        verelle_api::DATASET_UNLINK_PATH,
+        Some(&owner_bearer),
+        &unlink_request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(unlinked.key_epoch, 2);
+    assert_eq!(unlinked.departed_account_id, partner_account);
+    let (status, retry): (_, DatasetUnlinkResponse) = post_json(
+        &router,
+        verelle_api::DATASET_UNLINK_PATH,
+        Some(&owner_bearer),
+        &unlink_request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(retry, unlinked);
+
+    let state = query::<Postgres>(
+        "SELECT current_epoch, rotation_barrier_sequence, \
+         (SELECT COUNT(*)::BIGINT FROM dataset_memberships membership \
+          WHERE membership.dataset_id = sync_datasets.dataset_id AND removed_at IS NULL) AS members \
+         FROM sync_datasets WHERE dataset_id = $1",
+    )
+    .bind(owner_dataset)
+    .fetch_one(database.pool())
+    .await
+    .unwrap();
+    assert_eq!(state.get::<i64, _>("current_epoch"), 2);
+    assert_eq!(state.get::<i64, _>("members"), 1);
+    assert_eq!(state.get::<i64, _>("rotation_barrier_sequence"), 0);
+    let partner_active_sessions = query::<Postgres>(
+        "SELECT COUNT(*)::BIGINT AS count FROM account_sessions \
+         WHERE account_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(partner_account)
+    .fetch_one(database.pool())
+    .await
+    .unwrap()
+    .get::<i64, _>("count");
+    assert_eq!(partner_active_sessions, 0);
 }
 
 async fn delete_json<R: DeserializeOwned>(

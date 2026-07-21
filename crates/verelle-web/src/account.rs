@@ -7,13 +7,14 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use js_sys::Date;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 use verelle_api::{
     BillingInterval, CheckoutSessionRequest, CoupleInviteCreateRequest, CoupleInviteRedeemRequest,
-    EntitlementResponse, HEALTH_DATA_CONSENT_VERSION, HealthDataConsent, LoginFinishRequest,
-    LoginStartRequest, OpaqueMessage, RecoveryFinishRequest, RecoveryStartRequest,
-    RegistrationFinishRequest, RegistrationStartRequest, login_device_proof_message,
-    recovery_account_proof_message, registration_device_proof_message,
+    DatasetUnlinkRequest, EntitlementResponse, HEALTH_DATA_CONSENT_VERSION, HealthDataConsent,
+    LoginFinishRequest, LoginStartRequest, OpaqueMessage, RecoveryFinishRequest,
+    RecoveryStartRequest, RegistrationFinishRequest, RegistrationStartRequest,
+    login_device_proof_message, recovery_account_proof_message, registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, client_login_finish, client_login_start,
@@ -31,7 +32,11 @@ use zeroize::{Zeroize, Zeroizing};
 
 const VAULT_VERSION: u8 = 1;
 const KEY_EPOCH: u64 = 1;
-const COUPLE_INVITE_VERSION: u8 = 1;
+const COUPLE_INVITE_VERSION: u8 = 2;
+
+fn initial_epoch() -> u64 {
+    KEY_EPOCH
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CoupleInviteCode {
@@ -40,7 +45,13 @@ struct CoupleInviteCode {
     dataset_id: Uuid,
     key_epoch: u64,
     secret_base64url: String,
-    wrapped_dataset_key_base64url: String,
+    wrapped_keys: Vec<CoupleInviteWrappedKey>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CoupleInviteWrappedKey {
+    key_epoch: u64,
+    wrapped_key_base64url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +60,15 @@ pub struct PendingCoupleAcceptance {
     target_dataset_id: Uuid,
     key_epoch: u64,
     dataset_key_base64url: String,
+    dataset_keyring: BTreeMap<u64, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingBrowserUnlink {
+    request: DatasetUnlinkRequest,
+    new_epoch: u64,
+    dataset_key_base64url: String,
+    replacement_outbox: Vec<verelle_sync::TransportOp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +80,10 @@ pub struct BrowserAccount {
     pub server_public_key: String,
     pub account_data_key: String,
     pub dataset_key: String,
+    #[serde(default = "initial_epoch")]
+    pub current_key_epoch: u64,
+    #[serde(default)]
+    pub dataset_keyring: BTreeMap<u64, String>,
     pub bearer_token: Option<String>,
     pub session_expires_at_unix_seconds: i64,
     pub recovery_code_pending_acknowledgement: Option<String>,
@@ -81,6 +105,8 @@ pub struct BrowserVault {
     #[serde(default)]
     pub pending_couple_acceptance: Option<PendingCoupleAcceptance>,
     #[serde(default)]
+    pub pending_unlink: Option<PendingBrowserUnlink>,
+    #[serde(default)]
     pub last_synced_at: Option<String>,
 }
 
@@ -93,6 +119,7 @@ impl Default for BrowserVault {
             sync: BrowserSyncState::default(),
             pending_redactions: Vec::new(),
             pending_couple_acceptance: None,
+            pending_unlink: None,
             last_synced_at: None,
         }
     }
@@ -128,7 +155,12 @@ impl BrowserVault {
         };
         let dataset_key = account.dataset_key()?;
         self.sync
-            .append_observation(&dataset_key, account.dataset_id, KEY_EPOCH, observation)
+            .append_observation(
+                &dataset_key,
+                account.dataset_id,
+                account.current_key_epoch,
+                observation,
+            )
             .map_err(|_| "The observation could not be encrypted".to_owned())?;
         Ok(())
     }
@@ -158,7 +190,7 @@ impl BrowserVault {
             .append_tombstone(
                 &dataset_key,
                 account.dataset_id,
-                KEY_EPOCH,
+                account.current_key_epoch,
                 record_key,
                 version,
             )
@@ -212,21 +244,36 @@ impl BrowserVault {
             .ok_or_else(|| "Sign in before inviting a partner".to_owned())?;
         let invite_id = Uuid::new_v4();
         let secret = SecretKey::random();
-        let wrapped_dataset_key = wrap_secret_key(
-            &secret,
-            KEY_EPOCH,
-            &invite_context(invite_id, account.dataset_id),
-            &account.dataset_key()?,
-        )
-        .map_err(|_| "The chart invitation could not be encrypted".to_owned())?;
+        let mut keys = account
+            .dataset_keyring
+            .iter()
+            .map(|(epoch, encoded)| decode_secret_key(encoded).map(|key| (*epoch, key)))
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        keys.insert(account.current_key_epoch, account.dataset_key()?);
+        let wrapped_keys = keys
+            .iter()
+            .map(|(epoch, key)| {
+                wrap_secret_key(
+                    &secret,
+                    *epoch,
+                    &invite_context(invite_id, account.dataset_id),
+                    key,
+                )
+                .map(|wrapped| CoupleInviteWrappedKey {
+                    key_epoch: *epoch,
+                    wrapped_key_base64url: URL_SAFE_NO_PAD.encode(wrapped.to_bytes()),
+                })
+                .map_err(|_| "The chart invitation could not be encrypted".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let verifier = invite_verifier(invite_id, &secret);
         let code = CoupleInviteCode {
             version: COUPLE_INVITE_VERSION,
             invite_id,
             dataset_id: account.dataset_id,
-            key_epoch: KEY_EPOCH,
+            key_epoch: account.current_key_epoch,
             secret_base64url: URL_SAFE_NO_PAD.encode(secret.expose()),
-            wrapped_dataset_key_base64url: URL_SAFE_NO_PAD.encode(wrapped_dataset_key.to_bytes()),
+            wrapped_keys,
         };
         let response = account_transport::create_couple_invite(
             token,
@@ -292,25 +339,36 @@ impl BrowserVault {
         if code.version != COUPLE_INVITE_VERSION
             || code.invite_id.is_nil()
             || code.dataset_id.is_nil()
-            || code.key_epoch != KEY_EPOCH
+            || code.key_epoch == 0
+            || code.wrapped_keys.is_empty()
         {
             return Err("The chart invitation is invalid or expired".to_owned());
         }
         let secret = decode_secret_key(&code.secret_base64url)
             .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
-        let wrapped = EncryptedEnvelope::from_bytes(
-            &URL_SAFE_NO_PAD
-                .decode(&code.wrapped_dataset_key_base64url)
-                .map_err(|_| "The chart invitation is invalid or expired".to_owned())?,
-        )
-        .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
-        let dataset_key = unwrap_secret_key(
-            &secret,
-            code.key_epoch,
-            &invite_context(code.invite_id, code.dataset_id),
-            &wrapped,
-        )
-        .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+        let keyring = code
+            .wrapped_keys
+            .iter()
+            .map(|item| {
+                let wrapped = EncryptedEnvelope::from_bytes(
+                    &URL_SAFE_NO_PAD
+                        .decode(&item.wrapped_key_base64url)
+                        .map_err(|_| "The chart invitation is invalid or expired".to_owned())?,
+                )
+                .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+                let key = unwrap_secret_key(
+                    &secret,
+                    item.key_epoch,
+                    &invite_context(code.invite_id, code.dataset_id),
+                    &wrapped,
+                )
+                .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+                Ok((item.key_epoch, URL_SAFE_NO_PAD.encode(key.expose())))
+            })
+            .collect::<Result<BTreeMap<_, _>, String>>()?;
+        let dataset_key = keyring
+            .get(&code.key_epoch)
+            .ok_or_else(|| "The chart invitation is missing its current key".to_owned())?;
         let account = self
             .account
             .as_ref()
@@ -323,7 +381,7 @@ impl BrowserVault {
             &account_data_key,
             code.key_epoch,
             b"dataset/account-wrap",
-            &dataset_key,
+            &decode_secret_key(dataset_key)?,
         )
         .map_err(|_| "The shared chart key could not be protected".to_owned())?;
         self.pending_couple_acceptance = Some(PendingCoupleAcceptance {
@@ -334,7 +392,8 @@ impl BrowserVault {
             },
             target_dataset_id: code.dataset_id,
             key_epoch: code.key_epoch,
-            dataset_key_base64url: URL_SAFE_NO_PAD.encode(dataset_key.expose()),
+            dataset_key_base64url: dataset_key.clone(),
+            dataset_keyring: keyring,
         });
         save_vault(self).await?;
         self.finish_pending_couple_acceptance().await
@@ -366,9 +425,119 @@ impl BrowserVault {
             .ok_or_else(|| "The account enrollment is unavailable".to_owned())?;
         account.dataset_id = pending.target_dataset_id;
         account.dataset_key = pending.dataset_key_base64url;
+        account.current_key_epoch = pending.key_epoch;
+        account.dataset_keyring = pending.dataset_keyring;
         self.sync = BrowserSyncState::default();
         self.pending_redactions.clear();
         self.pending_couple_acceptance = None;
+        save_vault(self).await
+    }
+
+    /// Unlinks the other active member with a durable client-prepared epoch.
+    /// A retry after response loss reuses the exact request and key.
+    pub async fn unlink_partner(&mut self) -> Result<(), String> {
+        if self.pending_unlink.is_none() {
+            let account = self
+                .account
+                .as_ref()
+                .ok_or_else(|| "Sign in before unlinking a partner".to_owned())?;
+            let token = account
+                .bearer_token
+                .as_deref()
+                .ok_or_else(|| "Sign in before unlinking a partner".to_owned())?;
+            if token.is_empty() {
+                return Err("Sign in before unlinking a partner".to_owned());
+            }
+            let new_epoch = account
+                .current_key_epoch
+                .checked_add(1)
+                .ok_or_else(|| "The chart key epoch is exhausted".to_owned())?;
+            let new_key = SecretKey::random();
+            let account_key = decode_secret_key(&account.account_data_key)?;
+            let wrapped =
+                wrap_secret_key(&account_key, new_epoch, b"dataset/account-wrap", &new_key)
+                    .map_err(|_| "The new chart key could not be protected".to_owned())?;
+            let operations = self
+                .sync
+                .operations
+                .iter()
+                .map(|item| (item.op_id, item))
+                .collect::<BTreeMap<_, _>>();
+            let replacement_outbox = self
+                .sync
+                .outbox
+                .iter()
+                .map(|queued| {
+                    let operation = operations
+                        .get(&queued.op_id)
+                        .ok_or_else(|| "The queued operation journal is incomplete".to_owned())?;
+                    verelle_sync::encrypt_operation(
+                        &new_key,
+                        new_epoch,
+                        account.dataset_id,
+                        operation,
+                    )
+                    .map_err(|_| "A queued operation could not be re-encrypted".to_owned())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.pending_unlink = Some(PendingBrowserUnlink {
+                request: DatasetUnlinkRequest {
+                    request_id: Uuid::new_v4(),
+                    dataset_id: account.dataset_id,
+                    expected_epoch: account.current_key_epoch,
+                    wrapped_dataset_key: OpaqueMessage::from_bytes(&wrapped.to_bytes()),
+                },
+                new_epoch,
+                dataset_key_base64url: URL_SAFE_NO_PAD.encode(new_key.expose()),
+                replacement_outbox,
+            });
+            save_vault(self).await?;
+        }
+        self.finish_pending_unlink().await
+    }
+
+    async fn finish_pending_unlink(&mut self) -> Result<(), String> {
+        let pending = self
+            .pending_unlink
+            .clone()
+            .ok_or_else(|| "No partner unlink is pending".to_owned())?;
+        let token = self
+            .account
+            .as_ref()
+            .and_then(|account| account.bearer_token.as_deref())
+            .ok_or_else(|| "Sign in to finish unlinking the partner".to_owned())?;
+        let response = account_transport::unlink_dataset(token, &pending.request).await?;
+        if response.request_id != pending.request.request_id
+            || response.dataset_id != pending.request.dataset_id
+            || response.key_epoch != pending.new_epoch
+        {
+            return Err("The account service returned a different key transition".to_owned());
+        }
+        let queued_ids = self
+            .sync
+            .outbox
+            .iter()
+            .map(|item| item.op_id)
+            .collect::<Vec<_>>();
+        let replacement_ids = pending
+            .replacement_outbox
+            .iter()
+            .map(|item| item.op_id)
+            .collect::<Vec<_>>();
+        if queued_ids != replacement_ids {
+            return Err("The queued operation journal changed during unlink".to_owned());
+        }
+        self.sync.outbox = pending.replacement_outbox;
+        let account = self
+            .account
+            .as_mut()
+            .ok_or_else(|| "The account enrollment is unavailable".to_owned())?;
+        account
+            .dataset_keyring
+            .insert(account.current_key_epoch, account.dataset_key.clone());
+        account.current_key_epoch = pending.new_epoch;
+        account.dataset_key = pending.dataset_key_base64url;
+        self.pending_unlink = None;
         save_vault(self).await
     }
 
@@ -396,6 +565,12 @@ impl BrowserAccount {
         if !self.active_session() {
             return Err("The account session has expired. Sign in again".to_owned());
         }
+        let mut historical_keys = self
+            .dataset_keyring
+            .iter()
+            .map(|(epoch, encoded)| decode_secret_key(encoded).map(|key| (*epoch, key)))
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+        historical_keys.insert(self.current_key_epoch, self.dataset_key()?);
         Ok(ReviewedSyncSession {
             dataset_id: self.dataset_id,
             bearer_token: self
@@ -403,7 +578,8 @@ impl BrowserAccount {
                 .clone()
                 .ok_or_else(|| "The account session is unavailable".to_owned())?,
             dataset_key: self.dataset_key()?,
-            key_epoch: KEY_EPOCH,
+            key_epoch: self.current_key_epoch,
+            historical_keys,
         })
     }
 }
@@ -418,6 +594,9 @@ pub async fn load_vault() -> Result<BrowserVault, String> {
         }
         if vault.pending_couple_acceptance.is_some() && vault.active_session() {
             let _ = vault.finish_pending_couple_acceptance().await;
+        }
+        if vault.pending_unlink.is_some() && vault.active_session() {
+            let _ = vault.finish_pending_unlink().await;
         }
         return Ok(vault);
     }
@@ -542,6 +721,8 @@ pub async fn register(
         server_public_key: URL_SAFE_NO_PAD.encode(&finished.server_public_key),
         account_data_key: URL_SAFE_NO_PAD.encode(account_data_key.expose()),
         dataset_key: URL_SAFE_NO_PAD.encode(dataset_key.expose()),
+        current_key_epoch: KEY_EPOCH,
+        dataset_keyring: BTreeMap::new(),
         bearer_token: None,
         session_expires_at_unix_seconds: 0,
         recovery_code_pending_acknowledgement: Some(recovery_code.as_str().to_owned()),
@@ -773,6 +954,8 @@ pub async fn recover(
         server_public_key: URL_SAFE_NO_PAD.encode(&finished.server_public_key),
         account_data_key: URL_SAFE_NO_PAD.encode(account_data_key.expose()),
         dataset_key: URL_SAFE_NO_PAD.encode(dataset_key.expose()),
+        current_key_epoch: KEY_EPOCH,
+        dataset_keyring: BTreeMap::new(),
         bearer_token: None,
         session_expires_at_unix_seconds: 0,
         recovery_code_pending_acknowledgement: Some(new_recovery_code.as_str().to_owned()),

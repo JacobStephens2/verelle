@@ -22,6 +22,7 @@ pub const CURRENT_SESSION_PATH: &str = "/api/v1/sessions/current";
 pub const CURRENT_ACCOUNT_PATH: &str = "/api/v1/accounts/current";
 pub const COUPLE_INVITES_PATH: &str = "/api/v1/couple-invites";
 pub const COUPLE_INVITE_REDEEM_PATH: &str = "/api/v1/couple-invites/redeem";
+pub const DATASET_UNLINK_PATH: &str = "/api/v1/datasets/unlink";
 pub const BILLING_CHECKOUT_PATH: &str = "/api/v1/billing/checkout";
 pub const BILLING_ENTITLEMENT_PATH: &str = "/api/v1/billing/entitlement";
 pub const STRIPE_WEBHOOK_PATH: &str = "/api/v1/billing/stripe-webhook";
@@ -210,6 +211,26 @@ pub struct CoupleInviteRedeemResponse {
     pub invite_id: Uuid,
     pub dataset_id: Uuid,
     pub key_epoch: u64,
+}
+
+/// Client-prepared unlink. The service sees only the new key wrapped to the
+/// authenticated remaining account; the unwrapped dataset key never leaves a
+/// client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DatasetUnlinkRequest {
+    pub request_id: Uuid,
+    pub dataset_id: Uuid,
+    pub expected_epoch: u64,
+    pub wrapped_dataset_key: OpaqueMessage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DatasetUnlinkResponse {
+    pub request_id: Uuid,
+    pub dataset_id: Uuid,
+    pub departed_account_id: Uuid,
+    pub key_epoch: u64,
+    pub barrier_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

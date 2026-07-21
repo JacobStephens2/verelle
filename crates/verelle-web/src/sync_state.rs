@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 use uuid::Uuid;
 use verelle_api::{PullResponse, PushRequest, TransportOperation};
@@ -73,7 +73,7 @@ impl BrowserSyncState {
 
     pub fn apply_pull(
         &mut self,
-        dataset_key: &SecretKey,
+        dataset_keys: &BTreeMap<u64, SecretKey>,
         dataset_id: Uuid,
         page: PullResponse,
     ) -> Result<(), BrowserSyncError> {
@@ -101,7 +101,10 @@ impl BrowserSyncState {
             {
                 return Err(BrowserSyncError::InvalidServerSequence);
             }
-            let operation = decrypt_operation(dataset_key, dataset_id, &sequenced.operation)?;
+            let key = dataset_keys
+                .get(&sequenced.operation.key_epoch)
+                .ok_or(BrowserSyncError::MissingKeyEpoch)?;
+            let operation = decrypt_operation(key, dataset_id, &sequenced.operation)?;
             if existing
                 .get(&operation.op_id)
                 .is_some_and(|current| current != &operation)
@@ -142,6 +145,8 @@ pub enum BrowserSyncError {
     InvalidServerSequence,
     #[error("operation ID was reused with different plaintext")]
     OperationConflict,
+    #[error("the browser keyring does not contain a pulled operation epoch")]
+    MissingKeyEpoch,
 }
 
 #[cfg(test)]
@@ -169,6 +174,7 @@ mod tests {
     #[test]
     fn encrypted_push_pull_echo_converges_and_clears_outbox() {
         let key = SecretKey::from_bytes([31_u8; 32]);
+        let keyring = BTreeMap::from([(1, key.clone())]);
         let dataset_id = Uuid::new_v4();
         let mut first = BrowserSyncState::default();
         first
@@ -184,11 +190,13 @@ mod tests {
             }],
             more: false,
         });
-        first.apply_pull(&key, dataset_id, page.clone()).unwrap();
+        first
+            .apply_pull(&keyring, dataset_id, page.clone())
+            .unwrap();
         assert!(first.outbox.is_empty());
 
         let mut second = BrowserSyncState::default();
-        second.apply_pull(&key, dataset_id, page).unwrap();
+        second.apply_pull(&keyring, dataset_id, page).unwrap();
         assert_eq!(
             first.materialized_observations().unwrap(),
             second.materialized_observations().unwrap()
