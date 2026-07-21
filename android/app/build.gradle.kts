@@ -92,6 +92,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("net.java.dev.jna:jna:5.19.1@aar")
+    implementation("com.google.android.gms:play-services-wearable:20.0.1")
 
     testImplementation("junit:junit:4.13.2")
 

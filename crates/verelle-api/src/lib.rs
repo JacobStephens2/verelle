@@ -27,6 +27,7 @@ pub const MAX_AUTH_MESSAGE_BYTES: usize = 4096;
 pub const MAX_PUSH_OPERATIONS: usize = 100;
 pub const MAX_ENVELOPE_BYTES: usize = 256 * 1024;
 pub const MAX_PAGE_BYTES: usize = 1024 * 1024;
+pub const MAX_REDACTION_OPERATIONS: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -335,6 +336,28 @@ pub struct PushResponse {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RedactOperationsRequest {
+    pub operation_ids: Vec<Uuid>,
+}
+
+impl RedactOperationsRequest {
+    pub fn validate(&self) -> Result<(), WireError> {
+        if self.operation_ids.is_empty()
+            || self.operation_ids.len() > MAX_REDACTION_OPERATIONS
+            || self.operation_ids.iter().any(Uuid::is_nil)
+        {
+            return Err(WireError::InvalidOperationCount);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RedactOperationsResponse {
+    pub redacted: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SequencedOperation {
     pub server_sequence: u64,
     pub operation: TransportOperation,
@@ -389,6 +412,10 @@ impl PullResponse {
 
 pub fn dataset_operations_path(dataset_id: Uuid) -> String {
     format!("{API_PREFIX}/datasets/{dataset_id}/operations")
+}
+
+pub fn dataset_operation_redactions_path(dataset_id: Uuid) -> String {
+    format!("{API_PREFIX}/datasets/{dataset_id}/operation-redactions")
 }
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]

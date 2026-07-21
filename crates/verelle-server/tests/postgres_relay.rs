@@ -66,15 +66,8 @@ async fn postgres_relay_preserves_blind_idempotent_cursor_semantics() {
     assert!(!second_page.more);
     assert_eq!(second_page.operations[0].operation, second);
 
-    query::<Postgres>(
-        "UPDATE encrypted_operations SET envelope = NULL, redacted_at = CURRENT_TIMESTAMP \
-         WHERE dataset_id = $1 AND operation_id = $2",
-    )
-    .bind(dataset_id)
-    .bind(first.op_id)
-    .execute(database.pool())
-    .await
-    .unwrap();
+    assert_eq!(relay.redact(dataset_id, &[first.op_id]).await.unwrap(), 1);
+    assert_eq!(relay.redact(dataset_id, &[first.op_id]).await.unwrap(), 0);
     let page_after_redaction = relay.pull(dataset_id, 0, 2).await.unwrap();
     assert_eq!(page_after_redaction.next_cursor, 2);
     assert_eq!(page_after_redaction.operations.len(), 1);

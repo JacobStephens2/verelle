@@ -49,3 +49,23 @@ jobs:
           testDebugUnitTest
           assembleDebug
           assembleDebugAndroidTest
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build the Rust XCFramework
+        run: ./scripts/build-ios-ffi.sh
+      - name: Generate and build the iPhone project
+        working-directory: ios
+        run: |
+          xcodegen generate
+          xcodebuild -project Verelle.xcodeproj -scheme Verelle \
+            -destination 'generic/platform=iOS Simulator' \
+            build CODE_SIGNING_ALLOWED=NO

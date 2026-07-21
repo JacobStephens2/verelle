@@ -52,6 +52,8 @@ internal fun LocalDataTools(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scheduler = remember { ReminderScheduler(context.applicationContext) }
+    val enrollmentStore = remember { SyncEnrollmentStore(context.applicationContext) }
+    val redactionStore = remember { PendingRedactionStore(context.applicationContext) }
     var settings by remember { mutableStateOf(scheduler.settings()) }
     var reminderEnabled by remember(settings) { mutableStateOf(settings.enabled) }
     var reminderHour by remember(settings) { mutableStateOf(settings.hour.toString()) }
@@ -195,15 +197,24 @@ internal fun LocalDataTools(
                                 repository.deleteMarker(date, marker).also { ids ->
                                     if (!enrolledForSync && ids.isNotEmpty()) {
                                         repository.purgeMarkerHistory(date, marker, ids)
+                                    } else if (enrolledForSync && ids.isNotEmpty()) {
+                                        val enrollment = checkNotNull(enrollmentStore.load())
+                                        redactionStore.save(
+                                            PendingRedaction(
+                                                enrollment.datasetId,
+                                                date,
+                                                marker,
+                                                ids,
+                                            ),
+                                        )
+                                        RedactionClient().resume(repository, enrollment, redactionStore)
                                     }
                                 }
                             }
                             onChanged(
-                                if (enrolledForSync && superseded.isNotEmpty()) {
-                                    "Observation deleted; encrypted history is queued for server redaction"
-                                } else {
-                                    "Observation deleted"
-                                },
+                                if (enrolledForSync && superseded.isNotEmpty())
+                                    "Observation and superseded server ciphertext deleted"
+                                else "Observation deleted",
                             )
                         } catch (error: CancellationException) {
                             throw error

@@ -126,6 +126,7 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
     val localDataKeyManager = remember { LocalDataKeyManager(context) }
     val pendingRecoveryStore = remember { PendingAccountRecoveryStore(context) }
     val pendingCoupleStore = remember { PendingCoupleAcceptanceStore(context) }
+    val pendingRedactionStore = remember { PendingRedactionStore(context) }
     val pendingRecoveryCodeStore = remember { PendingRecoveryCodeStore(context) }
     val initialEnrollment = remember {
         runCatching { enrollmentStore.load()?.let(EnrollmentSummary::from) }
@@ -236,6 +237,23 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
             },
             onFailure = { error ->
                 message = error.message ?: "Couple invite acceptance could not be resumed"
+            },
+        )
+        runCatching {
+            withContext(Dispatchers.IO) {
+                enrollmentStore.load()?.let { saved ->
+                    RedactionClient().resume(repository, saved, pendingRedactionStore)
+                } ?: false
+            }
+        }.fold(
+            onSuccess = { finished ->
+                if (finished) {
+                    message = "Pending server ciphertext deletion completed"
+                    reload()
+                }
+            },
+            onFailure = { error ->
+                message = error.message ?: "Pending server deletion could not be completed"
             },
         )
     }
@@ -545,6 +563,11 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                                                 LocalDeviceIdentity(context).getOrCreate(),
                                             ).login(enrolled.forLogin(), submittedPassword)
                                             enrollmentStore.save(loggedIn)
+                                            RedactionClient().resume(
+                                                repository,
+                                                loggedIn,
+                                                pendingRedactionStore,
+                                            )
                                             loggedIn
                                         }
                                         enrollment = EnrollmentSummary.from(saved)

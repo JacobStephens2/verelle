@@ -197,6 +197,24 @@ impl PostgresRelay {
             more: next_cursor < last_sequence,
         })
     }
+
+    /// Removes ciphertext bodies while preserving their sequence slots so a
+    /// cursor replay can never resurrect superseded health data.
+    pub async fn redact(
+        &self,
+        dataset_id: Uuid,
+        operation_ids: &[Uuid],
+    ) -> Result<u64, RelayStoreError> {
+        let result = query::<Postgres>(
+            "UPDATE encrypted_operations SET envelope = NULL, redacted_at = CURRENT_TIMESTAMP \
+             WHERE dataset_id = $1 AND operation_id = ANY($2) AND envelope IS NOT NULL",
+        )
+        .bind(dataset_id)
+        .bind(operation_ids)
+        .execute(self.database.pool())
+        .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 fn validate_envelope(operation: &TransportOp) -> Result<(), RelayStoreError> {

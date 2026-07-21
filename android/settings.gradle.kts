@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Verelle"
 include(":app")
+include(":wear")

@@ -11,14 +11,14 @@ use axum::{
     extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode, header::AUTHORIZATION},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde::Deserialize;
 use std::future::Future;
 use uuid::Uuid;
 use verelle_api::{
     AcceptedOperation, ApiErrorBody, ApiErrorCode, PullResponse, PushRequest, PushResponse,
-    WireError,
+    RedactOperationsRequest, RedactOperationsResponse, WireError,
 };
 use verelle_sync::RelayError;
 
@@ -55,8 +55,30 @@ where
             "/api/v1/datasets/{dataset_id}/operations",
             get(pull::<A>).post(push::<A>),
         )
+        .route(
+            "/api/v1/datasets/{dataset_id}/operation-redactions",
+            post(redact::<A>),
+        )
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_BYTES))
         .with_state(SyncState { relay, authorizer })
+}
+
+async fn redact<A>(
+    State(state): State<SyncState<A>>,
+    Path(dataset_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(request): Json<RedactOperationsRequest>,
+) -> Result<Json<RedactOperationsResponse>, HttpApiError>
+where
+    A: DatasetAuthorizer,
+{
+    authorize(&state.authorizer, &headers, dataset_id).await?;
+    request.validate().map_err(HttpApiError::Wire)?;
+    let redacted = state
+        .relay
+        .redact(dataset_id, &request.operation_ids)
+        .await?;
+    Ok(Json(RedactOperationsResponse { redacted }))
 }
 
 async fn push<A>(

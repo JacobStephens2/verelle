@@ -5,6 +5,7 @@
 //! and explicit activation flag satisfy the ADR 0003 deployment gate.
 
 pub mod accounts;
+pub mod billing;
 pub mod config;
 pub mod database;
 pub mod http_api;
