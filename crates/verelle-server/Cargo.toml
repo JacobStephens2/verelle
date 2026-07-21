@@ -1,0 +1,37 @@
+[package]
+name = "verelle-server"
+description = "Gated Axum and PostgreSQL blind-relay foundation for Verelle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
+p256.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sqlx-core = { version = "=0.8.6", default-features = false, features = ["_rt-tokio", "_tls-rustls-ring-webpki", "migrate", "uuid"] }
+sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["migrate", "uuid"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+uuid.workspace = true
+verelle-api = { path = "../verelle-api" }
+verelle-auth = { path = "../verelle-auth" }
+verelle-crypto = { path = "../verelle-crypto" }
+verelle-sync = { path = "../verelle-sync" }
+zeroize.workspace = true
+
+[dev-dependencies]
+chrono.workspace = true
+http-body-util = "0.1"
+tower = { workspace = true, features = ["util"] }
+verelle-core = { path = "../verelle-core" }
+
+[lints]
+workspace = true

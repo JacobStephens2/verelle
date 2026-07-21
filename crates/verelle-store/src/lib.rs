@@ -497,6 +497,17 @@ impl Store {
         Ok(purged)
     }
 
+    /// Returns true only before this store has recorded or pulled any
+    /// operation. Identity/key replacement is safe only in this state.
+    pub fn is_pristine(&self) -> Result<bool, StoreError> {
+        let has_operations: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM operations LIMIT 1)",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(!has_operations && self.cursor()? == 0)
+    }
+
     pub fn export_json(&self) -> Result<String, StoreError> {
         Ok(observations_to_json(&self.materialized_observations()?)?)
     }
@@ -511,6 +522,23 @@ impl Store {
             "INSERT INTO settings(key, value_json) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
             params![key, value],
         )?;
+        Ok(())
+    }
+
+    /// Atomically replaces a small group of JSON settings. This is used when
+    /// client identity fields must never be observed from different epochs.
+    pub fn set_settings_atomically(
+        &mut self,
+        settings: &[(&str, serde_json::Value)],
+    ) -> Result<(), StoreError> {
+        let transaction = self.connection.transaction()?;
+        for (key, value) in settings {
+            transaction.execute(
+                "INSERT INTO settings(key, value_json) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+                params![key, serde_json::to_string(value)?],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
