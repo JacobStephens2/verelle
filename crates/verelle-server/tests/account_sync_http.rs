@@ -41,6 +41,8 @@ use verelle_server::{
 };
 use verelle_sync::{PlainOperation, decrypt_operation, encrypt_operation};
 
+static DATABASE_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn post_json<T: Serialize, R: DeserializeOwned>(
     router: &Router,
     uri: &str,
@@ -72,6 +74,7 @@ async fn post_json<T: Serialize, R: DeserializeOwned>(
 #[ignore = "requires an isolated TEST_DATABASE_URL"]
 #[allow(clippy::too_many_lines)] // One linear two-account protocol transcript is easiest to audit.
 async fn couple_invite_redeems_once_and_discards_only_a_pristine_joiner_dataset() {
+    let _database_guard = DATABASE_TEST_LOCK.lock().await;
     let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
     let database = Database::connect(&database_url, 4, Duration::from_secs(2))
         .await
@@ -324,6 +327,7 @@ async fn delete_json<R: DeserializeOwned>(
 #[ignore = "requires an isolated TEST_DATABASE_URL"]
 #[allow(clippy::too_many_lines)] // One linear protocol transcript is easier to audit intact.
 async fn opaque_account_and_authenticated_http_sync_round_trip() {
+    let _database_guard = DATABASE_TEST_LOCK.lock().await;
     let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
     let database = Database::connect(&database_url, 4, Duration::from_secs(2))
         .await
