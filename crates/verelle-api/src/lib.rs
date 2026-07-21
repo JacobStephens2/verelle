@@ -20,6 +20,8 @@ pub const RECOVERY_START_PATH: &str = "/api/v1/recoveries/opaque/start";
 pub const RECOVERY_FINISH_PATH: &str = "/api/v1/recoveries/opaque/finish";
 pub const CURRENT_SESSION_PATH: &str = "/api/v1/sessions/current";
 pub const CURRENT_ACCOUNT_PATH: &str = "/api/v1/accounts/current";
+pub const COUPLE_INVITES_PATH: &str = "/api/v1/couple-invites";
+pub const COUPLE_INVITE_REDEEM_PATH: &str = "/api/v1/couple-invites/redeem";
 pub const HEALTH_DATA_CONSENT_VERSION: &str = "2026-07-19";
 pub const MAX_AUTH_MESSAGE_BYTES: usize = 4096;
 pub const MAX_PUSH_OPERATIONS: usize = 100;
@@ -145,6 +147,39 @@ pub struct LoginFinishResponse {
 pub struct AccountDeletionResponse {
     pub deletion_id: Uuid,
     pub deleted_at_unix_seconds: i64,
+}
+
+/// Registers a short-lived, single-use invitation. The verifier is derived
+/// from the client-only invite secret; the secret and dataset key are never
+/// sent to the service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoupleInviteCreateRequest {
+    pub invite_id: Uuid,
+    pub dataset_id: Uuid,
+    pub verifier: OpaqueMessage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoupleInviteCreateResponse {
+    pub invite_id: Uuid,
+    pub dataset_id: Uuid,
+    pub expires_at_unix_seconds: i64,
+}
+
+/// Redeems an invitation using proof of possession of its client-only secret.
+/// `wrapped_dataset_key` is ciphertext addressed to the accepting account.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoupleInviteRedeemRequest {
+    pub invite_id: Uuid,
+    pub verifier: OpaqueMessage,
+    pub wrapped_dataset_key: OpaqueMessage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoupleInviteRedeemResponse {
+    pub invite_id: Uuid,
+    pub dataset_id: Uuid,
+    pub key_epoch: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

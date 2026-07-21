@@ -14,20 +14,26 @@ class LocalRepositoryProvider(private val context: Context) {
             // A process may die after SQLite adopts a recovered key but before
             // the active Keystore-wrapped key is promoted. The independently
             // encrypted recovery journal repairs exactly that window.
-            val pending = runCatching { PendingAccountRecoveryStore(context).load() }.getOrNull()
+            val pendingRecovery =
+                runCatching { PendingAccountRecoveryStore(context).load() }.getOrNull()
+            val pendingCouple =
+                runCatching { PendingCoupleAcceptanceStore(context).load() }.getOrNull()
+            val recoveredKey = pendingRecovery?.recoveredDatasetKey
+                ?: pendingCouple?.recoveredDatasetKey
                 ?: throw original
             try {
-                val recovered = runCatching { openWithKey(pending.recoveredDatasetKey) }
+                val recovered = runCatching { openWithKey(recoveredKey) }
                     .getOrElse { throw original }
                 try {
-                    keyManager.replaceDataKey(pending.recoveredDatasetKey)
+                    keyManager.replaceDataKey(recoveredKey)
                     recovered
                 } catch (error: Exception) {
                     recovered.close()
                     throw error
                 }
             } finally {
-                pending.recoveredDatasetKey.fill(0)
+                pendingRecovery?.recoveredDatasetKey?.fill(0)
+                pendingCouple?.recoveredDatasetKey?.fill(0)
             }
         } finally {
             dataKey.fill(0)

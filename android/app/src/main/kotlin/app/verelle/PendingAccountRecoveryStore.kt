@@ -24,6 +24,7 @@ data class PendingAccountRecovery(
     val enrollment: SyncEnrollment,
     val recoveryCode: String,
     val recoveredDatasetKey: ByteArray,
+    val localAccountKeyWrap: ByteArray,
 )
 
 class PendingAccountRecoveryStore(
@@ -66,6 +67,10 @@ class PendingAccountRecoveryStore(
             .put(
                 "recovered_dataset_key",
                 Base64.encodeToString(pending.recoveredDatasetKey, BASE64_FLAGS),
+            )
+            .put(
+                "local_account_key_wrap",
+                Base64.encodeToString(pending.localAccountKeyWrap, BASE64_FLAGS),
             )
             .toString()
             .toByteArray(Charsets.UTF_8)
@@ -147,12 +152,19 @@ class PendingAccountRecoveryStore(
                 value.getString("recovered_dataset_key"),
                 BASE64_FLAGS,
             ),
+            localAccountKeyWrap = Base64.decode(
+                value.getString("local_account_key_wrap"),
+                BASE64_FLAGS,
+            ),
         ).also(::validate)
     }
 
     private fun validate(pending: PendingAccountRecovery) {
         require(pending.recoveredDatasetKey.size == 32) {
             "The pending recovered dataset key is invalid"
+        }
+        require(pending.localAccountKeyWrap.isNotEmpty()) {
+            "The pending local account-key wrap is invalid"
         }
         require(pending.recoveryCode.length == 43 && pending.recoveryCode.isBase64Url()) {
             "The pending replacement recovery code is invalid"

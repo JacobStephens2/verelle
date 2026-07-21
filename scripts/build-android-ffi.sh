@@ -18,9 +18,17 @@ mkdir -p "$kotlin_out" "$jni_out"
 
 cd "$repo_root"
 cargo build --locked --release -p verelle-ffi
+case "$(uname -s)" in
+    Darwin) host_library="$repo_root/target/release/libverelle_ffi.dylib" ;;
+    Linux) host_library="$repo_root/target/release/libverelle_ffi.so" ;;
+    *)
+        echo "Unsupported UniFFI host platform: $(uname -s)" >&2
+        exit 1
+        ;;
+esac
 cargo run --locked -p uniffi-bindgen -- \
     generate \
-    --library "$repo_root/target/release/libverelle_ffi.so" \
+    --library "$host_library" \
     --language kotlin \
     --no-format \
     --out-dir "$kotlin_out"
@@ -28,8 +36,6 @@ cargo run --locked -p uniffi-bindgen -- \
 ANDROID_NDK_HOME="$ndk_root" cargo ndk \
     --platform 26 \
     --target arm64-v8a \
-    --target armeabi-v7a \
-    --target x86 \
     --target x86_64 \
     --output-dir "$jni_out" \
     build --locked --release -p verelle-ffi

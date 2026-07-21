@@ -48,6 +48,13 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             )),
             false,
         ),
+        Migration::new(
+            6,
+            Cow::Borrowed("couple invites"),
+            MigrationType::Simple,
+            Cow::Borrowed(include_str!("../migrations/0006_couple_invites.sql")),
+            false,
+        ),
     ]),
     ..Migrator::DEFAULT
 });

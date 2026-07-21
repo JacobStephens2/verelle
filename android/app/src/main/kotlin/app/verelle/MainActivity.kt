@@ -125,6 +125,7 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
     val enrollmentStore = remember { SyncEnrollmentStore(context) }
     val localDataKeyManager = remember { LocalDataKeyManager(context) }
     val pendingRecoveryStore = remember { PendingAccountRecoveryStore(context) }
+    val pendingCoupleStore = remember { PendingCoupleAcceptanceStore(context) }
     val pendingRecoveryCodeStore = remember { PendingRecoveryCodeStore(context) }
     val initialEnrollment = remember {
         runCatching { enrollmentStore.load()?.let(EnrollmentSummary::from) }
@@ -142,6 +143,8 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
     var healthDataConsent by remember { mutableStateOf(false) }
     var accountRequestInFlight by remember { mutableStateOf(false) }
     var recoveryCode by remember { mutableStateOf<String?>(null) }
+    var coupleInviteCode by remember { mutableStateOf<String?>(null) }
+    var enteredCoupleInviteCode by remember { mutableStateOf("") }
     var accountEntryMode by remember { mutableStateOf(AccountEntryMode.CREATE) }
     var charts by remember(repository) { mutableStateOf(emptyList<FfiChart>()) }
     var pendingCount by remember(repository) { mutableStateOf(0uL) }
@@ -214,6 +217,27 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                 },
             )
         }
+        runCatching {
+            withContext(Dispatchers.IO) {
+                CoupleEnrollmentClient().resume(
+                    repository,
+                    localDataKeyManager,
+                    enrollmentStore,
+                    pendingCoupleStore,
+                )
+            }
+        }.fold(
+            onSuccess = { resumed ->
+                if (resumed != null) {
+                    enrollment = EnrollmentSummary.from(resumed)
+                    message = "Couple invite acceptance resumed; the shared encrypted chart is ready"
+                    reload()
+                }
+            },
+            onFailure = { error ->
+                message = error.message ?: "Couple invite acceptance could not be resumed"
+            },
+        )
     }
 
     LazyColumn(
@@ -543,6 +567,95 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                         ) {
                             Text(if (accountRequestInFlight) "Signing in…" else "Sign in")
                         }
+                        if (enrolled.expiresAtUnixSeconds > Instant.now().epochSecond) {
+                            Text(
+                                "Share with one partner",
+                                style = MaterialTheme.typography.headlineSmall,
+                                modifier = Modifier.semantics { heading() },
+                            )
+                            Text(
+                                "The invite contains the encrypted chart key. Send it privately; it expires in seven days and can be used once.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Button(
+                                onClick = {
+                                    message = null
+                                    accountRequestInFlight = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val result = withContext(Dispatchers.IO) {
+                                                val saved = checkNotNull(enrollmentStore.load())
+                                                CoupleEnrollmentClient().create(repository, saved)
+                                            }
+                                            coupleInviteCode = result.inviteCode
+                                            message = "Invite created; it expires at ${result.expiresAtUnixSeconds}"
+                                        } catch (error: CancellationException) {
+                                            throw error
+                                        } catch (error: Exception) {
+                                            message = error.message ?: "The invite could not be created"
+                                        } finally {
+                                            accountRequestInFlight = false
+                                        }
+                                    }
+                                },
+                                enabled = !accountRequestInFlight,
+                                modifier = Modifier.fillMaxWidth().testTag("create-couple-invite"),
+                            ) {
+                                Text("Create private invite")
+                            }
+                            coupleInviteCode?.let { code ->
+                                SelectionContainer {
+                                    Text(code, modifier = Modifier.testTag("couple-invite-code"))
+                                }
+                                Text(
+                                    "Creating another invite revokes this one.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            OutlinedTextField(
+                                value = enteredCoupleInviteCode,
+                                onValueChange = { enteredCoupleInviteCode = it.trim() },
+                                label = { Text("Private invite code") },
+                                enabled = !accountRequestInFlight,
+                                modifier = Modifier.fillMaxWidth().testTag("accept-couple-invite-code"),
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    val submittedCode = enteredCoupleInviteCode
+                                    message = null
+                                    accountRequestInFlight = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val updated = withContext(Dispatchers.IO) {
+                                                val saved = checkNotNull(enrollmentStore.load())
+                                                CoupleEnrollmentClient().accept(
+                                                    repository,
+                                                    localDataKeyManager,
+                                                    enrollmentStore,
+                                                    pendingCoupleStore,
+                                                    saved,
+                                                    submittedCode,
+                                                )
+                                            }
+                                            enrollment = EnrollmentSummary.from(updated)
+                                            enteredCoupleInviteCode = ""
+                                            reload()
+                                            message = "Joined the shared encrypted chart"
+                                        } catch (error: CancellationException) {
+                                            throw error
+                                        } catch (error: Exception) {
+                                            message = error.message ?: "The invite could not be accepted"
+                                        } finally {
+                                            accountRequestInFlight = false
+                                        }
+                                    }
+                                },
+                                enabled = !accountRequestInFlight && enteredCoupleInviteCode.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth().testTag("accept-couple-invite"),
+                            ) {
+                                Text("Accept invite on this empty chart")
+                            }
+                        }
                     }
                 }
                 recoveryCode?.let { code ->
@@ -715,6 +828,25 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                 ) {
                     Text("Save reading")
                 }
+                SupplementalObservationForms(
+                    repository = repository,
+                    date = date,
+                    onSaved = { success ->
+                        reload()
+                        message = success
+                    },
+                    onError = { error -> message = error },
+                )
+                LocalDataTools(
+                    repository = repository,
+                    date = date,
+                    enrolledForSync = enrollment != null,
+                    onChanged = { success ->
+                        reload()
+                        message = success
+                    },
+                    onError = { status -> message = status },
+                )
                 message?.let {
                     Text(
                         it,

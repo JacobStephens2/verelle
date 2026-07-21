@@ -6,7 +6,8 @@
 //! or computed fertility status.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveTime};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     sync::{Arc, Mutex},
@@ -23,8 +24,9 @@ use verelle_auth::{
     client_registration_finish, client_registration_start, derive_account_wrapping_key,
 };
 use verelle_core::{
-    CycleChart, CycleStartBasis, GoldenFixture, MarkerType, MonitorReading, Observation,
-    ObservationValue, build_charts,
+    BleedingIntensity, CycleChart, CycleStartBasis, GoldenFixture, IntercourseKind, LhQualitative,
+    MarkerType, MonitorReading, MucusAppearance, MucusCategory, MucusSensation, Observation,
+    ObservationValue, PeakSource, RecordKey, TemperatureUnit, build_charts,
 };
 use verelle_crypto::{
     EncryptedEnvelope, RecoveryCode, SecretKey, recovery_public_key, sign_recovery_message,
@@ -40,6 +42,8 @@ uniffi::setup_scaffolding!();
 const LOCAL_KEY_EPOCH: u64 = 1;
 const LOCAL_DATASET_ID_SETTING: &str = "local_dataset_id";
 const LOCAL_KEY_FINGERPRINT_SETTING: &str = "local_key_fingerprint";
+const LOCAL_ACCOUNT_KEY_SETTING: &str = "local_account_key_wrap";
+const COUPLE_INVITE_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FfiChartEntry {
@@ -139,7 +143,37 @@ pub struct FfiAccountRecoveryMaterial {
     pub wrapped_dataset_key: Vec<u8>,
     pub recovery_signature: Vec<u8>,
     pub recovered_dataset_key: Vec<u8>,
+    pub local_account_key_wrap: Vec<u8>,
     pub recovery_code: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiCoupleInviteCreation {
+    pub invite_code: String,
+    pub invite_id: String,
+    pub verifier_base64url: String,
+    pub dataset_id: String,
+    pub key_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct FfiCoupleInviteAcceptance {
+    pub invite_id: String,
+    pub verifier_base64url: String,
+    pub dataset_id: String,
+    pub key_epoch: u64,
+    pub wrapped_dataset_key: Vec<u8>,
+    pub recovered_dataset_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CoupleInviteCode {
+    version: u8,
+    invite_id: Uuid,
+    dataset_id: Uuid,
+    key_epoch: u64,
+    secret_base64url: String,
+    wrapped_dataset_key_base64url: String,
 }
 
 #[derive(Debug, Error, uniffi::Error)]
@@ -157,6 +191,92 @@ pub enum FfiMonitorReading {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiCycleStartBasis {
+    Menses,
+    ArtificialPostpartum,
+    ReturnToCycles,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiBleedingIntensity {
+    Spotting,
+    Light,
+    Moderate,
+    Heavy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiIntercourseKind {
+    GenitalContact,
+    Intercourse,
+    Withdrawal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiLhQualitative {
+    Negative,
+    Positive,
+    Invalid,
+    Indeterminate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiMucusSensation {
+    Dry,
+    Damp,
+    Wet,
+    Slippery,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiMucusAppearance {
+    None,
+    Tacky,
+    Creamy,
+    Watery,
+    Clear,
+    Stretchy,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiMucusCategory {
+    Low,
+    High,
+    Peak,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiTemperatureUnit {
+    Celsius,
+    Fahrenheit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiPeakSource {
+    Monitor,
+    Mucus,
+    LhStrip,
+    Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FfiEditableMarker {
+    CycleStart,
+    MonitorSetup,
+    Monitor,
+    QuantitativeHormones,
+    LhStrip,
+    Bleeding,
+    Intercourse,
+    Mucus,
+    Temperature,
+    Note,
+    UserMarkedPeak,
+}
+
 #[derive(Debug, Error, uniffi::Error)]
 pub enum LocalRepositoryError {
     #[error("the local data key must contain exactly 32 bytes")]
@@ -165,6 +285,10 @@ pub enum LocalRepositoryError {
     KeyMismatch,
     #[error("the recording date must use YYYY-MM-DD")]
     InvalidDate,
+    #[error("a time must use HH:MM or HH:MM:SS")]
+    InvalidTime,
+    #[error("the observation contains invalid structural data")]
+    InvalidInput,
     #[error("the device identifier is invalid")]
     InvalidDevice,
     #[error("the database path is invalid")]
@@ -197,6 +321,10 @@ pub enum LocalRepositoryError {
     InvalidAuthenticationExchange,
     #[error("account key protection failed")]
     AccountKeyProtection,
+    #[error("the local account key is unavailable; sign in or recover first")]
+    AccountKeyUnavailable,
+    #[error("the couple invite is invalid or expired")]
+    InvalidCoupleInvite,
 }
 
 #[derive(Debug, Error, uniffi::Error)]
@@ -226,6 +354,7 @@ struct RepositoryInner {
     dataset_id: Uuid,
     device_id: String,
     clock: HybridClock,
+    account_key: Option<SecretKey>,
 }
 
 impl From<CycleChart> for FfiChart {
@@ -320,6 +449,22 @@ impl LocalRepository {
                 .map_err(|_| LocalRepositoryError::Storage)?;
             dataset_id
         };
+        let data_key = SecretKey::from_bytes(key_bytes);
+        let account_key = store
+            .setting::<Vec<u8>>(LOCAL_ACCOUNT_KEY_SETTING)
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .map(|bytes| {
+                let envelope = EncryptedEnvelope::from_bytes(&bytes)
+                    .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+                unwrap_secret_key(
+                    &data_key,
+                    LOCAL_KEY_EPOCH,
+                    b"local/account-key-wrap",
+                    &envelope,
+                )
+                .map_err(|_| LocalRepositoryError::AccountKeyProtection)
+            })
+            .transpose()?;
         let persisted_clock = store
             .max_version_seen()
             .map_err(|_| LocalRepositoryError::Storage)?;
@@ -328,10 +473,11 @@ impl LocalRepository {
         Ok(Arc::new(Self {
             inner: Mutex::new(RepositoryInner {
                 store,
-                data_key: SecretKey::from_bytes(key_bytes),
+                data_key,
                 dataset_id,
                 device_id,
                 clock,
+                account_key,
             }),
         }))
     }
@@ -345,14 +491,46 @@ impl LocalRepository {
         if method_cycle_number == 0 {
             return Err(LocalRepositoryError::InvalidMethodCycleNumber);
         }
+        self.record_cycle_start_details(
+            date,
+            FfiCycleStartBasis::Menses,
+            Some(method_cycle_number),
+            None,
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+    pub fn record_cycle_start_details(
+        &self,
+        date: String,
+        basis: FfiCycleStartBasis,
+        method_cycle_number: Option<u32>,
+        postpartum_cycle_number: Option<u32>,
+    ) -> Result<(), LocalRepositoryError> {
+        if method_cycle_number == Some(0) || postpartum_cycle_number == Some(0) {
+            return Err(LocalRepositoryError::InvalidMethodCycleNumber);
+        }
         let date = parse_date(&date)?;
-        self.lock()?.append(
+        let mut inner = self.lock()?;
+        let cycle_id = inner
+            .store
+            .materialized_observations()
+            .map_err(|_| LocalRepositoryError::Storage)?
+            .into_iter()
+            .find_map(|observation| match observation.value {
+                ObservationValue::CycleStart { cycle_id, .. } if observation.date == date => {
+                    Some(cycle_id)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(Uuid::new_v4);
+        inner.append(
             date,
             ObservationValue::CycleStart {
-                cycle_id: Uuid::new_v4(),
-                basis: CycleStartBasis::Menses,
-                method_cycle_number: Some(method_cycle_number),
-                postpartum_cycle_number: None,
+                cycle_id,
+                basis: basis.into(),
+                method_cycle_number,
+                postpartum_cycle_number,
             },
         )
     }
@@ -374,6 +552,269 @@ impl LocalRepository {
                 error_code: None,
             },
         )
+    }
+
+    #[allow(clippy::needless_pass_by_value)] // UniFFI owns lifted values.
+    pub fn record_monitor_setup(
+        &self,
+        date: String,
+        m_button_time: String,
+        monitor_model: Option<String>,
+        memory_reset: bool,
+    ) -> Result<(), LocalRepositoryError> {
+        let monitor_model = monitor_model
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::MonitorSetup {
+                m_button_time: parse_time(&m_button_time)?,
+                monitor_model,
+                memory_reset,
+                artificial_cycle_id: None,
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn record_monitor_details(
+        &self,
+        date: String,
+        reading: FfiMonitorReading,
+        test_requested: bool,
+        test_time: Option<String>,
+        first_morning_urine: Option<bool>,
+        error_code: Option<String>,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::Monitor {
+                reading: reading.into(),
+                test_requested,
+                test_time: parse_optional_time(test_time)?,
+                first_morning_urine,
+                error_code: error_code
+                    .map(|value| value.trim().to_owned())
+                    .filter(|value| !value.is_empty()),
+            },
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn record_quantitative_hormones(
+        &self,
+        date: String,
+        e3g: Option<f64>,
+        lh: Option<f64>,
+        e3g_unit: Option<String>,
+        lh_unit: Option<String>,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::QuantitativeHormones {
+                e3g,
+                lh,
+                e3g_unit: trimmed_optional(e3g_unit),
+                lh_unit: trimmed_optional(lh_unit),
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn record_lh_strip(
+        &self,
+        date: String,
+        brand: Option<String>,
+        qualitative: FfiLhQualitative,
+        tc_ratio: Option<f64>,
+        numeric_lh: Option<f64>,
+        valid: bool,
+        test_time: Option<String>,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::LhStrip {
+                brand: trimmed_optional(brand),
+                qualitative: qualitative.into(),
+                tc_ratio,
+                numeric_lh,
+                valid,
+                test_time: parse_optional_time(test_time)?,
+            },
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn record_bleeding(
+        &self,
+        date: String,
+        intensity: FfiBleedingIntensity,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::Bleeding {
+                intensity: intensity.into(),
+            },
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn record_intercourse(
+        &self,
+        date: String,
+        kind: FfiIntercourseKind,
+        protected: Option<bool>,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::Intercourse {
+                kind: kind.into(),
+                protected,
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn record_mucus(
+        &self,
+        date: String,
+        sensation: Option<FfiMucusSensation>,
+        appearance: Option<FfiMucusAppearance>,
+        category: Option<FfiMucusCategory>,
+        baseline_change: Option<bool>,
+        confidence: Option<u8>,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::Mucus {
+                sensation: sensation.map(Into::into),
+                appearance: appearance.map(Into::into),
+                category: category.map(Into::into),
+                baseline_change,
+                confidence,
+            },
+        )
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    pub fn record_temperature(
+        &self,
+        date: String,
+        value: f64,
+        unit: FfiTemperatureUnit,
+        time: Option<String>,
+        sleep_quality: Option<u8>,
+        disturbed: bool,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::Temperature {
+                value,
+                unit: unit.into(),
+                time: parse_optional_time(time)?,
+                sleep_quality,
+                disturbed,
+            },
+        )
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn record_note(&self, date: String, text: String) -> Result<(), LocalRepositoryError> {
+        let text = text.trim().to_owned();
+        if text.is_empty() {
+            return Err(LocalRepositoryError::InvalidInput);
+        }
+        self.lock()?
+            .append(parse_date(&date)?, ObservationValue::Note { text })
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn record_user_marked_peak(
+        &self,
+        date: String,
+        source: FfiPeakSource,
+    ) -> Result<(), LocalRepositoryError> {
+        self.lock()?.append(
+            parse_date(&date)?,
+            ObservationValue::UserMarkedPeak {
+                source: source.into(),
+            },
+        )
+    }
+
+    /// Appends the winning tombstone and returns the superseded operation IDs
+    /// that a synced client must ask the server to redact before local purge.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn delete_marker(
+        &self,
+        date: String,
+        marker: FfiEditableMarker,
+    ) -> Result<Vec<String>, LocalRepositoryError> {
+        let record_key = RecordKey {
+            date: parse_date(&date)?,
+            marker: marker.into(),
+        };
+        let mut inner = self.lock()?;
+        let operation = PlainOperation::tombstone(record_key.clone(), inner.clock.tick(now_ms()?));
+        let transport = encrypt_operation(
+            &inner.data_key,
+            LOCAL_KEY_EPOCH,
+            inner.dataset_id,
+            &operation,
+        )
+        .map_err(|_| LocalRepositoryError::Encryption)?;
+        inner
+            .store
+            .append_local(&operation, &transport)
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        inner
+            .store
+            .superseded_operation_ids(&record_key)
+            .map_err(|_| LocalRepositoryError::Storage)
+            .map(|ids| ids.into_iter().map(|id| id.to_string()).collect())
+    }
+
+    /// Purges superseded local plaintext after server redaction succeeds, or
+    /// immediately for a dataset that has never been enrolled for sync.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn purge_marker_history(
+        &self,
+        date: String,
+        marker: FfiEditableMarker,
+        operation_ids: Vec<String>,
+    ) -> Result<u64, LocalRepositoryError> {
+        let operation_ids = operation_ids
+            .into_iter()
+            .map(|value| {
+                Uuid::parse_str(&value).map_err(|_| LocalRepositoryError::InvalidOperationId)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut inner = self.lock()?;
+        let purged = inner
+            .store
+            .purge_redacted_operations(
+                &RecordKey {
+                    date: parse_date(&date)?,
+                    marker: marker.into(),
+                },
+                &operation_ids,
+            )
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        u64::try_from(purged).map_err(|_| LocalRepositoryError::Storage)
+    }
+
+    pub fn export_json(&self) -> Result<String, LocalRepositoryError> {
+        self.lock()?
+            .store
+            .export_json()
+            .map_err(|_| LocalRepositoryError::Storage)
+    }
+
+    pub fn export_csv(&self) -> Result<String, LocalRepositoryError> {
+        self.lock()?
+            .store
+            .export_csv()
+            .map_err(|_| LocalRepositoryError::Storage)
     }
 
     pub fn charts(&self) -> Result<Vec<FfiChart>, LocalRepositoryError> {
@@ -434,6 +875,80 @@ impl LocalRepository {
         {
             return Err(LocalRepositoryError::RepositoryNotPristine);
         }
+        let new_data_key = SecretKey::from_bytes(key_bytes);
+        let mut settings = vec![
+            (
+                LOCAL_DATASET_ID_SETTING,
+                serde_json::to_value(dataset_id).map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+            (
+                LOCAL_KEY_FINGERPRINT_SETTING,
+                serde_json::to_value(&fingerprint).map_err(|_| LocalRepositoryError::Storage)?,
+            ),
+        ];
+        if let Some(account_key) = &inner.account_key {
+            let local_wrap = wrap_secret_key(
+                &new_data_key,
+                LOCAL_KEY_EPOCH,
+                b"local/account-key-wrap",
+                account_key,
+            )
+            .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+            settings.push((
+                LOCAL_ACCOUNT_KEY_SETTING,
+                serde_json::to_value(local_wrap.to_bytes())
+                    .map_err(|_| LocalRepositoryError::Storage)?,
+            ));
+        }
+        inner
+            .store
+            .set_settings_atomically(&settings)
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        inner.dataset_id = dataset_id;
+        inner.data_key = new_data_key;
+        Ok(())
+    }
+
+    /// Atomically adopts a recovered dataset and the locally encrypted account
+    /// key needed for couple invitations and future epoch rotation.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn adopt_recovered_account(
+        &self,
+        mut key_material: Vec<u8>,
+        dataset_id: String,
+        local_account_key_wrap: Vec<u8>,
+    ) -> Result<(), LocalRepositoryError> {
+        if key_material.len() != 32 {
+            key_material.fill(0);
+            return Err(LocalRepositoryError::InvalidKey);
+        }
+        let dataset_id = Uuid::parse_str(&dataset_id)
+            .ok()
+            .filter(|value| !value.is_nil() && value.to_string() == dataset_id)
+            .ok_or(LocalRepositoryError::InvalidDatasetIdentifier)?;
+        let mut key_bytes = [0_u8; 32];
+        key_bytes.copy_from_slice(&key_material);
+        let fingerprint = Sha256::digest(&key_material).to_vec();
+        key_material.fill(0);
+        let new_data_key = SecretKey::from_bytes(key_bytes);
+        let local_envelope = EncryptedEnvelope::from_bytes(&local_account_key_wrap)
+            .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let account_key = unwrap_secret_key(
+            &new_data_key,
+            LOCAL_KEY_EPOCH,
+            b"local/account-key-wrap",
+            &local_envelope,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+
+        let mut inner = self.lock()?;
+        if !inner
+            .store
+            .is_pristine()
+            .map_err(|_| LocalRepositoryError::Storage)?
+        {
+            return Err(LocalRepositoryError::RepositoryNotPristine);
+        }
         inner
             .store
             .set_settings_atomically(&[
@@ -446,10 +961,16 @@ impl LocalRepository {
                     serde_json::to_value(&fingerprint)
                         .map_err(|_| LocalRepositoryError::Storage)?,
                 ),
+                (
+                    LOCAL_ACCOUNT_KEY_SETTING,
+                    serde_json::to_value(&local_account_key_wrap)
+                        .map_err(|_| LocalRepositoryError::Storage)?,
+                ),
             ])
             .map_err(|_| LocalRepositoryError::Storage)?;
         inner.dataset_id = dataset_id;
-        inner.data_key = SecretKey::from_bytes(key_bytes);
+        inner.data_key = new_data_key;
+        inner.account_key = Some(account_key);
         Ok(())
     }
 
@@ -501,7 +1022,7 @@ impl LocalRepository {
             &account_data_key,
         )
         .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
-        let inner = self.lock()?;
+        let mut inner = self.lock()?;
         let wrapped_dataset_key = wrap_secret_key(
             &account_data_key,
             LOCAL_KEY_EPOCH,
@@ -511,6 +1032,21 @@ impl LocalRepository {
         .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
         let recovery_public_key = recovery_public_key(&account_data_key)
             .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let local_account_key_wrap = wrap_secret_key(
+            &inner.data_key,
+            LOCAL_KEY_EPOCH,
+            b"local/account-key-wrap",
+            &account_data_key,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        inner
+            .store
+            .set_setting(
+                LOCAL_ACCOUNT_KEY_SETTING,
+                &local_account_key_wrap.to_bytes(),
+            )
+            .map_err(|_| LocalRepositoryError::Storage)?;
+        inner.account_key = Some(account_data_key);
 
         Ok(FfiAccountRegistrationMaterial {
             registration_upload: finished.upload,
@@ -520,6 +1056,108 @@ impl LocalRepository {
             recovery_public_key,
             wrapped_dataset_key: wrapped_dataset_key.to_bytes(),
             recovery_code: recovery_code.as_str().to_owned(),
+        })
+    }
+
+    /// Creates an end-to-end encrypted, one-use couple invitation. The server
+    /// receives only the verifier; the secret capable of unwrapping the
+    /// dataset key exists solely inside the user-shared invite code.
+    pub fn create_couple_invite(&self) -> Result<FfiCoupleInviteCreation, LocalRepositoryError> {
+        let inner = self.lock()?;
+        if inner.account_key.is_none() {
+            return Err(LocalRepositoryError::AccountKeyUnavailable);
+        }
+        let invite_id = Uuid::new_v4();
+        let secret = SecretKey::random();
+        let context = invite_context(invite_id, inner.dataset_id);
+        let wrapped_dataset_key =
+            wrap_secret_key(&secret, LOCAL_KEY_EPOCH, &context, &inner.data_key)
+                .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        let verifier = invite_verifier(invite_id, &secret);
+        let code = CoupleInviteCode {
+            version: COUPLE_INVITE_VERSION,
+            invite_id,
+            dataset_id: inner.dataset_id,
+            key_epoch: LOCAL_KEY_EPOCH,
+            secret_base64url: URL_SAFE_NO_PAD.encode(secret.expose()),
+            wrapped_dataset_key_base64url: URL_SAFE_NO_PAD.encode(wrapped_dataset_key.to_bytes()),
+        };
+        let serialized =
+            serde_json::to_vec(&code).map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        Ok(FfiCoupleInviteCreation {
+            invite_code: URL_SAFE_NO_PAD.encode(serialized),
+            invite_id: invite_id.to_string(),
+            verifier_base64url: URL_SAFE_NO_PAD.encode(verifier),
+            dataset_id: inner.dataset_id.to_string(),
+            key_epoch: LOCAL_KEY_EPOCH,
+        })
+    }
+
+    /// Validates and unwraps a couple invite locally, then produces the
+    /// account-specific ciphertext the server stores after authenticated
+    /// redemption. Call `adopt_recovered_dataset` only after redemption wins.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn prepare_couple_invite_acceptance(
+        &self,
+        invite_code: String,
+    ) -> Result<FfiCoupleInviteAcceptance, LocalRepositoryError> {
+        let code_bytes = URL_SAFE_NO_PAD
+            .decode(invite_code)
+            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let code: CoupleInviteCode = serde_json::from_slice(&code_bytes)
+            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        if code.version != COUPLE_INVITE_VERSION
+            || code.invite_id.is_nil()
+            || code.dataset_id.is_nil()
+            || code.key_epoch != LOCAL_KEY_EPOCH
+        {
+            return Err(LocalRepositoryError::InvalidCoupleInvite);
+        }
+        let secret_bytes = URL_SAFE_NO_PAD
+            .decode(code.secret_base64url)
+            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let secret: [u8; 32] = secret_bytes
+            .try_into()
+            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let secret = SecretKey::from_bytes(secret);
+        let wrapped_bytes = URL_SAFE_NO_PAD
+            .decode(code.wrapped_dataset_key_base64url)
+            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let wrapped = EncryptedEnvelope::from_bytes(&wrapped_bytes)
+            .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let dataset_key = unwrap_secret_key(
+            &secret,
+            code.key_epoch,
+            &invite_context(code.invite_id, code.dataset_id),
+            &wrapped,
+        )
+        .map_err(|_| LocalRepositoryError::InvalidCoupleInvite)?;
+        let inner = self.lock()?;
+        if !inner
+            .store
+            .is_pristine()
+            .map_err(|_| LocalRepositoryError::Storage)?
+        {
+            return Err(LocalRepositoryError::RepositoryNotPristine);
+        }
+        let account_key = inner
+            .account_key
+            .as_ref()
+            .ok_or(LocalRepositoryError::AccountKeyUnavailable)?;
+        let account_wrap = wrap_secret_key(
+            account_key,
+            code.key_epoch,
+            b"dataset/account-wrap",
+            &dataset_key,
+        )
+        .map_err(|_| LocalRepositoryError::AccountKeyProtection)?;
+        Ok(FfiCoupleInviteAcceptance {
+            invite_id: code.invite_id.to_string(),
+            verifier_base64url: URL_SAFE_NO_PAD.encode(invite_verifier(code.invite_id, &secret)),
+            dataset_id: code.dataset_id.to_string(),
+            key_epoch: code.key_epoch,
+            wrapped_dataset_key: account_wrap.to_bytes(),
+            recovered_dataset_key: dataset_key.expose().to_vec(),
         })
     }
 
@@ -668,7 +1306,11 @@ pub fn opaque_login_finish(
 /// Rust; only the recovered dataset key needed by Android's local encrypted
 /// store is returned.
 #[uniffi::export]
-#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_arguments,
+    clippy::too_many_lines
+)]
 pub fn opaque_account_recovery_finish(
     mut state: Vec<u8>,
     mut password: Vec<u8>,
@@ -749,6 +1391,13 @@ pub fn opaque_account_recovery_finish(
         &dataset_key,
     )
     .map_err(|_| AccountAuthError::AccountKeyProtection)?;
+    let local_account_key_wrap = wrap_secret_key(
+        &dataset_key,
+        LOCAL_KEY_EPOCH,
+        b"local/account-key-wrap",
+        &account_data_key,
+    )
+    .map_err(|_| AccountAuthError::AccountKeyProtection)?;
 
     let flow_id = parse_enrollment_id(&flow_id)?;
     let device_id = parse_enrollment_id(&device_id)?;
@@ -783,6 +1432,7 @@ pub fn opaque_account_recovery_finish(
         wrapped_dataset_key: new_dataset_wrap.to_bytes(),
         recovery_signature,
         recovered_dataset_key: dataset_key.expose().to_vec(),
+        local_account_key_wrap: local_account_key_wrap.to_bytes(),
         recovery_code: new_recovery_code.as_str().to_owned(),
     })
 }
@@ -870,6 +1520,9 @@ impl RepositoryInner {
         date: NaiveDate,
         value: ObservationValue,
     ) -> Result<(), LocalRepositoryError> {
+        value
+            .validate()
+            .map_err(|_| LocalRepositoryError::InvalidInput)?;
         let version = self.clock.tick(now_ms()?);
         let observation = Observation {
             id: Uuid::new_v4(),
@@ -901,8 +1554,155 @@ impl From<FfiMonitorReading> for MonitorReading {
     }
 }
 
+impl From<FfiCycleStartBasis> for CycleStartBasis {
+    fn from(value: FfiCycleStartBasis) -> Self {
+        match value {
+            FfiCycleStartBasis::Menses => Self::Menses,
+            FfiCycleStartBasis::ArtificialPostpartum => Self::ArtificialPostpartum,
+            FfiCycleStartBasis::ReturnToCycles => Self::ReturnToCycles,
+        }
+    }
+}
+
+impl From<FfiBleedingIntensity> for BleedingIntensity {
+    fn from(value: FfiBleedingIntensity) -> Self {
+        match value {
+            FfiBleedingIntensity::Spotting => Self::Spotting,
+            FfiBleedingIntensity::Light => Self::Light,
+            FfiBleedingIntensity::Moderate => Self::Moderate,
+            FfiBleedingIntensity::Heavy => Self::Heavy,
+        }
+    }
+}
+
+impl From<FfiIntercourseKind> for IntercourseKind {
+    fn from(value: FfiIntercourseKind) -> Self {
+        match value {
+            FfiIntercourseKind::GenitalContact => Self::GenitalContact,
+            FfiIntercourseKind::Intercourse => Self::Intercourse,
+            FfiIntercourseKind::Withdrawal => Self::Withdrawal,
+        }
+    }
+}
+
+impl From<FfiLhQualitative> for LhQualitative {
+    fn from(value: FfiLhQualitative) -> Self {
+        match value {
+            FfiLhQualitative::Negative => Self::Negative,
+            FfiLhQualitative::Positive => Self::Positive,
+            FfiLhQualitative::Invalid => Self::Invalid,
+            FfiLhQualitative::Indeterminate => Self::Indeterminate,
+        }
+    }
+}
+
+impl From<FfiMucusSensation> for MucusSensation {
+    fn from(value: FfiMucusSensation) -> Self {
+        match value {
+            FfiMucusSensation::Dry => Self::Dry,
+            FfiMucusSensation::Damp => Self::Damp,
+            FfiMucusSensation::Wet => Self::Wet,
+            FfiMucusSensation::Slippery => Self::Slippery,
+            FfiMucusSensation::Other => Self::Other,
+        }
+    }
+}
+
+impl From<FfiMucusAppearance> for MucusAppearance {
+    fn from(value: FfiMucusAppearance) -> Self {
+        match value {
+            FfiMucusAppearance::None => Self::None,
+            FfiMucusAppearance::Tacky => Self::Tacky,
+            FfiMucusAppearance::Creamy => Self::Creamy,
+            FfiMucusAppearance::Watery => Self::Watery,
+            FfiMucusAppearance::Clear => Self::Clear,
+            FfiMucusAppearance::Stretchy => Self::Stretchy,
+            FfiMucusAppearance::Other => Self::Other,
+        }
+    }
+}
+
+impl From<FfiMucusCategory> for MucusCategory {
+    fn from(value: FfiMucusCategory) -> Self {
+        match value {
+            FfiMucusCategory::Low => Self::Low,
+            FfiMucusCategory::High => Self::High,
+            FfiMucusCategory::Peak => Self::Peak,
+        }
+    }
+}
+
+impl From<FfiTemperatureUnit> for TemperatureUnit {
+    fn from(value: FfiTemperatureUnit) -> Self {
+        match value {
+            FfiTemperatureUnit::Celsius => Self::Celsius,
+            FfiTemperatureUnit::Fahrenheit => Self::Fahrenheit,
+        }
+    }
+}
+
+impl From<FfiPeakSource> for PeakSource {
+    fn from(value: FfiPeakSource) -> Self {
+        match value {
+            FfiPeakSource::Monitor => Self::Monitor,
+            FfiPeakSource::Mucus => Self::Mucus,
+            FfiPeakSource::LhStrip => Self::LhStrip,
+            FfiPeakSource::Other => Self::Other,
+        }
+    }
+}
+
+impl From<FfiEditableMarker> for MarkerType {
+    fn from(value: FfiEditableMarker) -> Self {
+        match value {
+            FfiEditableMarker::CycleStart => Self::CycleStart,
+            FfiEditableMarker::MonitorSetup => Self::MonitorSetup,
+            FfiEditableMarker::Monitor => Self::Monitor,
+            FfiEditableMarker::QuantitativeHormones => Self::QuantitativeHormones,
+            FfiEditableMarker::LhStrip => Self::LhStrip,
+            FfiEditableMarker::Bleeding => Self::Bleeding,
+            FfiEditableMarker::Intercourse => Self::Intercourse,
+            FfiEditableMarker::Mucus => Self::Mucus,
+            FfiEditableMarker::Temperature => Self::Temperature,
+            FfiEditableMarker::Note => Self::Note,
+            FfiEditableMarker::UserMarkedPeak => Self::UserMarkedPeak,
+        }
+    }
+}
+
 fn parse_date(date: &str) -> Result<NaiveDate, LocalRepositoryError> {
     NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| LocalRepositoryError::InvalidDate)
+}
+
+fn parse_time(time: &str) -> Result<NaiveTime, LocalRepositoryError> {
+    NaiveTime::parse_from_str(time, "%H:%M")
+        .or_else(|_| NaiveTime::parse_from_str(time, "%H:%M:%S"))
+        .map_err(|_| LocalRepositoryError::InvalidTime)
+}
+
+fn parse_optional_time(time: Option<String>) -> Result<Option<NaiveTime>, LocalRepositoryError> {
+    time.map(|value| parse_time(value.trim())).transpose()
+}
+
+fn trimmed_optional(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn invite_context(invite_id: Uuid, dataset_id: Uuid) -> Vec<u8> {
+    let mut context = b"couple/invite-wrap/v1".to_vec();
+    context.extend_from_slice(invite_id.as_bytes());
+    context.extend_from_slice(dataset_id.as_bytes());
+    context
+}
+
+fn invite_verifier(invite_id: Uuid, secret: &SecretKey) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"verelle/couple-invite-verifier/v1");
+    digest.update(invite_id.as_bytes());
+    digest.update(secret.expose());
+    digest.finalize().into()
 }
 
 fn now_ms() -> Result<i64, LocalRepositoryError> {
@@ -924,11 +1724,91 @@ const fn cycle_basis_label(basis: CycleStartBasis) -> &'static str {
 fn observation_label(value: &ObservationValue) -> String {
     match value {
         ObservationValue::CycleStart { .. } => "Cycle start".to_owned(),
+        ObservationValue::MonitorSetup { m_button_time, .. } => {
+            let window = value
+                .testing_window()
+                .expect("monitor setup has a testing window");
+            format!(
+                "Monitor setup: m-button {m_button_time}; recorded window {} to {}",
+                time_with_offset(window.start, window.start_day_offset),
+                time_with_offset(window.end, window.end_day_offset),
+            )
+        }
         ObservationValue::Monitor { reading, .. } => {
             format!("Monitor: {}", monitor_reading_label(*reading))
         }
-        ObservationValue::UserMarkedPeak { .. } => "P anchor".to_owned(),
-        _ => marker_label(value.marker_type()).to_owned(),
+        ObservationValue::QuantitativeHormones { e3g, lh, .. } => {
+            format_optional_pair("E3G", *e3g, "LH", *lh)
+        }
+        ObservationValue::LhStrip {
+            qualitative,
+            tc_ratio,
+            ..
+        } => match tc_ratio {
+            Some(ratio) => format!("LH strip: {qualitative:?}; T/C {ratio}"),
+            None => format!("LH strip: {qualitative:?}"),
+        },
+        ObservationValue::Bleeding { intensity } => format!("Bleeding: {intensity:?}"),
+        ObservationValue::Intercourse { kind, protected } => match protected {
+            Some(true) => format!("{kind:?}: protected"),
+            Some(false) => format!("{kind:?}: unprotected"),
+            None => format!("{kind:?}"),
+        },
+        ObservationValue::Mucus {
+            sensation,
+            appearance,
+            category,
+            ..
+        } => format!(
+            "Mucus: sensation {}; appearance {}; recorded category {}",
+            optional_debug(*sensation),
+            optional_debug(*appearance),
+            optional_debug(*category),
+        ),
+        ObservationValue::Temperature { value, unit, .. } => {
+            let suffix = match unit {
+                TemperatureUnit::Celsius => "°C",
+                TemperatureUnit::Fahrenheit => "°F",
+            };
+            format!("Temperature: {value}{suffix}")
+        }
+        ObservationValue::Note { text } => format!("Note: {text}"),
+        ObservationValue::UserMarkedPeak { source } => {
+            format!("User-marked P anchor: {source:?}")
+        }
+    }
+}
+
+fn optional_debug<T: std::fmt::Debug>(value: Option<T>) -> String {
+    value.map_or_else(|| "not recorded".to_owned(), |value| format!("{value:?}"))
+}
+
+fn format_optional_pair(
+    first_label: &str,
+    first: Option<f64>,
+    second_label: &str,
+    second: Option<f64>,
+) -> String {
+    let mut values = Vec::new();
+    if let Some(value) = first {
+        values.push(format!("{first_label} {value}"));
+    }
+    if let Some(value) = second {
+        values.push(format!("{second_label} {value}"));
+    }
+    if values.is_empty() {
+        "Quantitative hormones: no value recorded".to_owned()
+    } else {
+        values.join("; ")
+    }
+}
+
+fn time_with_offset(time: NaiveTime, day_offset: i64) -> String {
+    match day_offset {
+        -1 => format!("{time} previous day"),
+        0 => time.to_string(),
+        1 => format!("{time} next day"),
+        value => format!("{time} ({value:+} days)"),
     }
 }
 
@@ -939,22 +1819,6 @@ const fn monitor_reading_label(reading: MonitorReading) -> &'static str {
         MonitorReading::Peak => "Peak",
         MonitorReading::Missed => "Missed",
         MonitorReading::Error => "Error",
-    }
-}
-
-const fn marker_label(marker: MarkerType) -> &'static str {
-    match marker {
-        MarkerType::CycleStart => "Cycle start",
-        MarkerType::MonitorSetup => "Monitor setup",
-        MarkerType::Monitor => "Monitor",
-        MarkerType::QuantitativeHormones => "Quantitative hormones",
-        MarkerType::LhStrip => "LH strip",
-        MarkerType::Bleeding => "Bleeding",
-        MarkerType::Intercourse => "Intercourse",
-        MarkerType::Mucus => "Mucus",
-        MarkerType::Temperature => "Temperature",
-        MarkerType::Note => "Note",
-        MarkerType::UserMarkedPeak => "P anchor",
     }
 }
 
@@ -1114,6 +1978,211 @@ mod tests {
             LocalRepository::open(path, vec![24_u8; 32], "device-a".to_owned()),
             Err(LocalRepositoryError::KeyMismatch)
         ));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn native_boundary_records_exports_and_deletes_the_full_v1_vocabulary() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let repository = LocalRepository::open(
+            file.path().to_string_lossy().into_owned(),
+            vec![42_u8; 32],
+            "device-full-vocabulary".to_owned(),
+        )
+        .unwrap();
+        let date = "2026-07-20".to_owned();
+        repository
+            .record_cycle_start_details(
+                date.clone(),
+                FfiCycleStartBasis::ReturnToCycles,
+                Some(3),
+                Some(1),
+            )
+            .unwrap();
+        repository
+            .record_monitor_setup(
+                date.clone(),
+                "07:00".to_owned(),
+                Some("Clearblue".to_owned()),
+                false,
+            )
+            .unwrap();
+        repository
+            .record_monitor_details(
+                date.clone(),
+                FfiMonitorReading::High,
+                true,
+                Some("07:15".to_owned()),
+                Some(true),
+                None,
+            )
+            .unwrap();
+        repository
+            .record_quantitative_hormones(
+                date.clone(),
+                Some(120.4),
+                Some(18.2),
+                Some("ng/mL".to_owned()),
+                Some("mIU/mL".to_owned()),
+            )
+            .unwrap();
+        repository
+            .record_lh_strip(
+                date.clone(),
+                Some("test brand".to_owned()),
+                FfiLhQualitative::Positive,
+                Some(1.1),
+                None,
+                true,
+                Some("12:30".to_owned()),
+            )
+            .unwrap();
+        repository
+            .record_bleeding(date.clone(), FfiBleedingIntensity::Light)
+            .unwrap();
+        repository
+            .record_intercourse(date.clone(), FfiIntercourseKind::Intercourse, Some(false))
+            .unwrap();
+        repository
+            .record_mucus(
+                date.clone(),
+                Some(FfiMucusSensation::Wet),
+                Some(FfiMucusAppearance::Clear),
+                Some(FfiMucusCategory::High),
+                Some(true),
+                Some(80),
+            )
+            .unwrap();
+        repository
+            .record_temperature(
+                date.clone(),
+                36.6,
+                FfiTemperatureUnit::Celsius,
+                Some("06:45".to_owned()),
+                Some(90),
+                false,
+            )
+            .unwrap();
+        repository
+            .record_note(date.clone(), "recorded note".to_owned())
+            .unwrap();
+        repository
+            .record_user_marked_peak(date.clone(), FfiPeakSource::Other)
+            .unwrap();
+
+        let chart = repository.charts().unwrap().pop().unwrap();
+        assert_eq!(chart.days[0].entries.len(), 11);
+        assert!(
+            chart.days[0]
+                .entries
+                .iter()
+                .any(|entry| entry.label.contains("04:00:00 to 10:00:00"))
+        );
+        assert!(repository.export_json().unwrap().contains("recorded note"));
+        assert!(repository.export_csv().unwrap().contains("recorded note"));
+
+        let superseded = repository
+            .delete_marker(date.clone(), FfiEditableMarker::Note)
+            .unwrap();
+        assert_eq!(superseded.len(), 1);
+        assert_eq!(
+            repository
+                .purge_marker_history(date, FfiEditableMarker::Note, superseded)
+                .unwrap(),
+            1
+        );
+        assert!(!repository.export_json().unwrap().contains("recorded note"));
+    }
+
+    #[test]
+    fn couple_invite_shares_only_client_wrapped_key_material() {
+        let setup = generate_server_setup();
+        let owner_password = b"owner correct horse battery staple";
+        let owner_email = "owner@example.com";
+        let owner = LocalRepository::open(
+            tempfile::NamedTempFile::new()
+                .unwrap()
+                .path()
+                .to_string_lossy()
+                .into_owned(),
+            vec![51_u8; 32],
+            "owner-device".to_owned(),
+        )
+        .unwrap();
+        let owner_registration = opaque_registration_start(owner_password.to_vec()).unwrap();
+        let owner_response = server_registration_start(
+            &setup,
+            &account_credential_identifier(owner_email).unwrap(),
+            &owner_registration.request,
+        )
+        .unwrap();
+        owner
+            .finish_account_registration(
+                owner_registration.state,
+                owner_password.to_vec(),
+                owner_email.to_owned(),
+                owner_response,
+            )
+            .unwrap();
+        let invite = owner.create_couple_invite().unwrap();
+        assert!(!invite.invite_code.contains(&invite.verifier_base64url));
+
+        let partner_password = b"partner correct horse battery staple";
+        let partner_email = "partner@example.com";
+        let partner = LocalRepository::open(
+            tempfile::NamedTempFile::new()
+                .unwrap()
+                .path()
+                .to_string_lossy()
+                .into_owned(),
+            vec![52_u8; 32],
+            "partner-device".to_owned(),
+        )
+        .unwrap();
+        let partner_registration = opaque_registration_start(partner_password.to_vec()).unwrap();
+        let partner_response = server_registration_start(
+            &setup,
+            &account_credential_identifier(partner_email).unwrap(),
+            &partner_registration.request,
+        )
+        .unwrap();
+        partner
+            .finish_account_registration(
+                partner_registration.state,
+                partner_password.to_vec(),
+                partner_email.to_owned(),
+                partner_response,
+            )
+            .unwrap();
+        let acceptance = partner
+            .prepare_couple_invite_acceptance(invite.invite_code)
+            .unwrap();
+        assert_eq!(acceptance.recovered_dataset_key, vec![51_u8; 32]);
+        assert_eq!(acceptance.dataset_id, owner.dataset_id().unwrap());
+        assert!(!acceptance.wrapped_dataset_key.is_empty());
+        partner
+            .adopt_recovered_dataset(
+                acceptance.recovered_dataset_key,
+                acceptance.dataset_id.clone(),
+            )
+            .unwrap();
+
+        owner
+            .record_cycle_start("2026-07-20".to_owned(), 1)
+            .unwrap();
+        let operation = owner.sync_batch(1).unwrap().operations[0].clone();
+        partner
+            .apply_pull_page(FfiPullPage {
+                after_cursor: 0,
+                next_cursor: 1,
+                operations: vec![FfiSequencedTransportOperation {
+                    server_sequence: 1,
+                    operation,
+                }],
+                more: false,
+            })
+            .unwrap();
+        assert_eq!(partner.charts().unwrap().len(), 1);
     }
 
     #[test]

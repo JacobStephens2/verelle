@@ -250,6 +250,7 @@ class AccountEnrollmentClient(
             enrollment = baseEnrollment,
             recoveryCode = material.recoveryCode,
             recoveredDatasetKey = material.recoveredDatasetKey,
+            localAccountKeyWrap = material.localAccountKeyWrap,
         )
 
         // The encrypted journal is durable before either the local identity or
@@ -258,9 +259,10 @@ class AccountEnrollmentClient(
             pendingRecoveryStore.save(pending)
             try {
                 if (repository.datasetId() != pending.enrollment.datasetId) {
-                    repository.adoptRecoveredDataset(
+                    repository.adoptRecoveredAccount(
                         pending.recoveredDatasetKey,
                         pending.enrollment.datasetId,
+                        pending.localAccountKeyWrap,
                     )
                 }
             } catch (error: Exception) {
@@ -319,9 +321,10 @@ class AccountEnrollmentClient(
         pending: PendingAccountRecovery,
     ) {
         if (repository.datasetId() != pending.enrollment.datasetId) {
-            repository.adoptRecoveredDataset(
+            repository.adoptRecoveredAccount(
                 pending.recoveredDatasetKey,
                 pending.enrollment.datasetId,
+                pending.localAccountKeyWrap,
             )
         }
         localDataKeyManager.replaceDataKey(pending.recoveredDatasetKey)

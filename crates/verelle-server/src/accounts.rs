@@ -25,12 +25,13 @@ use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;
 use verelle_api::{
-    AccountDeletionResponse, ApiErrorBody, ApiErrorCode, HEALTH_DATA_CONSENT_VERSION,
-    LoginFinishRequest, LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage,
-    RecoveryFinishRequest, RecoveryFinishResponse, RecoveryStartRequest, RecoveryStartResponse,
-    RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
-    RegistrationStartResponse, login_device_proof_message, recovery_account_proof_message,
-    registration_device_proof_message,
+    AccountDeletionResponse, ApiErrorBody, ApiErrorCode, CoupleInviteCreateRequest,
+    CoupleInviteCreateResponse, CoupleInviteRedeemRequest, CoupleInviteRedeemResponse,
+    HEALTH_DATA_CONSENT_VERSION, LoginFinishRequest, LoginFinishResponse, LoginStartRequest,
+    LoginStartResponse, OpaqueMessage, RecoveryFinishRequest, RecoveryFinishResponse,
+    RecoveryStartRequest, RecoveryStartResponse, RegistrationFinishRequest,
+    RegistrationFinishResponse, RegistrationStartRequest, RegistrationStartResponse,
+    login_device_proof_message, recovery_account_proof_message, registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, server_login_finish, server_login_start,
@@ -44,6 +45,7 @@ const SESSION_TOKEN_BYTES: usize = 32;
 const MAX_DEVICE_PUBLIC_KEY_BYTES: usize = 1024;
 const MAX_WRAPPED_KEY_BYTES: usize = 4096;
 const DEVICE_CHALLENGE_BYTES: usize = 32;
+const INVITE_VERIFIER_BYTES: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct AuthService {
@@ -592,6 +594,228 @@ impl AuthService {
         Ok(())
     }
 
+    pub async fn create_couple_invite(
+        &self,
+        bearer_token: &str,
+        request: CoupleInviteCreateRequest,
+    ) -> Result<CoupleInviteCreateResponse, AuthServiceError> {
+        if request.invite_id.is_nil() || request.dataset_id.is_nil() {
+            return Err(AuthServiceError::InvalidRequest);
+        }
+        let verifier = decode_exact(&request.verifier, INVITE_VERIFIER_BYTES)?;
+        let verifier_hash = Sha256::digest(&verifier);
+        let token_hash = decode_and_hash_token(bearer_token)?;
+        let mut transaction = self.database.pool().begin().await?;
+        let account_id = authenticated_account(&mut transaction, &token_hash).await?;
+
+        let membership = query::<Postgres>(
+            "SELECT membership.role, dataset.current_epoch, \
+                    (SELECT COUNT(*)::BIGINT FROM dataset_memberships active \
+                     WHERE active.dataset_id = dataset.dataset_id \
+                       AND active.removed_at IS NULL) AS active_members \
+             FROM dataset_memberships membership \
+             JOIN sync_datasets dataset ON dataset.dataset_id = membership.dataset_id \
+             WHERE membership.dataset_id = $1 AND membership.account_id = $2 \
+               AND membership.removed_at IS NULL \
+             FOR UPDATE OF membership, dataset",
+        )
+        .bind(request.dataset_id)
+        .bind(account_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AuthServiceError::Forbidden)?;
+        if membership.get::<String, _>("role") != "owner"
+            || membership.get::<i64, _>("active_members") != 1
+        {
+            return Err(AuthServiceError::Conflict);
+        }
+
+        if let Some(existing) = query::<Postgres>(
+            "SELECT dataset_id, created_by_account_id, verifier_hash, \
+                    EXTRACT(EPOCH FROM expires_at)::BIGINT AS expires_at_unix_seconds, \
+                    redeemed_at IS NOT NULL AS redeemed, revoked_at IS NOT NULL AS revoked \
+             FROM couple_invites WHERE invite_id = $1 FOR UPDATE",
+        )
+        .bind(request.invite_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        {
+            let exact_retry = existing.get::<Uuid, _>("dataset_id") == request.dataset_id
+                && existing.get::<Uuid, _>("created_by_account_id") == account_id
+                && existing.get::<Vec<u8>, _>("verifier_hash").as_slice()
+                    == verifier_hash.as_slice()
+                && !existing.get::<bool, _>("redeemed")
+                && !existing.get::<bool, _>("revoked");
+            if exact_retry {
+                transaction.commit().await?;
+                return Ok(CoupleInviteCreateResponse {
+                    invite_id: request.invite_id,
+                    dataset_id: request.dataset_id,
+                    expires_at_unix_seconds: existing.get("expires_at_unix_seconds"),
+                });
+            }
+            return Err(AuthServiceError::Conflict);
+        }
+
+        // Creating a replacement invite revokes any older unredeemed code.
+        // This makes a lost response recoverable without retaining invite
+        // secrets on the service.
+        query::<Postgres>(
+            "UPDATE couple_invites SET revoked_at = CURRENT_TIMESTAMP \
+             WHERE dataset_id = $1 AND redeemed_at IS NULL AND revoked_at IS NULL",
+        )
+        .bind(request.dataset_id)
+        .execute(&mut *transaction)
+        .await?;
+        let invite = query::<Postgres>(
+            "INSERT INTO couple_invites \
+             (invite_id, dataset_id, created_by_account_id, verifier_hash, expires_at) \
+             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '7 days') \
+             RETURNING EXTRACT(EPOCH FROM expires_at)::BIGINT AS expires_at_unix_seconds",
+        )
+        .bind(request.invite_id)
+        .bind(request.dataset_id)
+        .bind(account_id)
+        .bind(verifier_hash.as_slice())
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(map_account_insert_error)?;
+        transaction.commit().await?;
+        Ok(CoupleInviteCreateResponse {
+            invite_id: request.invite_id,
+            dataset_id: request.dataset_id,
+            expires_at_unix_seconds: invite.get("expires_at_unix_seconds"),
+        })
+    }
+
+    #[allow(clippy::too_many_lines)] // Keep the audited membership transfer transaction linear.
+    pub async fn redeem_couple_invite(
+        &self,
+        bearer_token: &str,
+        request: CoupleInviteRedeemRequest,
+    ) -> Result<CoupleInviteRedeemResponse, AuthServiceError> {
+        if request.invite_id.is_nil() {
+            return Err(AuthServiceError::InvalidRequest);
+        }
+        let verifier = decode_exact(&request.verifier, INVITE_VERIFIER_BYTES)?;
+        let verifier_hash = Sha256::digest(&verifier);
+        let wrapped_dataset_key =
+            decode_bounded(&request.wrapped_dataset_key, MAX_WRAPPED_KEY_BYTES)?;
+        let token_hash = decode_and_hash_token(bearer_token)?;
+        let mut transaction = self.database.pool().begin().await?;
+        let account_id = authenticated_account(&mut transaction, &token_hash).await?;
+        let invite = query::<Postgres>(
+            "SELECT invite.dataset_id, invite.created_by_account_id, \
+                    invite.redeemed_by_account_id, \
+                    invite.revoked_at IS NOT NULL AS revoked, \
+                    invite.expires_at > CURRENT_TIMESTAMP AS unexpired, dataset.current_epoch \
+             FROM couple_invites invite \
+             JOIN sync_datasets dataset ON dataset.dataset_id = invite.dataset_id \
+             WHERE invite.invite_id = $1 AND invite.verifier_hash = $2 \
+             FOR UPDATE OF invite, dataset",
+        )
+        .bind(request.invite_id)
+        .bind(verifier_hash.as_slice())
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AuthServiceError::InvalidCredentials)?;
+        let dataset_id = invite.get::<Uuid, _>("dataset_id");
+        let key_epoch_i64 = invite.get::<i64, _>("current_epoch");
+        let key_epoch = u64::try_from(key_epoch_i64).map_err(|_| AuthServiceError::Conflict)?;
+        let redeemed_by = invite.get::<Option<Uuid>, _>("redeemed_by_account_id");
+        if redeemed_by == Some(account_id) {
+            transaction.commit().await?;
+            return Ok(CoupleInviteRedeemResponse {
+                invite_id: request.invite_id,
+                dataset_id,
+                key_epoch,
+            });
+        }
+        if redeemed_by.is_some()
+            || invite.get::<bool, _>("revoked")
+            || !invite.get::<bool, _>("unexpired")
+        {
+            return Err(AuthServiceError::InvalidCredentials);
+        }
+        if invite.get::<Uuid, _>("created_by_account_id") == account_id {
+            return Err(AuthServiceError::Conflict);
+        }
+        let target_members = query::<Postgres>(
+            "SELECT COUNT(*)::BIGINT AS count FROM dataset_memberships \
+             WHERE dataset_id = $1 AND removed_at IS NULL",
+        )
+        .bind(dataset_id)
+        .fetch_one(&mut *transaction)
+        .await?
+        .get::<i64, _>("count");
+        if target_members != 1 {
+            return Err(AuthServiceError::Conflict);
+        }
+
+        let memberships = query::<Postgres>(
+            "SELECT membership.dataset_id, membership.role, dataset.last_sequence, \
+                    (SELECT COUNT(*)::BIGINT FROM dataset_memberships active \
+                     WHERE active.dataset_id = membership.dataset_id \
+                       AND active.removed_at IS NULL) AS active_members \
+             FROM dataset_memberships membership \
+             JOIN sync_datasets dataset ON dataset.dataset_id = membership.dataset_id \
+             WHERE membership.account_id = $1 AND membership.removed_at IS NULL \
+             FOR UPDATE OF membership, dataset",
+        )
+        .bind(account_id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        if memberships.len() != 1 {
+            return Err(AuthServiceError::Conflict);
+        }
+        let source = &memberships[0];
+        let source_dataset_id = source.get::<Uuid, _>("dataset_id");
+        if source_dataset_id == dataset_id
+            || source.get::<String, _>("role") != "owner"
+            || source.get::<i64, _>("last_sequence") != 0
+            || source.get::<i64, _>("active_members") != 1
+        {
+            return Err(AuthServiceError::Conflict);
+        }
+
+        query::<Postgres>("DELETE FROM sync_datasets WHERE dataset_id = $1")
+            .bind(source_dataset_id)
+            .execute(&mut *transaction)
+            .await?;
+        query::<Postgres>(
+            "INSERT INTO dataset_memberships (dataset_id, account_id, role) \
+             VALUES ($1, $2, 'partner')",
+        )
+        .bind(dataset_id)
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "INSERT INTO dataset_key_wraps \
+             (dataset_id, account_id, key_epoch, wrapped_key) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(dataset_id)
+        .bind(account_id)
+        .bind(key_epoch_i64)
+        .bind(wrapped_dataset_key)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "UPDATE couple_invites SET redeemed_by_account_id = $2, \
+                    redeemed_at = CURRENT_TIMESTAMP WHERE invite_id = $1",
+        )
+        .bind(request.invite_id)
+        .bind(account_id)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(CoupleInviteRedeemResponse {
+            invite_id: request.invite_id,
+            dataset_id,
+            key_epoch,
+        })
+    }
+
     pub async fn delete_account(
         &self,
         bearer_token: &str,
@@ -783,6 +1007,11 @@ pub fn account_router(auth_service: AuthService) -> Router {
         .route(verelle_api::RECOVERY_FINISH_PATH, post(recovery_finish))
         .route(verelle_api::CURRENT_SESSION_PATH, delete(logout))
         .route(verelle_api::CURRENT_ACCOUNT_PATH, delete(delete_account))
+        .route(verelle_api::COUPLE_INVITES_PATH, post(create_couple_invite))
+        .route(
+            verelle_api::COUPLE_INVITE_REDEEM_PATH,
+            post(redeem_couple_invite),
+        )
         .layer(DefaultBodyLimit::max(AUTH_BODY_LIMIT_BYTES))
         .with_state(auth_service)
 }
@@ -846,6 +1075,24 @@ async fn delete_account(
     Ok(Json(service.delete_account(token).await?))
 }
 
+async fn create_couple_invite(
+    State(service): State<AuthService>,
+    headers: HeaderMap,
+    Json(request): Json<CoupleInviteCreateRequest>,
+) -> Result<Json<CoupleInviteCreateResponse>, AuthServiceError> {
+    let token = bearer_token(&headers)?;
+    Ok(Json(service.create_couple_invite(token, request).await?))
+}
+
+async fn redeem_couple_invite(
+    State(service): State<AuthService>,
+    headers: HeaderMap,
+    Json(request): Json<CoupleInviteRedeemRequest>,
+) -> Result<Json<CoupleInviteRedeemResponse>, AuthServiceError> {
+    let token = bearer_token(&headers)?;
+    Ok(Json(service.redeem_couple_invite(token, request).await?))
+}
+
 fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthServiceError> {
     headers
         .get(AUTHORIZATION)
@@ -860,6 +1107,14 @@ fn decode_bounded(message: &OpaqueMessage, max: usize) -> Result<Vec<u8>, AuthSe
         .decode()
         .map_err(|_| AuthServiceError::InvalidRequest)?;
     if decoded.len() > max {
+        return Err(AuthServiceError::InvalidRequest);
+    }
+    Ok(decoded)
+}
+
+fn decode_exact(message: &OpaqueMessage, length: usize) -> Result<Vec<u8>, AuthServiceError> {
+    let decoded = decode_bounded(message, length)?;
+    if decoded.len() != length {
         return Err(AuthServiceError::InvalidRequest);
     }
     Ok(decoded)
@@ -899,6 +1154,27 @@ async fn consume_flow(
     Ok(())
 }
 
+async fn authenticated_account(
+    transaction: &mut sqlx_core::transaction::Transaction<'_, Postgres>,
+    token_hash: &[u8; 32],
+) -> Result<Uuid, AuthServiceError> {
+    let session = query::<Postgres>(
+        "SELECT session.account_id FROM account_sessions session \
+         JOIN accounts account ON account.account_id = session.account_id \
+         JOIN account_devices device \
+           ON device.device_id = session.device_id AND device.account_id = session.account_id \
+         WHERE session.token_hash = $1 AND session.revoked_at IS NULL \
+           AND session.expires_at > CURRENT_TIMESTAMP AND account.disabled_at IS NULL \
+           AND device.revoked_at IS NULL \
+         FOR UPDATE OF session, account, device",
+    )
+    .bind(token_hash.as_slice())
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or(AuthServiceError::AuthenticationRequired)?;
+    Ok(session.get("account_id"))
+}
+
 fn map_account_insert_error(error: SqlxError) -> AuthServiceError {
     if error
         .as_database_error()
@@ -922,6 +1198,8 @@ pub enum AuthServiceError {
     InvalidCredentials,
     #[error("authentication is required")]
     AuthenticationRequired,
+    #[error("request is forbidden")]
+    Forbidden,
     #[error("account already exists")]
     Conflict,
     #[error("authentication rate limit exceeded")]
@@ -945,6 +1223,7 @@ impl IntoResponse for AuthServiceError {
                 StatusCode::UNAUTHORIZED,
                 ApiErrorCode::AuthenticationRequired,
             ),
+            Self::Forbidden => (StatusCode::FORBIDDEN, ApiErrorCode::Forbidden),
             Self::Conflict => (StatusCode::CONFLICT, ApiErrorCode::Conflict),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, ApiErrorCode::RateLimited),
         };

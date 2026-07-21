@@ -11,17 +11,20 @@ use p256::{
 };
 use rand::rngs::OsRng;
 use serde::{Serialize, de::DeserializeOwned};
+use sha2::{Digest, Sha256};
 use sqlx_core::{query::query, row::Row};
 use sqlx_postgres::Postgres;
 use std::{env, time::Duration};
 use tower::ServiceExt;
 use uuid::Uuid;
 use verelle_api::{
-    AccountDeletionResponse, ApiErrorBody, HEALTH_DATA_CONSENT_VERSION, HealthDataConsent,
-    LoginFinishRequest, LoginFinishResponse, LoginStartRequest, LoginStartResponse, OpaqueMessage,
-    PullResponse, PushRequest, PushResponse, RegistrationFinishRequest, RegistrationFinishResponse,
-    RegistrationStartRequest, RegistrationStartResponse, TransportOperation,
-    dataset_operations_path, login_device_proof_message, registration_device_proof_message,
+    AccountDeletionResponse, ApiErrorBody, CoupleInviteCreateRequest, CoupleInviteCreateResponse,
+    CoupleInviteRedeemRequest, CoupleInviteRedeemResponse, HEALTH_DATA_CONSENT_VERSION,
+    HealthDataConsent, LoginFinishRequest, LoginFinishResponse, LoginStartRequest,
+    LoginStartResponse, OpaqueMessage, PullResponse, PushRequest, PushResponse,
+    RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
+    RegistrationStartResponse, TransportOperation, dataset_operations_path,
+    login_device_proof_message, registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, client_login_finish, client_login_start,
@@ -63,6 +66,186 @@ async fn post_json<T: Serialize, R: DeserializeOwned>(
     let status = response.status();
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     (status, serde_json::from_slice(&bytes).unwrap())
+}
+
+#[tokio::test]
+#[ignore = "requires an isolated TEST_DATABASE_URL"]
+#[allow(clippy::too_many_lines)] // One linear two-account protocol transcript is easiest to audit.
+async fn couple_invite_redeems_once_and_discards_only_a_pristine_joiner_dataset() {
+    let database_url = env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL is required");
+    let database = Database::connect(&database_url, 4, Duration::from_secs(2))
+        .await
+        .unwrap();
+    database.migrate().await.unwrap();
+    query::<Postgres>(
+        "TRUNCATE couple_invites, deletion_manifest_datasets, deletion_manifests, \
+         account_consents, auth_start_attempts, opaque_auth_flows, account_sessions, \
+         dataset_key_wraps, dataset_memberships, account_devices, accounts, \
+         encrypted_operations, sync_datasets CASCADE",
+    )
+    .execute(database.pool())
+    .await
+    .unwrap();
+
+    let owner_account = Uuid::new_v4();
+    let owner_device = Uuid::new_v4();
+    let owner_dataset = Uuid::new_v4();
+    let partner_account = Uuid::new_v4();
+    let partner_device = Uuid::new_v4();
+    let partner_dataset = Uuid::new_v4();
+    let owner_token = [11_u8; 32];
+    let partner_token = [12_u8; 32];
+    let owner_bearer = OpaqueMessage::from_bytes(&owner_token).message;
+    let partner_bearer = OpaqueMessage::from_bytes(&partner_token).message;
+
+    for (account_id, identifier) in [(owner_account, [21_u8; 32]), (partner_account, [22_u8; 32])] {
+        query::<Postgres>(
+            "INSERT INTO accounts (account_id, identifier_hash, opaque_password_file, \
+             wrapped_account_key, recovery_wrapped_account_key) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(account_id)
+        .bind(identifier.as_slice())
+        .bind([1_u8].as_slice())
+        .bind([2_u8].as_slice())
+        .bind([3_u8].as_slice())
+        .execute(database.pool())
+        .await
+        .unwrap();
+    }
+    for (device_id, account_id) in [
+        (owner_device, owner_account),
+        (partner_device, partner_account),
+    ] {
+        query::<Postgres>(
+            "INSERT INTO account_devices (device_id, account_id, public_key) \
+             VALUES ($1, $2, $3)",
+        )
+        .bind(device_id)
+        .bind(account_id)
+        .bind([4_u8].as_slice())
+        .execute(database.pool())
+        .await
+        .unwrap();
+    }
+    for (dataset_id, account_id) in [
+        (owner_dataset, owner_account),
+        (partner_dataset, partner_account),
+    ] {
+        query::<Postgres>("INSERT INTO sync_datasets (dataset_id, current_epoch) VALUES ($1, 1)")
+            .bind(dataset_id)
+            .execute(database.pool())
+            .await
+            .unwrap();
+        query::<Postgres>(
+            "INSERT INTO dataset_memberships (dataset_id, account_id, role) \
+             VALUES ($1, $2, 'owner')",
+        )
+        .bind(dataset_id)
+        .bind(account_id)
+        .execute(database.pool())
+        .await
+        .unwrap();
+        query::<Postgres>(
+            "INSERT INTO dataset_key_wraps (dataset_id, account_id, key_epoch, wrapped_key) \
+             VALUES ($1, $2, 1, $3)",
+        )
+        .bind(dataset_id)
+        .bind(account_id)
+        .bind([5_u8].as_slice())
+        .execute(database.pool())
+        .await
+        .unwrap();
+    }
+    for (account_id, device_id, token) in [
+        (owner_account, owner_device, owner_token),
+        (partner_account, partner_device, partner_token),
+    ] {
+        query::<Postgres>(
+            "INSERT INTO account_sessions \
+             (session_id, account_id, device_id, token_hash, expires_at) \
+             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '1 hour')",
+        )
+        .bind(Uuid::new_v4())
+        .bind(account_id)
+        .bind(device_id)
+        .bind(Sha256::digest(token).as_slice())
+        .execute(database.pool())
+        .await
+        .unwrap();
+    }
+
+    let router =
+        account_router(AuthService::new(database.clone(), generate_server_setup()).unwrap());
+    let invite_id = Uuid::new_v4();
+    let verifier = [33_u8; 32];
+    let create_request = CoupleInviteCreateRequest {
+        invite_id,
+        dataset_id: owner_dataset,
+        verifier: OpaqueMessage::from_bytes(&verifier),
+    };
+    let (status, created): (_, CoupleInviteCreateResponse) = post_json(
+        &router,
+        verelle_api::COUPLE_INVITES_PATH,
+        Some(&owner_bearer),
+        &create_request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(created.dataset_id, owner_dataset);
+
+    let redeem_request = CoupleInviteRedeemRequest {
+        invite_id,
+        verifier: OpaqueMessage::from_bytes(&verifier),
+        wrapped_dataset_key: OpaqueMessage::from_bytes(&[44_u8; 64]),
+    };
+    let (status, redeemed): (_, CoupleInviteRedeemResponse) = post_json(
+        &router,
+        verelle_api::COUPLE_INVITE_REDEEM_PATH,
+        Some(&partner_bearer),
+        &redeem_request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(redeemed.dataset_id, owner_dataset);
+    assert_eq!(redeemed.key_epoch, 1);
+    let (status, retry): (_, CoupleInviteRedeemResponse) = post_json(
+        &router,
+        verelle_api::COUPLE_INVITE_REDEEM_PATH,
+        Some(&partner_bearer),
+        &redeem_request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(retry, redeemed);
+
+    let members = query::<Postgres>(
+        "SELECT COUNT(*)::BIGINT AS count FROM dataset_memberships \
+         WHERE dataset_id = $1 AND removed_at IS NULL",
+    )
+    .bind(owner_dataset)
+    .fetch_one(database.pool())
+    .await
+    .unwrap()
+    .get::<i64, _>("count");
+    assert_eq!(members, 2);
+    let old_dataset = query::<Postgres>(
+        "SELECT COUNT(*)::BIGINT AS count FROM sync_datasets WHERE dataset_id = $1",
+    )
+    .bind(partner_dataset)
+    .fetch_one(database.pool())
+    .await
+    .unwrap()
+    .get::<i64, _>("count");
+    assert_eq!(old_dataset, 0);
+    let stored_verifier =
+        query::<Postgres>("SELECT verifier_hash FROM couple_invites WHERE invite_id = $1")
+            .bind(invite_id)
+            .fetch_one(database.pool())
+            .await
+            .unwrap()
+            .get::<Vec<u8>, _>("verifier_hash");
+    assert_eq!(stored_verifier, Sha256::digest(verifier).as_slice());
+    assert_ne!(stored_verifier, verifier);
 }
 
 async fn delete_json<R: DeserializeOwned>(
