@@ -64,6 +64,15 @@ static MIGRATOR: LazyLock<Migrator> = LazyLock::new(|| Migrator {
             )),
             false,
         ),
+        Migration::new(
+            8,
+            Cow::Borrowed("billing event ordering and warnings"),
+            MigrationType::Simple,
+            Cow::Borrowed(include_str!(
+                "../migrations/0008_billing_event_order_and_warnings.sql"
+            )),
+            false,
+        ),
     ]),
     ..Migrator::DEFAULT
 });

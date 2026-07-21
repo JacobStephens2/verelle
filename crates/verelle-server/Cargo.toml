@@ -9,15 +9,17 @@ rust-version.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 base64.workspace = true
+hmac.workspace = true
 p256.workspace = true
 rand.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 sqlx-core = { version = "=0.8.6", default-features = false, features = ["_rt-tokio", "_tls-rustls-ring-webpki", "migrate", "uuid"] }
 sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["migrate", "uuid"] }
 thiserror.workspace = true
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 uuid.workspace = true

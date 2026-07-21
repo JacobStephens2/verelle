@@ -2,12 +2,14 @@ use crate::{
     account::{self, BrowserVault},
     encrypted_storage, observation_label,
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveTime};
 use js_sys::Date;
 use leptos::{mount::mount_to_body, prelude::*};
 use uuid::Uuid;
 use verelle_core::{
-    CycleStartBasis, MonitorReading, Observation, ObservationValue, VersionStamp, build_charts,
+    BleedingIntensity, CycleStartBasis, IntercourseKind, LhQualitative, MonitorReading,
+    MucusCategory, Observation, ObservationValue, PeakSource, TemperatureUnit, VersionStamp,
+    build_charts,
 };
 use verelle_crypto::{SecretKey, open, seal};
 use wasm_bindgen_futures::spawn_local;
@@ -34,6 +36,10 @@ fn App() -> impl IntoView {
     let date = RwSignal::new(today());
     let cycle_number = RwSignal::new("1".to_owned());
     let selected_reading = RwSignal::new(MonitorReading::Low);
+    let supplemental_kind = RwSignal::new("bleeding".to_owned());
+    let supplemental_primary = RwSignal::new("spotting".to_owned());
+    let supplemental_secondary = RwSignal::new(String::new());
+    let supplemental_flag = RwSignal::new(false);
     let notice = RwSignal::new(None::<String>);
     let email = RwSignal::new(String::new());
     let password = RwSignal::new(String::new());
@@ -42,6 +48,9 @@ fn App() -> impl IntoView {
     let recovery_acknowledged = RwSignal::new(false);
     let recovery_code = RwSignal::new(String::new());
     let deletion_confirmation = RwSignal::new(String::new());
+    let couple_invite_code = RwSignal::new(String::new());
+    let generated_invite_code = RwSignal::new(String::new());
+    let entitlement_status = RwSignal::new("Not checked".to_owned());
     let auth_entry_mode = RwSignal::new(AuthEntryMode::default());
     let crypto_ready = browser_crypto_round_trip();
 
@@ -72,14 +81,14 @@ fn App() -> impl IntoView {
     let observations = Memo::new(move |_| vault.get().observations().unwrap_or_default());
     let charts = Memo::new(move |_| build_charts(&observations.get()));
     let can_record = Memo::new(move |_| {
+        let current = vault.get();
         storage_ready.get()
             && !busy.get()
-            && vault.get().active_session()
-            && vault
-                .get()
-                .account
-                .as_ref()
-                .is_some_and(|account| account.recovery_code_pending_acknowledgement.is_none())
+            && (current.account.is_none()
+                || (current.active_session()
+                    && current.account.as_ref().is_some_and(|account| {
+                        account.recovery_code_pending_acknowledgement.is_none()
+                    })))
     });
 
     let register = move |_| {
@@ -298,7 +307,54 @@ fn App() -> impl IntoView {
         );
     };
 
+    let save_supplemental = move |_| {
+        if !can_record.get_untracked() {
+            notice.set(Some(
+                "Sign in again before recording synchronized data".to_owned(),
+            ));
+            return;
+        }
+        let result = parse_record_date(&date.get_untracked()).and_then(|record_date| {
+            supplemental_observation(
+                record_date,
+                &supplemental_kind.get_untracked(),
+                &supplemental_primary.get_untracked(),
+                &supplemental_secondary.get_untracked(),
+                supplemental_flag.get_untracked(),
+                &vault.get_untracked(),
+            )
+        });
+        record_and_sync(
+            result,
+            vault,
+            busy,
+            notice,
+            "Observation encrypted and saved",
+        );
+    };
+
     let sync_now = move |_| persist_and_sync(vault, busy, notice);
+
+    let delete_observation = move |record_key: verelle_core::RecordKey| {
+        if !can_record.get_untracked() {
+            notice.set(Some(
+                "Sign in again before deleting synchronized data".to_owned(),
+            ));
+            return;
+        }
+        let mut current = vault.get_untracked();
+        let result = current.delete_observation(record_key, web_version(&current));
+        match result {
+            Ok(()) => {
+                vault.set(current);
+                notice.set(Some(
+                    "Deletion saved; ciphertext redaction queued".to_owned(),
+                ));
+                persist_and_sync(vault, busy, notice);
+            }
+            Err(error) => notice.set(Some(error)),
+        }
+    };
 
     let export_json = move |_| {
         let current = vault.get_untracked();
@@ -352,6 +408,81 @@ fn App() -> impl IntoView {
                 Ok((deletion_id, false)) => notice.set(Some(format!(
                     "Server account deleted · receipt {deletion_id} · local browser cleanup failed; clear site data before using Verelle again"
                 ))),
+                Err(error) => notice.set(Some(error)),
+            }
+            busy.set(false);
+        });
+    };
+
+    let create_couple_invite = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        let current = vault.get_untracked();
+        spawn_local(async move {
+            match current.create_couple_invite().await {
+                Ok((code, expires_at)) => {
+                    generated_invite_code.set(code);
+                    notice.set(Some(format!(
+                        "One-use invitation created · expires at Unix time {expires_at}"
+                    )));
+                }
+                Err(error) => notice.set(Some(error)),
+            }
+            busy.set(false);
+        });
+    };
+
+    let accept_couple_invite = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        let code = couple_invite_code.get_untracked();
+        busy.set(true);
+        let mut current = vault.get_untracked();
+        spawn_local(async move {
+            match current.accept_couple_invite(code).await {
+                Ok(()) => {
+                    couple_invite_code.set(String::new());
+                    vault.set(current);
+                    notice.set(Some(
+                        "Shared chart accepted; encrypted sync is ready".to_owned(),
+                    ));
+                    busy.set(false);
+                    persist_and_sync(vault, busy, notice);
+                }
+                Err(error) => {
+                    vault.set(current);
+                    notice.set(Some(error));
+                    busy.set(false);
+                }
+            }
+        });
+    };
+
+    let checkout_monthly = move |_| {
+        begin_checkout(vault, busy, notice, verelle_api::BillingInterval::Monthly);
+    };
+    let checkout_annual = move |_| {
+        begin_checkout(vault, busy, notice, verelle_api::BillingInterval::Annual);
+    };
+    let refresh_entitlement = move |_| {
+        if busy.get_untracked() {
+            return;
+        }
+        busy.set(true);
+        let current = vault.get_untracked();
+        spawn_local(async move {
+            match current.entitlement().await {
+                Ok(entitlement) => {
+                    entitlement_status.set(if entitlement.sync_allowed {
+                        format!("{} · sync available", entitlement.status)
+                    } else {
+                        format!("{} · local use only", entitlement.status)
+                    });
+                    notice.set(Some("Subscription status refreshed".to_owned()));
+                }
                 Err(error) => notice.set(Some(error)),
             }
             busy.set(false);
@@ -425,11 +556,15 @@ fn App() -> impl IntoView {
                 </Show>
 
                 <div class=move || if can_record.get() { "safety-banner ready" } else { "safety-banner" } role="note">
-                    <strong>{move || if can_record.get() { "Encrypted account mode." } else { "Recording locked." }}</strong>
+                    <strong>{move || if can_record.get() { if vault.get().account.is_none() { "Private local mode." } else { "Encrypted account mode." } } else { "Recording locked." }}</strong>
                     {move || if can_record.get() {
-                        " Verelle records and displays facts only; it does not provide medical or fertility guidance."
+                        if vault.get().account.is_none() {
+                            " Entries stay encrypted in this browser until you clear them. An account is optional and adds multi-device sync."
+                        } else {
+                            " Verelle records and displays facts only; it does not provide medical or fertility guidance."
+                        }
                     } else {
-                        " Create or sign in to an account and save the recovery code before entering health data."
+                        " Sign in and save the recovery code before entering synchronized health data."
                     }}
                 </div>
 
@@ -455,11 +590,49 @@ fn App() -> impl IntoView {
                             </div>
                         </fieldset>
                         <button class="primary-button" type="button" on:click=save_monitor disabled=move || !can_record.get()><span>"Save reading"</span><span aria-hidden="true">"→"</span></button>
+                        <fieldset class="supplemental-entry" disabled=move || !can_record.get()>
+                            <legend>"Other observation"</legend>
+                            <label class="field">
+                                <span>"Type"</span>
+                                <select prop:value=move || supplemental_kind.get() on:change=move |event| { let kind = event_target_value(&event); let (primary, secondary) = supplemental_defaults(&kind); supplemental_kind.set(kind); supplemental_primary.set(primary); supplemental_secondary.set(secondary); supplemental_flag.set(false); }>
+                                    <option value="bleeding">"Bleeding"</option>
+                                    <option value="mucus">"Mucus category"</option>
+                                    <option value="lh_strip">"LH strip"</option>
+                                    <option value="hormones">"Quantitative hormones"</option>
+                                    <option value="temperature">"Temperature"</option>
+                                    <option value="intercourse">"Intercourse"</option>
+                                    <option value="monitor_setup">"Monitor setup"</option>
+                                    <option value="peak">"Mark Peak"</option>
+                                    <option value="note">"Note"</option>
+                                </select>
+                            </label>
+                            {move || supplemental_fields(supplemental_kind.get(), supplemental_primary, supplemental_secondary, supplemental_flag)}
+                            <button class="secondary-button" type="button" on:click=save_supplemental>"Save observation"</button>
+                        </fieldset>
                         {move || notice.get().map(|message| view! { <p class="notice" role="status">{message}</p> })}
                         <div class="local-facts">
                             <div><span>"Saved facts"</span><strong>{move || observations.get().len()}</strong></div>
                             <div><span>"Cloud sync"</span><strong>{move || sync_status(&vault.get(), busy.get())}</strong></div>
                         </div>
+                        <Show when=move || !observations.get().is_empty()>
+                            <div class="recent-entries">
+                                <h3>"Recorded facts"</h3>
+                                <For
+                                    each=move || observations.get()
+                                    key=|observation| observation.record_key()
+                                    children=move |observation| {
+                                        let record_key = observation.record_key();
+                                        let label = observation_label(&observation.value);
+                                        view! {
+                                            <div class="recent-entry">
+                                                <span><strong>{observation.date.to_string()}</strong>" · "{label}</span>
+                                                <button class="quiet-button danger" type="button" on:click=move |_| delete_observation(record_key.clone()) disabled=move || busy.get()>"Delete"</button>
+                                            </div>
+                                        }
+                                    }
+                                />
+                            </div>
+                        </Show>
                     </aside>
 
                     <section class="chart-panel">
@@ -469,7 +642,7 @@ fn App() -> impl IntoView {
                         </div>
                         {move || chart_meta(&charts.get())}
                         <div class="chart-days">
-                            <For each=move || charts.get().last().map(|chart| chart.days.clone()).unwrap_or_default() key=|day| day.date children=chart_day />
+                            <For each=move || charts.get().last().map(|chart| chart.days.clone()).unwrap_or_default() key=|day| format!("{}:{}", day.date, day.observations.iter().map(|observation| observation.id.to_string()).collect::<Vec<_>>().join(",")) children=chart_day />
                             <Show when=move || charts.get().is_empty() fallback=|| ()>
                                 <div class="empty-state"><div class="empty-orbit" aria-hidden="true"><span></span></div><h3>"Your chart starts here"</h3><p>"Create an account, store the recovery code, then record a cycle start and daily observations."</p></div>
                             </Show>
@@ -478,6 +651,32 @@ fn App() -> impl IntoView {
                 </section>
 
                 <Show when=move || vault.get().active_session()>
+                    <section class="danger-zone billing-zone">
+                        <h2>"Optional encrypted sync subscription"</h2>
+                        <p>"Local charting and export remain free. A subscription funds encrypted multi-device sync and shared charts. Stripe hosts checkout; Verelle never receives card details."</p>
+                        <div class="billing-actions">
+                            <button class="quiet-button" type="button" on:click=checkout_monthly disabled=move || busy.get()>"$4.99 monthly"</button>
+                            <button class="quiet-button" type="button" on:click=checkout_annual disabled=move || busy.get()>"$39.99 annually"</button>
+                            <button class="quiet-button" type="button" on:click=refresh_entitlement disabled=move || busy.get()>"Refresh status"</button>
+                            <strong>{move || entitlement_status.get()}</strong>
+                        </div>
+                    </section>
+                    <section class="danger-zone couple-zone">
+                        <h2>"Share one chart with your partner"</h2>
+                        <p>"Invitations contain the client-encrypted chart key, expire after 15 minutes, and work once. Send a code through a private channel. Accepting is allowed only while this account’s chart is empty."</p>
+                        <div class="couple-actions">
+                            <div>
+                                <button class="quiet-button" type="button" on:click=create_couple_invite disabled=move || busy.get()>"Create invitation"</button>
+                                <Show when=move || !generated_invite_code.get().is_empty()>
+                                    <code class="invite-code">{move || generated_invite_code.get()}</code>
+                                </Show>
+                            </div>
+                            <div>
+                                <label class="field"><span>"Invitation code"</span><textarea autocomplete="off" prop:value=move || couple_invite_code.get() on:input=move |event| couple_invite_code.set(event_target_value(&event))></textarea></label>
+                                <button class="quiet-button" type="button" on:click=accept_couple_invite disabled=move || busy.get() || couple_invite_code.get().trim().is_empty()>"Accept shared chart"</button>
+                            </div>
+                        </div>
+                    </section>
                     <section class="danger-zone export-zone">
                         <h2>"Export your chart"</h2>
                         <p>"Exports are decrypted in this browser and downloaded as plaintext. Store or share them only where you intend."</p>
@@ -659,6 +858,231 @@ fn ReadingChip(
     }
 }
 
+fn begin_checkout(
+    vault: RwSignal<BrowserVault>,
+    busy: RwSignal<bool>,
+    notice: RwSignal<Option<String>>,
+    interval: verelle_api::BillingInterval,
+) {
+    if busy.get_untracked() {
+        return;
+    }
+    busy.set(true);
+    let current = vault.get_untracked();
+    spawn_local(async move {
+        match current.create_checkout(interval).await {
+            Ok(url) => {
+                if web_sys::window()
+                    .and_then(|window| window.location().set_href(&url).ok())
+                    .is_none()
+                {
+                    notice.set(Some("Stripe Checkout could not be opened".to_owned()));
+                    busy.set(false);
+                }
+            }
+            Err(error) => {
+                notice.set(Some(error));
+                busy.set(false);
+            }
+        }
+    });
+}
+
+fn supplemental_fields(
+    kind: String,
+    primary: RwSignal<String>,
+    secondary: RwSignal<String>,
+    flag: RwSignal<bool>,
+) -> AnyView {
+    match kind.as_str() {
+        "bleeding" => view! {
+            <label class="field"><span>"Intensity"</span><select prop:value=move || primary.get() on:change=move |event| primary.set(event_target_value(&event))><option value="spotting">"Spotting"</option><option value="light">"Light"</option><option value="moderate">"Moderate"</option><option value="heavy">"Heavy"</option></select></label>
+        }.into_any(),
+        "mucus" => view! {
+            <label class="field"><span>"Recorded category"</span><select prop:value=move || primary.get() on:change=move |event| primary.set(event_target_value(&event))><option value="low">"Low"</option><option value="high">"High"</option><option value="peak">"Peak"</option></select></label>
+        }.into_any(),
+        "lh_strip" => view! {
+            <label class="field"><span>"Result"</span><select prop:value=move || primary.get() on:change=move |event| primary.set(event_target_value(&event))><option value="negative">"Negative"</option><option value="positive">"Positive"</option><option value="invalid">"Invalid"</option><option value="indeterminate">"Indeterminate"</option></select></label>
+            <label class="field"><span>"T/C ratio (optional)"</span><input type="number" min="0" step="0.01" prop:value=move || secondary.get() on:input=move |event| secondary.set(event_target_value(&event))/></label>
+        }.into_any(),
+        "hormones" => view! {
+            <label class="field"><span>"E3G (optional)"</span><input type="number" min="0" step="0.01" prop:value=move || primary.get() on:input=move |event| primary.set(event_target_value(&event))/></label>
+            <label class="field"><span>"LH (optional)"</span><input type="number" min="0" step="0.01" prop:value=move || secondary.get() on:input=move |event| secondary.set(event_target_value(&event))/></label>
+        }.into_any(),
+        "temperature" => view! {
+            <label class="field"><span>"Temperature"</span><input type="number" step="0.01" prop:value=move || primary.get() on:input=move |event| primary.set(event_target_value(&event))/></label>
+            <label class="field"><span>"Unit"</span><select prop:value=move || secondary.get() on:change=move |event| secondary.set(event_target_value(&event))><option value="fahrenheit">"°F"</option><option value="celsius">"°C"</option></select></label>
+            <label class="consent"><input type="checkbox" prop:checked=move || flag.get() on:change=move |event| flag.set(event_target_checked(&event))/><span>"Sleep was disturbed"</span></label>
+        }.into_any(),
+        "intercourse" => view! {
+            <label class="field"><span>"Entry"</span><select prop:value=move || primary.get() on:change=move |event| primary.set(event_target_value(&event))><option value="intercourse">"Intercourse"</option><option value="genital_contact">"Genital contact"</option><option value="withdrawal">"Withdrawal"</option></select></label>
+            <label class="consent"><input type="checkbox" prop:checked=move || flag.get() on:change=move |event| flag.set(event_target_checked(&event))/><span>"Protected"</span></label>
+        }.into_any(),
+        "monitor_setup" => view! {
+            <label class="field"><span>"M-button time"</span><input type="time" prop:value=move || primary.get() on:input=move |event| primary.set(event_target_value(&event))/></label>
+            <label class="field"><span>"Monitor model (optional)"</span><input type="text" maxlength="80" prop:value=move || secondary.get() on:input=move |event| secondary.set(event_target_value(&event))/></label>
+            <label class="consent"><input type="checkbox" prop:checked=move || flag.get() on:change=move |event| flag.set(event_target_checked(&event))/><span>"Memory reset"</span></label>
+        }.into_any(),
+        "peak" => view! {
+            <label class="field"><span>"Source"</span><select prop:value=move || primary.get() on:change=move |event| primary.set(event_target_value(&event))><option value="monitor">"Monitor"</option><option value="mucus">"Mucus"</option><option value="lh_strip">"LH strip"</option><option value="other">"Other"</option></select></label>
+        }.into_any(),
+        "note" => view! {
+            <label class="field"><span>"Private note"</span><textarea maxlength="2000" prop:value=move || primary.get() on:input=move |event| primary.set(event_target_value(&event))></textarea></label>
+        }.into_any(),
+        _ => view! { <p class="form-note">"Choose an observation type."</p> }.into_any(),
+    }
+}
+
+fn supplemental_defaults(kind: &str) -> (String, String) {
+    match kind {
+        "bleeding" => ("spotting".to_owned(), String::new()),
+        "mucus" => ("low".to_owned(), String::new()),
+        "lh_strip" => ("negative".to_owned(), String::new()),
+        "temperature" => (String::new(), "fahrenheit".to_owned()),
+        "intercourse" => ("intercourse".to_owned(), String::new()),
+        "monitor_setup" => ("06:00".to_owned(), String::new()),
+        "peak" => ("monitor".to_owned(), String::new()),
+        _ => (String::new(), String::new()),
+    }
+}
+
+fn supplemental_observation(
+    date: NaiveDate,
+    kind: &str,
+    primary: &str,
+    secondary: &str,
+    flag: bool,
+    vault: &BrowserVault,
+) -> Result<Observation, String> {
+    let trimmed_primary = primary.trim();
+    let value = match kind {
+        "bleeding" => ObservationValue::Bleeding {
+            intensity: match trimmed_primary {
+                "heavy" => BleedingIntensity::Heavy,
+                "moderate" => BleedingIntensity::Moderate,
+                "light" => BleedingIntensity::Light,
+                _ => BleedingIntensity::Spotting,
+            },
+        },
+        "mucus" => ObservationValue::Mucus {
+            sensation: None,
+            appearance: None,
+            category: Some(match trimmed_primary {
+                "high" => MucusCategory::High,
+                "peak" => MucusCategory::Peak,
+                _ => MucusCategory::Low,
+            }),
+            baseline_change: None,
+            confidence: None,
+        },
+        "lh_strip" => ObservationValue::LhStrip {
+            brand: None,
+            qualitative: match trimmed_primary {
+                "positive" => LhQualitative::Positive,
+                "invalid" => LhQualitative::Invalid,
+                "indeterminate" => LhQualitative::Indeterminate,
+                _ => LhQualitative::Negative,
+            },
+            tc_ratio: optional_non_negative(secondary, "T/C ratio")?,
+            numeric_lh: None,
+            valid: trimmed_primary != "invalid",
+            test_time: None,
+        },
+        "hormones" => {
+            let e3g = optional_non_negative(primary, "E3G")?;
+            let lh = optional_non_negative(secondary, "LH")?;
+            if e3g.is_none() && lh.is_none() {
+                return Err("Enter E3G, LH, or both".to_owned());
+            }
+            ObservationValue::QuantitativeHormones {
+                e3g,
+                lh,
+                e3g_unit: e3g.map(|_| "ng/mL".to_owned()),
+                lh_unit: lh.map(|_| "mIU/mL".to_owned()),
+            }
+        }
+        "temperature" => ObservationValue::Temperature {
+            value: required_number(primary, "temperature")?,
+            unit: if secondary.trim() == "celsius" {
+                TemperatureUnit::Celsius
+            } else {
+                TemperatureUnit::Fahrenheit
+            },
+            time: None,
+            sleep_quality: None,
+            disturbed: flag,
+        },
+        "intercourse" => ObservationValue::Intercourse {
+            kind: match trimmed_primary {
+                "genital_contact" => IntercourseKind::GenitalContact,
+                "withdrawal" => IntercourseKind::Withdrawal,
+                _ => IntercourseKind::Intercourse,
+            },
+            protected: Some(flag),
+        },
+        "monitor_setup" => ObservationValue::MonitorSetup {
+            m_button_time: NaiveTime::parse_from_str(trimmed_primary, "%H:%M")
+                .map_err(|_| "Enter the M-button time".to_owned())?,
+            monitor_model: nonempty(secondary),
+            memory_reset: flag,
+            artificial_cycle_id: None,
+        },
+        "peak" => ObservationValue::UserMarkedPeak {
+            source: match trimmed_primary {
+                "mucus" => PeakSource::Mucus,
+                "lh_strip" => PeakSource::LhStrip,
+                "other" => PeakSource::Other,
+                _ => PeakSource::Monitor,
+            },
+        },
+        "note" => {
+            if trimmed_primary.is_empty() {
+                return Err("Enter a note".to_owned());
+            }
+            ObservationValue::Note {
+                text: trimmed_primary.to_owned(),
+            }
+        }
+        _ => return Err("Choose a supported observation type".to_owned()),
+    };
+    let observation = Observation {
+        id: Uuid::new_v4(),
+        date,
+        value,
+        recorded_by: current_device_id(vault),
+        version: web_version(vault),
+    };
+    observation
+        .validate()
+        .map_err(|error| format!("The observation is invalid: {error}"))?;
+    Ok(observation)
+}
+
+fn optional_non_negative(value: &str, label: &str) -> Result<Option<f64>, String> {
+    if value.trim().is_empty() {
+        return Ok(None);
+    }
+    let number = required_number(value, label)?;
+    if number < 0.0 {
+        return Err(format!("{label} cannot be negative"));
+    }
+    Ok(Some(number))
+}
+
+fn required_number(value: &str, label: &str) -> Result<f64, String> {
+    value
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|number| number.is_finite())
+        .ok_or_else(|| format!("Enter a valid {label}"))
+}
+
+fn nonempty(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
 fn record_and_sync(
     observation: Result<Observation, String>,
     vault: RwSignal<BrowserVault>,
@@ -696,6 +1120,10 @@ fn persist_and_sync(
             account::save_vault(&current).await?;
             if current.active_session() {
                 let summary = current.sync().await?;
+                // Commit the acknowledged outbox before server-side ciphertext
+                // redaction so a crash cannot replay an operation whose body is gone.
+                account::save_vault(&current).await?;
+                current.finish_pending_redactions().await?;
                 account::save_vault(&current).await?;
                 Ok::<_, String>(summary)
             } else {

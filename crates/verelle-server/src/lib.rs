@@ -38,7 +38,11 @@ pub fn app(database: Database) -> Router {
         .with_state(AppState { database })
 }
 
-pub fn reviewed_app(database: &Database, auth_service: accounts::AuthService) -> Router {
+pub fn reviewed_app(
+    database: &Database,
+    auth_service: accounts::AuthService,
+    billing_service: billing::BillingService,
+) -> Router {
     let status_router = Router::new()
         .route("/healthz", get(reviewed_health))
         .route("/readyz", get(reviewed_ready))
@@ -46,6 +50,7 @@ pub fn reviewed_app(database: &Database, auth_service: accounts::AuthService) ->
             database: database.clone(),
         });
     accounts::account_router(auth_service.clone())
+        .merge(billing::billing_router(billing_service))
         .merge(authenticated_sync_router(
             PostgresRelay::new(database.clone()),
             auth_service,

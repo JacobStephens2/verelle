@@ -4,10 +4,13 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response, window};
 
 use verelle_api::{
-    AccountDeletionResponse, LoginFinishRequest, LoginFinishResponse, LoginStartRequest,
-    LoginStartResponse, RecoveryFinishRequest, RecoveryFinishResponse, RecoveryStartRequest,
-    RecoveryStartResponse, RegistrationFinishRequest, RegistrationFinishResponse,
-    RegistrationStartRequest, RegistrationStartResponse,
+    AccountDeletionResponse, CheckoutSessionRequest, CheckoutSessionResponse,
+    CoupleInviteCreateRequest, CoupleInviteCreateResponse, CoupleInviteRedeemRequest,
+    CoupleInviteRedeemResponse, EntitlementResponse, LoginFinishRequest, LoginFinishResponse,
+    LoginStartRequest, LoginStartResponse, RecoveryFinishRequest, RecoveryFinishResponse,
+    RecoveryStartRequest, RecoveryStartResponse, RedactOperationsRequest, RedactOperationsResponse,
+    RegistrationFinishRequest, RegistrationFinishResponse, RegistrationStartRequest,
+    RegistrationStartResponse,
 };
 
 const MAX_RESPONSE_CHARS: usize = 1_500_000;
@@ -76,6 +79,71 @@ pub async fn delete_account(bearer_token: &str) -> Result<AccountDeletionRespons
     request_json::<(), AccountDeletionResponse>(
         "DELETE",
         verelle_api::CURRENT_ACCOUNT_PATH,
+        Some(bearer_token),
+        None,
+    )
+    .await
+}
+
+pub async fn redact_operations(
+    bearer_token: &str,
+    dataset_id: uuid::Uuid,
+    operation_ids: &[uuid::Uuid],
+) -> Result<RedactOperationsResponse, String> {
+    request_json(
+        "POST",
+        &verelle_api::dataset_operation_redactions_path(dataset_id),
+        Some(bearer_token),
+        Some(&RedactOperationsRequest {
+            operation_ids: operation_ids.to_vec(),
+        }),
+    )
+    .await
+}
+
+pub async fn create_couple_invite(
+    bearer_token: &str,
+    request: &CoupleInviteCreateRequest,
+) -> Result<CoupleInviteCreateResponse, String> {
+    request_json(
+        "POST",
+        verelle_api::COUPLE_INVITES_PATH,
+        Some(bearer_token),
+        Some(request),
+    )
+    .await
+}
+
+pub async fn redeem_couple_invite(
+    bearer_token: &str,
+    request: &CoupleInviteRedeemRequest,
+) -> Result<CoupleInviteRedeemResponse, String> {
+    request_json(
+        "POST",
+        verelle_api::COUPLE_INVITE_REDEEM_PATH,
+        Some(bearer_token),
+        Some(request),
+    )
+    .await
+}
+
+pub async fn create_checkout(
+    bearer_token: &str,
+    request: &CheckoutSessionRequest,
+) -> Result<CheckoutSessionResponse, String> {
+    request_json(
+        "POST",
+        verelle_api::BILLING_CHECKOUT_PATH,
+        Some(bearer_token),
+        Some(request),
+    )
+    .await
+}
+
+pub async fn entitlement(bearer_token: &str) -> Result<EntitlementResponse, String> {
+    request_json::<(), EntitlementResponse>(
+        "GET",
+        verelle_api::BILLING_ENTITLEMENT_PATH,
         Some(bearer_token),
         None,
     )

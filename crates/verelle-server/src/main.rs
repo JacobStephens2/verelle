@@ -3,7 +3,8 @@ use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use verelle_server::{
-    accounts::AuthService, app, config::Config, database::Database, reviewed_app,
+    accounts::AuthService, app, billing::BillingService, config::Config, database::Database,
+    reviewed_app,
 };
 
 #[tokio::main]
@@ -42,7 +43,35 @@ async fn main() -> Result<()> {
             .opaque_server_setup
             .context("OPAQUE server setup is missing")?;
         let auth_service = AuthService::new(database.clone(), server_setup)
-            .context("OPAQUE server setup is invalid")?;
+            .context("OPAQUE server setup is invalid")?
+            .with_billing_enforcement(config.billing_enforcement);
+        let billing_service = BillingService::new(
+            database.clone(),
+            config.stripe.clone(),
+            config.billing_enforcement,
+        );
+        if config.billing_enforcement {
+            let maintenance = billing_service.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+                loop {
+                    interval.tick().await;
+                    match maintenance.run_maintenance_once().await {
+                        Ok((paused, deleted)) if paused > 0 || deleted > 0 => {
+                            tracing::info!(
+                                paused,
+                                deleted,
+                                "billing retention maintenance completed"
+                            );
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            tracing::error!(%error, "billing retention maintenance failed");
+                        }
+                    }
+                }
+            });
+        }
         info!(
             bind_address = %config.bind_address,
             authentication = "opaque_rfc9807",
@@ -50,7 +79,7 @@ async fn main() -> Result<()> {
             oq9_review_reference = review_reference,
             "Verelle reviewed API listening"
         );
-        reviewed_app(&database, auth_service)
+        reviewed_app(&database, auth_service, billing_service)
     } else {
         info!(
             bind_address = %config.bind_address,

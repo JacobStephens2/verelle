@@ -51,6 +51,7 @@ const INVITE_VERIFIER_BYTES: usize = 32;
 pub struct AuthService {
     database: Database,
     server_setup: Arc<Zeroizing<Vec<u8>>>,
+    billing_enforcement: bool,
 }
 
 impl AuthService {
@@ -59,7 +60,14 @@ impl AuthService {
         Ok(Self {
             database,
             server_setup: Arc::new(Zeroizing::new(server_setup)),
+            billing_enforcement: false,
         })
+    }
+
+    #[must_use]
+    pub const fn with_billing_enforcement(mut self, enabled: bool) -> Self {
+        self.billing_enforcement = enabled;
+        self
     }
 
     pub async fn registration_start(
@@ -204,6 +212,12 @@ impl AuthService {
         )
         .bind(account_id)
         .bind(&request.health_data_consent.policy_version)
+        .execute(&mut *transaction)
+        .await?;
+        query::<Postgres>(
+            "INSERT INTO subscription_entitlements (account_id, status) VALUES ($1, 'free')",
+        )
+        .bind(account_id)
         .execute(&mut *transaction)
         .await?;
         consume_flow(&mut transaction, request.flow_id).await?;
@@ -670,7 +684,7 @@ impl AuthService {
         let invite = query::<Postgres>(
             "INSERT INTO couple_invites \
              (invite_id, dataset_id, created_by_account_id, verifier_hash, expires_at) \
-             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '7 days') \
+             VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '15 minutes') \
              RETURNING EXTRACT(EPOCH FROM expires_at)::BIGINT AS expires_at_unix_seconds",
         )
         .bind(request.invite_id)
@@ -974,13 +988,17 @@ impl DatasetAuthorizer for AuthService {
                ON device.device_id = session.device_id AND device.account_id = session.account_id \
              JOIN dataset_memberships membership \
                ON membership.account_id = session.account_id AND membership.dataset_id = $2 \
+             LEFT JOIN subscription_entitlements entitlement \
+               ON entitlement.account_id = session.account_id \
              WHERE session.token_hash = $1 \
                AND session.revoked_at IS NULL AND session.expires_at > CURRENT_TIMESTAMP \
                AND account.disabled_at IS NULL AND device.revoked_at IS NULL \
-               AND membership.removed_at IS NULL",
+               AND membership.removed_at IS NULL \
+               AND (NOT $3 OR entitlement.status IN ('active', 'grace'))",
         )
         .bind(token_hash.as_slice())
         .bind(dataset_id)
+        .bind(self.billing_enforcement)
         .fetch_optional(self.database.pool())
         .await
         .ok()??;
@@ -1128,7 +1146,7 @@ fn verify_device_signature(public_key: &[u8], signature: &[u8], message: &[u8]) 
     signature.is_ok_and(|signature| verifying_key.verify(message, &signature).is_ok())
 }
 
-fn decode_and_hash_token(token: &str) -> Result<[u8; 32], AuthServiceError> {
+pub(crate) fn decode_and_hash_token(token: &str) -> Result<[u8; 32], AuthServiceError> {
     let mut bytes = URL_SAFE_NO_PAD
         .decode(token)
         .map_err(|_| AuthServiceError::AuthenticationRequired)?;
@@ -1154,7 +1172,7 @@ async fn consume_flow(
     Ok(())
 }
 
-async fn authenticated_account(
+pub(crate) async fn authenticated_account(
     transaction: &mut sqlx_core::transaction::Transaction<'_, Postgres>,
     token_hash: &[u8; 32],
 ) -> Result<Uuid, AuthServiceError> {

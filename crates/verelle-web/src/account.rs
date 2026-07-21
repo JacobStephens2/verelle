@@ -6,19 +6,23 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use js_sys::Date;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use verelle_api::{
-    HEALTH_DATA_CONSENT_VERSION, HealthDataConsent, LoginFinishRequest, LoginStartRequest,
-    OpaqueMessage, RecoveryFinishRequest, RecoveryStartRequest, RegistrationFinishRequest,
-    RegistrationStartRequest, login_device_proof_message, recovery_account_proof_message,
-    registration_device_proof_message,
+    BillingInterval, CheckoutSessionRequest, CoupleInviteCreateRequest, CoupleInviteRedeemRequest,
+    EntitlementResponse, HEALTH_DATA_CONSENT_VERSION, HealthDataConsent, LoginFinishRequest,
+    LoginStartRequest, OpaqueMessage, RecoveryFinishRequest, RecoveryStartRequest,
+    RegistrationFinishRequest, RegistrationStartRequest, login_device_proof_message,
+    recovery_account_proof_message, registration_device_proof_message,
 };
 use verelle_auth::{
     account_credential_identifier, client_login_finish, client_login_start,
     client_registration_finish, client_registration_start, derive_account_wrapping_key,
     normalize_account_identifier,
 };
-use verelle_core::{Observation, observations_to_csv, observations_to_json};
+use verelle_core::{
+    Observation, RecordKey, VersionStamp, observations_to_csv, observations_to_json,
+};
 use verelle_crypto::{
     EncryptedEnvelope, RecoveryCode, SecretKey, recovery_public_key, sign_recovery_message,
     unwrap_secret_key, wrap_secret_key,
@@ -27,6 +31,25 @@ use zeroize::{Zeroize, Zeroizing};
 
 const VAULT_VERSION: u8 = 1;
 const KEY_EPOCH: u64 = 1;
+const COUPLE_INVITE_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CoupleInviteCode {
+    version: u8,
+    invite_id: Uuid,
+    dataset_id: Uuid,
+    key_epoch: u64,
+    secret_base64url: String,
+    wrapped_dataset_key_base64url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingCoupleAcceptance {
+    request: CoupleInviteRedeemRequest,
+    target_dataset_id: Uuid,
+    key_epoch: u64,
+    dataset_key_base64url: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserAccount {
@@ -53,6 +76,10 @@ pub struct BrowserVault {
     pub local_observations: Vec<Observation>,
     pub account: Option<BrowserAccount>,
     pub sync: BrowserSyncState,
+    #[serde(default)]
+    pub pending_redactions: Vec<Uuid>,
+    #[serde(default)]
+    pub pending_couple_acceptance: Option<PendingCoupleAcceptance>,
 }
 
 impl Default for BrowserVault {
@@ -62,6 +89,8 @@ impl Default for BrowserVault {
             local_observations: Vec::new(),
             account: None,
             sync: BrowserSyncState::default(),
+            pending_redactions: Vec::new(),
+            pending_couple_acceptance: None,
         }
     }
 }
@@ -90,14 +119,50 @@ impl BrowserVault {
     }
 
     pub fn append_observation(&mut self, observation: Observation) -> Result<(), String> {
-        let account = self
-            .account
-            .as_ref()
-            .ok_or_else(|| "Create an account before recording health data".to_owned())?;
+        let Some(account) = self.account.as_ref() else {
+            crate::model::upsert_observation(&mut self.local_observations, observation);
+            return Ok(());
+        };
         let dataset_key = account.dataset_key()?;
         self.sync
             .append_observation(&dataset_key, account.dataset_id, KEY_EPOCH, observation)
             .map_err(|_| "The observation could not be encrypted".to_owned())?;
+        Ok(())
+    }
+
+    pub fn delete_observation(
+        &mut self,
+        record_key: RecordKey,
+        version: VersionStamp,
+    ) -> Result<(), String> {
+        let Some(account) = self.account.as_ref() else {
+            self.local_observations
+                .retain(|observation| observation.record_key() != record_key);
+            return Ok(());
+        };
+        let dataset_key = account.dataset_key()?;
+        let replaced_ids = self
+            .sync
+            .operations
+            .iter()
+            .filter(|operation| operation.record_key == record_key)
+            .filter_map(|operation| match operation.mutation {
+                verelle_sync::OperationMutation::Upsert { .. } => Some(operation.op_id),
+                verelle_sync::OperationMutation::Tombstone => None,
+            })
+            .collect::<Vec<_>>();
+        self.sync
+            .append_tombstone(
+                &dataset_key,
+                account.dataset_id,
+                KEY_EPOCH,
+                record_key,
+                version,
+            )
+            .map_err(|_| "The deletion could not be encrypted".to_owned())?;
+        self.pending_redactions.extend(replaced_ids);
+        self.pending_redactions.sort_unstable();
+        self.pending_redactions.dedup();
         Ok(())
     }
 
@@ -110,6 +175,198 @@ impl BrowserVault {
         sync_once(&mut self.sync, &session)
             .await
             .map_err(|error| error.to_string())
+    }
+
+    pub async fn finish_pending_redactions(&mut self) -> Result<(), String> {
+        if self.pending_redactions.is_empty() {
+            return Ok(());
+        }
+        let account = self
+            .account
+            .as_ref()
+            .ok_or_else(|| "The account enrollment is unavailable".to_owned())?;
+        let token = account
+            .bearer_token
+            .as_deref()
+            .ok_or_else(|| "Sign in before completing a deletion".to_owned())?;
+        let pending = self.pending_redactions.clone();
+        for chunk in pending.chunks(verelle_api::MAX_REDACTION_OPERATIONS) {
+            account_transport::redact_operations(token, account.dataset_id, chunk).await?;
+        }
+        self.sync.remove_redacted_plaintext(&pending);
+        self.pending_redactions.clear();
+        Ok(())
+    }
+
+    pub async fn create_couple_invite(&self) -> Result<(String, i64), String> {
+        let account = self
+            .account
+            .as_ref()
+            .ok_or_else(|| "Sign in before inviting a partner".to_owned())?;
+        let token = account
+            .bearer_token
+            .as_deref()
+            .ok_or_else(|| "Sign in before inviting a partner".to_owned())?;
+        let invite_id = Uuid::new_v4();
+        let secret = SecretKey::random();
+        let wrapped_dataset_key = wrap_secret_key(
+            &secret,
+            KEY_EPOCH,
+            &invite_context(invite_id, account.dataset_id),
+            &account.dataset_key()?,
+        )
+        .map_err(|_| "The chart invitation could not be encrypted".to_owned())?;
+        let verifier = invite_verifier(invite_id, &secret);
+        let code = CoupleInviteCode {
+            version: COUPLE_INVITE_VERSION,
+            invite_id,
+            dataset_id: account.dataset_id,
+            key_epoch: KEY_EPOCH,
+            secret_base64url: URL_SAFE_NO_PAD.encode(secret.expose()),
+            wrapped_dataset_key_base64url: URL_SAFE_NO_PAD.encode(wrapped_dataset_key.to_bytes()),
+        };
+        let response = account_transport::create_couple_invite(
+            token,
+            &CoupleInviteCreateRequest {
+                invite_id,
+                dataset_id: account.dataset_id,
+                verifier: OpaqueMessage::from_bytes(&verifier),
+            },
+        )
+        .await?;
+        if response.invite_id != invite_id || response.dataset_id != account.dataset_id {
+            return Err("The account service returned a different invitation".to_owned());
+        }
+        let code = serde_json::to_vec(&code)
+            .map_err(|_| "The chart invitation could not be encoded".to_owned())?;
+        Ok((
+            URL_SAFE_NO_PAD.encode(code),
+            response.expires_at_unix_seconds,
+        ))
+    }
+
+    pub async fn create_checkout(&self, interval: BillingInterval) -> Result<String, String> {
+        let token = self
+            .account
+            .as_ref()
+            .and_then(|account| account.bearer_token.as_deref())
+            .ok_or_else(|| "Sign in before subscribing".to_owned())?;
+        Ok(
+            account_transport::create_checkout(token, &CheckoutSessionRequest { interval })
+                .await?
+                .checkout_url,
+        )
+    }
+
+    pub async fn entitlement(&self) -> Result<EntitlementResponse, String> {
+        let token = self
+            .account
+            .as_ref()
+            .and_then(|account| account.bearer_token.as_deref())
+            .ok_or_else(|| "Sign in to check the subscription".to_owned())?;
+        account_transport::entitlement(token).await
+    }
+
+    pub async fn accept_couple_invite(&mut self, invite_code: String) -> Result<(), String> {
+        if self.pending_couple_acceptance.is_some() {
+            return self.finish_pending_couple_acceptance().await;
+        }
+        if !self.observations()?.is_empty()
+            || !self.sync.operations.is_empty()
+            || !self.sync.outbox.is_empty()
+        {
+            return Err(
+                "An invitation can only replace an empty chart; export and delete entries first"
+                    .to_owned(),
+            );
+        }
+        let mut code_bytes = URL_SAFE_NO_PAD
+            .decode(invite_code.trim())
+            .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+        let code: CoupleInviteCode = serde_json::from_slice(&code_bytes)
+            .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+        code_bytes.zeroize();
+        if code.version != COUPLE_INVITE_VERSION
+            || code.invite_id.is_nil()
+            || code.dataset_id.is_nil()
+            || code.key_epoch != KEY_EPOCH
+        {
+            return Err("The chart invitation is invalid or expired".to_owned());
+        }
+        let secret = decode_secret_key(&code.secret_base64url)
+            .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+        let wrapped = EncryptedEnvelope::from_bytes(
+            &URL_SAFE_NO_PAD
+                .decode(&code.wrapped_dataset_key_base64url)
+                .map_err(|_| "The chart invitation is invalid or expired".to_owned())?,
+        )
+        .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+        let dataset_key = unwrap_secret_key(
+            &secret,
+            code.key_epoch,
+            &invite_context(code.invite_id, code.dataset_id),
+            &wrapped,
+        )
+        .map_err(|_| "The chart invitation is invalid or expired".to_owned())?;
+        let account = self
+            .account
+            .as_ref()
+            .ok_or_else(|| "Sign in before accepting an invitation".to_owned())?;
+        if !account.active_session() {
+            return Err("Sign in before accepting an invitation".to_owned());
+        }
+        let account_data_key = decode_secret_key(&account.account_data_key)?;
+        let account_wrap = wrap_secret_key(
+            &account_data_key,
+            code.key_epoch,
+            b"dataset/account-wrap",
+            &dataset_key,
+        )
+        .map_err(|_| "The shared chart key could not be protected".to_owned())?;
+        self.pending_couple_acceptance = Some(PendingCoupleAcceptance {
+            request: CoupleInviteRedeemRequest {
+                invite_id: code.invite_id,
+                verifier: OpaqueMessage::from_bytes(&invite_verifier(code.invite_id, &secret)),
+                wrapped_dataset_key: OpaqueMessage::from_bytes(&account_wrap.to_bytes()),
+            },
+            target_dataset_id: code.dataset_id,
+            key_epoch: code.key_epoch,
+            dataset_key_base64url: URL_SAFE_NO_PAD.encode(dataset_key.expose()),
+        });
+        save_vault(self).await?;
+        self.finish_pending_couple_acceptance().await
+    }
+
+    async fn finish_pending_couple_acceptance(&mut self) -> Result<(), String> {
+        let pending = self
+            .pending_couple_acceptance
+            .clone()
+            .ok_or_else(|| "No chart invitation is pending".to_owned())?;
+        let account = self
+            .account
+            .as_ref()
+            .ok_or_else(|| "The account enrollment is unavailable".to_owned())?;
+        let token = account
+            .bearer_token
+            .as_deref()
+            .ok_or_else(|| "Sign in to finish accepting the invitation".to_owned())?;
+        let response = account_transport::redeem_couple_invite(token, &pending.request).await?;
+        if response.invite_id != pending.request.invite_id
+            || response.dataset_id != pending.target_dataset_id
+            || response.key_epoch != pending.key_epoch
+        {
+            return Err("The account service returned a different shared chart".to_owned());
+        }
+        let account = self
+            .account
+            .as_mut()
+            .ok_or_else(|| "The account enrollment is unavailable".to_owned())?;
+        account.dataset_id = pending.target_dataset_id;
+        account.dataset_key = pending.dataset_key_base64url;
+        self.sync = BrowserSyncState::default();
+        self.pending_redactions.clear();
+        self.pending_couple_acceptance = None;
+        save_vault(self).await
     }
 
     pub fn export_json(&self) -> Result<String, String> {
@@ -152,9 +409,12 @@ pub async fn load_vault() -> Result<BrowserVault, String> {
     let Some(value) = encrypted_storage::load().await? else {
         return Ok(BrowserVault::default());
     };
-    if let Ok(vault) = serde_json::from_str::<BrowserVault>(&value) {
+    if let Ok(mut vault) = serde_json::from_str::<BrowserVault>(&value) {
         if vault.version != VAULT_VERSION {
             return Err("The browser vault version is unsupported".to_owned());
+        }
+        if vault.pending_couple_acceptance.is_some() && vault.active_session() {
+            let _ = vault.finish_pending_couple_acceptance().await;
         }
         return Ok(vault);
     }
@@ -637,6 +897,21 @@ fn current_unix_seconds() -> i64 {
     #[allow(clippy::cast_possible_truncation)]
     let seconds = (Date::now() / 1000.0) as i64;
     seconds
+}
+
+fn invite_context(invite_id: Uuid, dataset_id: Uuid) -> Vec<u8> {
+    let mut context = b"couple/invite-wrap/v1".to_vec();
+    context.extend_from_slice(invite_id.as_bytes());
+    context.extend_from_slice(dataset_id.as_bytes());
+    context
+}
+
+fn invite_verifier(invite_id: Uuid, secret: &SecretKey) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"verelle/couple-invite-verifier/v1");
+    digest.update(invite_id.as_bytes());
+    digest.update(secret.expose());
+    digest.finalize().into()
 }
 
 #[cfg(test)]

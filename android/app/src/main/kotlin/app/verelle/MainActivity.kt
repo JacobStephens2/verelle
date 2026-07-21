@@ -597,7 +597,7 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                                 modifier = Modifier.semantics { heading() },
                             )
                             Text(
-                                "The invite contains the encrypted chart key. Send it privately; it expires in seven days and can be used once.",
+                                "The invite contains the encrypted chart key. Send it privately; it expires in 15 minutes and can be used once.",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                             Button(

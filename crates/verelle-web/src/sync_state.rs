@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 use uuid::Uuid;
 use verelle_api::{PullResponse, PushRequest, TransportOperation};
-use verelle_core::Observation;
+use verelle_core::{Observation, RecordKey, VersionStamp};
 use verelle_crypto::SecretKey;
 use verelle_sync::{
     PlainOperation, SyncError, TransportOp, decrypt_operation, encrypt_operation, merge_operations,
@@ -30,6 +30,29 @@ impl BrowserSyncState {
         self.operations.push(operation);
         self.outbox.push(transport);
         Ok(op_id)
+    }
+
+    pub fn append_tombstone(
+        &mut self,
+        dataset_key: &SecretKey,
+        dataset_id: Uuid,
+        key_epoch: u64,
+        record_key: RecordKey,
+        version: VersionStamp,
+    ) -> Result<Uuid, BrowserSyncError> {
+        let operation = PlainOperation::tombstone(record_key, version);
+        let transport = encrypt_operation(dataset_key, key_epoch, dataset_id, &operation)?;
+        let op_id = operation.op_id;
+        self.operations.push(operation);
+        self.outbox.push(transport);
+        Ok(op_id)
+    }
+
+    pub fn remove_redacted_plaintext(&mut self, operation_ids: &[Uuid]) {
+        self.operations
+            .retain(|operation| !operation_ids.contains(&operation.op_id));
+        self.outbox
+            .retain(|operation| !operation_ids.contains(&operation.op_id));
     }
 
     pub fn push_request(&self) -> Option<PushRequest> {

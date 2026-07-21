@@ -22,6 +22,9 @@ pub const CURRENT_SESSION_PATH: &str = "/api/v1/sessions/current";
 pub const CURRENT_ACCOUNT_PATH: &str = "/api/v1/accounts/current";
 pub const COUPLE_INVITES_PATH: &str = "/api/v1/couple-invites";
 pub const COUPLE_INVITE_REDEEM_PATH: &str = "/api/v1/couple-invites/redeem";
+pub const BILLING_CHECKOUT_PATH: &str = "/api/v1/billing/checkout";
+pub const BILLING_ENTITLEMENT_PATH: &str = "/api/v1/billing/entitlement";
+pub const STRIPE_WEBHOOK_PATH: &str = "/api/v1/billing/stripe-webhook";
 pub const HEALTH_DATA_CONSENT_VERSION: &str = "2026-07-19";
 pub const MAX_AUTH_MESSAGE_BYTES: usize = 4096;
 pub const MAX_PUSH_OPERATIONS: usize = 100;
@@ -148,6 +151,32 @@ pub struct LoginFinishResponse {
 pub struct AccountDeletionResponse {
     pub deletion_id: Uuid,
     pub deleted_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BillingInterval {
+    Monthly,
+    Annual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckoutSessionRequest {
+    pub interval: BillingInterval,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckoutSessionResponse {
+    pub checkout_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntitlementResponse {
+    pub status: String,
+    pub sync_allowed: bool,
+    pub current_period_ends_at_unix_seconds: Option<i64>,
+    pub grace_ends_at_unix_seconds: Option<i64>,
+    pub scheduled_deletion_at_unix_seconds: Option<i64>,
 }
 
 /// Registers a short-lived, single-use invitation. The verifier is derived

@@ -201,8 +201,9 @@ h3 { font-size: 1.55rem; }
 
 .field { display: grid; gap: 8px; margin-bottom: 21px; }
 .field > span, fieldset legend { color: var(--muted); font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.field input { width: 100%; border: 1px solid var(--line); border-radius: 13px; outline: none; padding: 14px 15px; color: var(--ink); background: rgba(255,255,255,0.68); }
-.field input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(29, 96, 105, 0.1); }
+.field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; outline: none; padding: 14px 15px; color: var(--ink); background: rgba(255,255,255,0.68); font: inherit; }
+.field textarea { min-height: 94px; resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(29, 96, 105, 0.1); }
 
 .cycle-start-box { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; padding-bottom: 23px; margin-bottom: 23px; border-bottom: 1px solid var(--line); }
 .cycle-start-box .field { margin: 0; }
@@ -223,10 +224,16 @@ fieldset legend { margin-bottom: 12px; }
 .primary-button { width: 100%; display: flex; justify-content: space-between; align-items: center; border: 0; border-radius: 14px; padding: 15px 18px; color: white; background: var(--teal-deep); font-weight: 700; box-shadow: 0 10px 20px rgba(21, 63, 72, 0.16); }
 .primary-button:hover { background: var(--teal); transform: translateY(-1px); }
 .notice { min-height: 39px; margin: 13px 0 0; color: var(--teal); font-size: 0.78rem; line-height: 1.5; }
+.supplemental-entry { display: grid; margin-top: 24px; padding-top: 23px; border-top: 1px solid var(--line); }
+.supplemental-entry .secondary-button { width: 100%; }
 
 .local-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
 .local-facts div { display: flex; justify-content: space-between; padding: 12px; border-radius: 12px; background: var(--mist); font-size: 0.75rem; }
 .local-facts span { color: var(--muted); }
+.recent-entries { display: grid; gap: 8px; margin-top: 22px; }
+.recent-entries h3 { margin-bottom: 3px; font-size: 0.84rem; }
+.recent-entry { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.58); font-size: 0.7rem; }
+.recent-entry .quiet-button { flex: none; padding: 7px 9px; font-size: 0.68rem; }
 
 .chart-toolbar { display: flex; justify-content: space-between; align-items: start; gap: 20px; }
 .legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 11px; color: var(--muted); font-size: 0.7rem; }
@@ -269,6 +276,14 @@ fieldset legend { margin-bottom: 12px; }
 .danger-zone h2 { margin-bottom: 10px; }
 .danger-zone p { max-width: 760px; margin: 0 0 20px; color: #79493e; font-size: 0.82rem; line-height: 1.6; }
 .danger-zone .field { max-width: 360px; }
+.couple-zone { border-color: var(--line); background: var(--mist); }
+.couple-zone p { color: var(--muted); }
+.couple-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.invite-code { display: block; max-height: 150px; overflow: auto; margin-top: 13px; padding: 13px; border: 1px dashed var(--teal); border-radius: 12px; background: var(--paper); overflow-wrap: anywhere; user-select: all; font-size: 0.7rem; line-height: 1.5; }
+.billing-zone { border-color: rgba(29, 96, 105, 0.2); background: #f2faf8; }
+.billing-zone p { color: var(--muted); }
+.billing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.billing-actions strong { margin-left: auto; color: var(--teal); font-size: 0.76rem; text-transform: capitalize; }
 
 footer { width: min(1380px, calc(100% - 48px)); margin: 0 auto; padding: 31px 4px 46px; display: flex; justify-content: space-between; gap: 20px; color: var(--muted); font-size: 0.7rem; }
 
@@ -279,6 +294,7 @@ footer { width: min(1380px, calc(100% - 48px)); margin: 0 auto; padding: 31px 4p
   .record-panel { border-right: 0; border-bottom: 1px solid var(--line); }
   .day-row { grid-template-columns: 57px 100px minmax(160px, 1fr) 55px; }
   .account-panel, .auth-entry-content { grid-template-columns: 1fr; gap: 24px; }
+  .couple-actions { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 620px) {
