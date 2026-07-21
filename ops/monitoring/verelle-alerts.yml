@@ -1,0 +1,15 @@
+groups:
+  - name: verelle
+    rules:
+      - alert: VerelleApiUnavailable
+        expr: probe_success{instance="https://verelle.app/healthz"} == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Verelle API health check is failing"
+      - alert: VerelleBackupStale
+        expr: time() - verelle_backup_last_success_unixtime > 93600
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "The newest successful Verelle backup is more than 26 hours old"

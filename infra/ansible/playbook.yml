@@ -1,0 +1,175 @@
+---
+- name: Configure the isolated Verelle service on the shared household host
+  hosts: verelle
+  become: true
+  vars:
+    verelle_user: verelle
+    verelle_root: /opt/verelle
+    verelle_web_root: /var/www/verelle.app
+    verelle_listen: 127.0.0.1:3035
+    verelle_manage_backup: false
+  pre_tasks:
+    - name: Require secrets supplied by Ansible Vault or environment inventory
+      ansible.builtin.assert:
+        that:
+          - verelle_database_url is defined
+          - verelle_opaque_server_setup is defined
+        fail_msg: "Provide encrypted deployment secrets; this playbook never generates or prints them."
+      no_log: true
+    - name: Require encrypted-backup settings when this playbook manages backups
+      ansible.builtin.assert:
+        that:
+          - verelle_backup_bucket is defined
+          - verelle_backup_age_recipient is defined
+          - verelle_backup_aws_access_key_id is defined
+          - verelle_backup_aws_secret_access_key is defined
+        fail_msg: "Provide backup credentials and an age recipient through Ansible Vault."
+      no_log: true
+      when: verelle_manage_backup | bool
+  tasks:
+    - name: Install runtime and operational packages
+      ansible.builtin.apt:
+        name:
+          - apache2
+          - postgresql-client
+          - age
+          - awscli
+        state: present
+        update_cache: true
+
+    - name: Create non-login service account
+      ansible.builtin.user:
+        name: "{{ verelle_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ verelle_root }}"
+        create_home: false
+
+    - name: Create isolated service directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: "{{ verelle_root }}/bin", owner: root, group: root, mode: "0755" }
+        - { path: "{{ verelle_root }}/releases", owner: root, group: root, mode: "0755" }
+        - { path: "{{ verelle_web_root }}", owner: root, group: www-data, mode: "0755" }
+        - { path: "/etc/verelle", owner: root, group: root, mode: "0755" }
+
+    - name: Install production environment without logging secrets
+      ansible.builtin.template:
+        src: server.env.j2
+        dest: /etc/verelle/server.env
+        owner: root
+        group: "{{ verelle_user }}"
+        mode: "0640"
+      no_log: true
+      notify: Restart Verelle
+
+    - name: Install hardened service unit
+      ansible.builtin.copy:
+        src: ../../ops/systemd/verelle-server.service
+        dest: /etc/systemd/system/verelle-server.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart Verelle
+
+    - name: Install Apache reverse proxy
+      ansible.builtin.copy:
+        src: apache-verelle.conf
+        dest: /etc/apache2/conf-available/verelle-api.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload Apache
+
+    - name: Enable required Apache modules and configuration
+      ansible.builtin.command: "{{ item }}"
+      changed_when: false
+      loop:
+        - a2enmod proxy proxy_http headers
+        - a2enconf verelle-api
+      notify: Reload Apache
+
+    - name: Enable Verelle on boot
+      ansible.builtin.systemd_service:
+        name: verelle-server
+        enabled: true
+        daemon_reload: true
+
+    - name: Install encrypted backup service
+      when: verelle_manage_backup | bool
+      block:
+        - name: Create non-login backup account
+          ansible.builtin.user:
+            name: verelle-backup
+            system: true
+            shell: /usr/sbin/nologin
+            home: /var/lib/verelle-backup
+            create_home: true
+
+        - name: Create backup program directory
+          ansible.builtin.file:
+            path: "{{ verelle_root }}/ops"
+            state: directory
+            owner: root
+            group: root
+            mode: "0755"
+
+        - name: Install backup and manifest programs
+          ansible.builtin.copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            owner: root
+            group: root
+            mode: "{{ item.mode }}"
+          loop:
+            - { src: "../../ops/backup/verelle-backup.sh", dest: "{{ verelle_root }}/ops/verelle-backup.sh", mode: "0755" }
+            - { src: "../../ops/backup/restore-drill.sh", dest: "{{ verelle_root }}/ops/restore-drill.sh", mode: "0755" }
+            - { src: "../../ops/backup/apply-deletion-manifest.sql", dest: "{{ verelle_root }}/ops/apply-deletion-manifest.sql", mode: "0644" }
+
+        - name: Install backup environment without logging secrets
+          ansible.builtin.template:
+            src: backup.env.j2
+            dest: /etc/verelle/backup.env
+            owner: root
+            group: verelle-backup
+            mode: "0640"
+          no_log: true
+
+        - name: Install backup systemd units
+          ansible.builtin.copy:
+            src: "../../ops/systemd/{{ item }}"
+            dest: "/etc/systemd/system/{{ item }}"
+            owner: root
+            group: root
+            mode: "0644"
+          loop:
+            - verelle-backup.service
+            - verelle-backup.timer
+          notify: Reload systemd
+
+        - name: Enable the nightly backup timer
+          ansible.builtin.systemd_service:
+            name: verelle-backup.timer
+            enabled: true
+            state: started
+            daemon_reload: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+    - name: Restart Verelle
+      ansible.builtin.systemd_service:
+        name: verelle-server
+        state: restarted
+    - name: Reload Apache
+      ansible.builtin.systemd_service:
+        name: apache2
+        state: reloaded
