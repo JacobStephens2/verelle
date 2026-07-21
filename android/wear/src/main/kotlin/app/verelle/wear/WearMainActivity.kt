@@ -46,8 +46,14 @@ class WearMainActivity : ComponentActivity(), MessageClient.OnMessageReceivedLis
 
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
-            ACK_PATH -> response = "Saved ${String(event.data)}"
-            RECENT_RESPONSE_PATH -> response = recentLabel(event.data)
+            ACK_PATH -> {
+                response = "Saved ${String(event.data)}"
+                requestRecent()
+            }
+            RECENT_RESPONSE_PATH -> {
+                response = recentLabel(event.data)
+                WearSurfaceState.update(this, response)
+            }
         }
     }
 
