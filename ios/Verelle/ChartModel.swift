@@ -9,8 +9,16 @@ final class ChartModel {
     private(set) var repository: LocalRepository?
     private(set) var charts: [FfiChart] = []
     private(set) var pendingCount: UInt64 = 0
+    private(set) var enrollment: MobileEnrollment?
+    private(set) var lastSyncedAt: Date?
+    private(set) var accountBusy = false
+    var recoveryCode: String?
+    var coupleInviteCode: String?
     var message: String?
     private var watchBridge: WatchBridge?
+    private let accountClient = AccountSyncClient()
+    private let enrollmentStore = EnrollmentKeychain()
+    private let redactionStore = PendingRedactionKeychain()
 
     func open() async {
         do {
@@ -24,6 +32,16 @@ final class ChartModel {
             )
             try reload()
             startWatchBridge()
+            if let repository, let resumed = try await accountClient.resumeRecovery(repository: repository) {
+                enrollment = resumed.enrollment
+                recoveryCode = resumed.recoveryCode
+                message = "Account recovery resumed. Store the replacement recovery code and sign in with the new password."
+            }
+            enrollment = try enrollmentStore.load()
+            await resumeRedaction()
+            if enrollment?.hasActiveSession == true {
+                await syncNow(quiet: true)
+            }
         } catch {
             message = error.localizedDescription
         }
@@ -90,6 +108,232 @@ final class ChartModel {
         perform { try $0.recordUserMarkedPeak(date: date, source: source) }
     }
 
+    func recordCycleStartDetails(
+        date: String,
+        basis: FfiCycleStartBasis,
+        methodCycle: UInt32?,
+        postpartumCycle: UInt32?
+    ) {
+        perform {
+            try $0.recordCycleStartDetails(
+                date: date,
+                basis: basis,
+                methodCycleNumber: methodCycle,
+                postpartumCycleNumber: postpartumCycle
+            )
+        }
+    }
+
+    func recordMonitorSetup(date: String, time: String, model: String?, reset: Bool) {
+        perform {
+            try $0.recordMonitorSetup(
+                date: date,
+                mButtonTime: time,
+                monitorModel: model,
+                memoryReset: reset
+            )
+        }
+    }
+
+    func recordHormones(date: String, e3g: Double?, lh: Double?, e3gUnit: String?, lhUnit: String?) {
+        perform {
+            try $0.recordQuantitativeHormones(
+                date: date,
+                e3g: e3g,
+                lh: lh,
+                e3gUnit: e3gUnit,
+                lhUnit: lhUnit
+            )
+        }
+    }
+
+    func recordLHStrip(date: String, result: FfiLhQualitative, ratio: Double?, numericLH: Double?) {
+        perform {
+            try $0.recordLhStrip(
+                date: date,
+                brand: nil,
+                qualitative: result,
+                tcRatio: ratio,
+                numericLh: numericLH,
+                valid: result != .invalid,
+                testTime: nil
+            )
+        }
+    }
+
+    func recordIntercourse(date: String, kind: FfiIntercourseKind, protected: Bool?) {
+        perform { try $0.recordIntercourse(date: date, kind: kind, protected: protected) }
+    }
+
+    func deleteMarker(date: String, marker: FfiEditableMarker) {
+        guard let repository else { return }
+        do {
+            let superseded = try repository.deleteMarker(date: date, marker: marker)
+            try reload()
+            if let saved = enrollment, saved.hasActiveSession {
+                try redactionStore.save(PendingMobileRedaction(
+                    date: date,
+                    markerRaw: marker.storageName,
+                    operationIDs: superseded
+                ))
+                Task {
+                    do {
+                        await syncNow(quiet: true)
+                        try await accountClient.redact(
+                            operationIDs: superseded,
+                            enrollment: saved
+                        )
+                        _ = try repository.purgeMarkerHistory(
+                            date: date,
+                            marker: marker,
+                            operationIds: superseded
+                        )
+                        try reload()
+                        try redactionStore.clear()
+                        message = "Observation deleted and prior server ciphertext redacted"
+                    } catch {
+                        message = "The deletion is saved locally; server redaction will retry after sign-in: \(error.localizedDescription)"
+                    }
+                }
+            } else {
+                _ = try repository.purgeMarkerHistory(
+                    date: date,
+                    marker: marker,
+                    operationIds: superseded
+                )
+                message = "Observation deleted locally"
+            }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    func register(email: String, password: String) async {
+        guard let repository else { return }
+        await accountOperation {
+            let result = try await accountClient.register(
+                repository: repository,
+                email: email,
+                password: password,
+                deviceID: DeviceIdentity().getOrCreate()
+            )
+            try enrollmentStore.save(result.enrollment)
+            enrollment = result.enrollment
+            recoveryCode = result.recoveryCode
+            message = "Account created. Store the recovery code before relying on sync."
+            await syncNow(quiet: true)
+        }
+    }
+
+    func signIn(password: String) async {
+        guard let saved = enrollment else {
+            message = "This iPhone has no enrolled account. Recover the account on a new installation."
+            return
+        }
+        await accountOperation {
+            let signedIn = try await accountClient.login(enrollment: saved, password: password)
+            try enrollmentStore.save(signedIn)
+            enrollment = signedIn
+            message = "Signed in securely"
+            await syncNow(quiet: true)
+        }
+    }
+
+    func recover(email: String, recoveryCode enteredCode: String, newPassword: String) async {
+        guard let repository else { return }
+        await accountOperation {
+            let result = try await accountClient.recover(
+                repository: repository,
+                email: email,
+                recoveryCode: enteredCode,
+                newPassword: newPassword,
+                deviceID: DeviceIdentity().getOrCreate()
+            )
+            try enrollmentStore.save(result.enrollment)
+            enrollment = result.enrollment
+            recoveryCode = result.recoveryCode
+            try reload()
+            message = result.enrollment.hasActiveSession
+                ? "Account recovered and signed in. Store the replacement recovery code."
+                : "Account recovered. Store the replacement recovery code, then sign in."
+            await syncNow(quiet: true)
+        }
+    }
+
+    func signOut() async {
+        guard var saved = enrollment else { return }
+        await accountOperation {
+            if saved.hasActiveSession { try await accountClient.logout(enrollment: saved) }
+            saved.bearerToken = ""
+            saved.expiresAt = 0
+            try enrollmentStore.save(saved)
+            enrollment = saved
+            message = "Signed out on this iPhone; local charting remains available"
+        }
+    }
+
+    func syncNow(quiet: Bool = false) async {
+        guard let repository, let saved = enrollment, saved.hasActiveSession else { return }
+        if accountBusy && !quiet { return }
+        if !quiet { accountBusy = true }
+        do {
+            let result = try await accountClient.sync(repository: repository, enrollment: saved)
+            try reload()
+            lastSyncedAt = Date()
+            if !quiet { message = "Encrypted sync complete · \(result.0) sent · \(result.1) received" }
+        } catch {
+            if !quiet { message = error.localizedDescription }
+        }
+        if !quiet { accountBusy = false }
+    }
+
+    func createCoupleInvite() async {
+        guard let repository, let saved = enrollment, saved.hasActiveSession else {
+            message = "Sign in before creating a couple invite"
+            return
+        }
+        await accountOperation {
+            coupleInviteCode = try await accountClient.createCoupleInvite(
+                repository: repository,
+                enrollment: saved
+            )
+            message = "Share the invite code through a private channel"
+        }
+    }
+
+    func acceptCoupleInvite(_ code: String) async {
+        guard let repository, let saved = enrollment, saved.hasActiveSession else {
+            message = "Sign in before accepting a couple invite"
+            return
+        }
+        await accountOperation {
+            let result = try await accountClient.acceptCoupleInvite(
+                repository: repository,
+                enrollment: saved,
+                code: code
+            )
+            try DatasetKeychain().replace(result.datasetKey)
+            try enrollmentStore.save(result.enrollment)
+            enrollment = result.enrollment
+            try reload()
+            message = "The shared encrypted chart is ready"
+            await syncNow(quiet: true)
+        }
+    }
+
+    func deleteAccount() async {
+        guard let saved = enrollment, saved.hasActiveSession else {
+            message = "Sign in before deleting the server account"
+            return
+        }
+        await accountOperation {
+            let receipt = try await accountClient.deleteAccount(enrollment: saved)
+            try enrollmentStore.clear()
+            enrollment = nil
+            message = "Server account deleted · receipt \(receipt). The local chart remains available for export."
+        }
+    }
+
     func exportJSON() -> String {
         (try? repository?.exportJson()) ?? "[]"
     }
@@ -107,8 +351,41 @@ final class ChartModel {
             try operation(repository)
             try reload()
             message = "Observation saved on this iPhone"
+            if enrollment?.hasActiveSession == true {
+                Task { await syncNow(quiet: true) }
+            }
         } catch {
             message = error.localizedDescription
+        }
+    }
+
+    private func accountOperation(_ operation: () async throws -> Void) async {
+        guard !accountBusy else { return }
+        accountBusy = true
+        do { try await operation() } catch { message = error.localizedDescription }
+        accountBusy = false
+    }
+
+    private func resumeRedaction() async {
+        guard
+            let pending = try? redactionStore.load(),
+            let repository,
+            let saved = enrollment,
+            saved.hasActiveSession,
+            let marker = FfiEditableMarker(storageName: pending.markerRaw)
+        else { return }
+        do {
+            await syncNow(quiet: true)
+            try await accountClient.redact(operationIDs: pending.operationIDs, enrollment: saved)
+            _ = try repository.purgeMarkerHistory(
+                date: pending.date,
+                marker: marker,
+                operationIds: pending.operationIDs
+            )
+            try redactionStore.clear()
+            try reload()
+        } catch {
+            message = "A pending server deletion will retry on the next launch: \(error.localizedDescription)"
         }
     }
 
@@ -205,7 +482,7 @@ private struct SendableReplyHandler: @unchecked Sendable {
     }
 }
 
-private struct DatasetKeychain {
+struct DatasetKeychain {
     private let account = "local-dataset-key-v1"
 
     func getOrCreate() throws -> Data {
@@ -232,6 +509,21 @@ private struct DatasetKeychain {
         guard inserted == errSecSuccess else { throw KeychainError(inserted) }
         return key
     }
+
+    func replace(_ key: Data) throws {
+        guard key.count == 32 else { throw KeychainError(errSecParam) }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "app.verelle.mobile",
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+        var insertion = query
+        insertion[kSecValueData as String] = key
+        insertion[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let inserted = SecItemAdd(insertion as CFDictionary, nil)
+        guard inserted == errSecSuccess else { throw KeychainError(inserted) }
+    }
 }
 
 private struct DeviceIdentity {
@@ -248,4 +540,39 @@ private struct KeychainError: LocalizedError {
     let status: OSStatus
     init(_ status: OSStatus) { self.status = status }
     var errorDescription: String? { "Keychain operation failed (\(status))" }
+}
+
+private extension FfiEditableMarker {
+    var storageName: String {
+        switch self {
+        case .cycleStart: "cycle_start"
+        case .monitorSetup: "monitor_setup"
+        case .monitor: "monitor"
+        case .quantitativeHormones: "quantitative_hormones"
+        case .lhStrip: "lh_strip"
+        case .bleeding: "bleeding"
+        case .intercourse: "intercourse"
+        case .mucus: "mucus"
+        case .temperature: "temperature"
+        case .note: "note"
+        case .userMarkedPeak: "user_marked_peak"
+        }
+    }
+
+    init?(storageName: String) {
+        switch storageName {
+        case "cycle_start": self = .cycleStart
+        case "monitor_setup": self = .monitorSetup
+        case "monitor": self = .monitor
+        case "quantitative_hormones": self = .quantitativeHormones
+        case "lh_strip": self = .lhStrip
+        case "bleeding": self = .bleeding
+        case "intercourse": self = .intercourse
+        case "mucus": self = .mucus
+        case "temperature": self = .temperature
+        case "note": self = .note
+        case "user_marked_peak": self = .userMarkedPeak
+        default: return nil
+        }
+    }
 }
