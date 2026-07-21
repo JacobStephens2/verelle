@@ -28,6 +28,7 @@ class VerelleSyncWorker(
             .getOrElse { return Result.failure() }
         return try {
             SyncHttpClient().sync(repository, enrollment)
+            SyncFreshnessStore(applicationContext).recordSuccess()
             Result.success()
         } catch (error: SyncHttpException) {
             if (error.retryable) Result.retry() else Result.failure()

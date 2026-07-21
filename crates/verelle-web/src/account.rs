@@ -80,6 +80,8 @@ pub struct BrowserVault {
     pub pending_redactions: Vec<Uuid>,
     #[serde(default)]
     pub pending_couple_acceptance: Option<PendingCoupleAcceptance>,
+    #[serde(default)]
+    pub last_synced_at: Option<String>,
 }
 
 impl Default for BrowserVault {
@@ -91,6 +93,7 @@ impl Default for BrowserVault {
             sync: BrowserSyncState::default(),
             pending_redactions: Vec::new(),
             pending_couple_acceptance: None,
+            last_synced_at: None,
         }
     }
 }

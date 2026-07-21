@@ -19,6 +19,8 @@ final class ChartModel {
     private let accountClient = AccountSyncClient()
     private let enrollmentStore = EnrollmentKeychain()
     private let redactionStore = PendingRedactionKeychain()
+    private var syncLoop: Task<Void, Never>?
+    private var syncInFlight = false
 
     func open() async {
         do {
@@ -42,6 +44,7 @@ final class ChartModel {
             if enrollment?.hasActiveSession == true {
                 await syncNow(quiet: true)
             }
+            startForegroundPolling()
         } catch {
             message = error.localizedDescription
         }
@@ -274,8 +277,14 @@ final class ChartModel {
 
     func syncNow(quiet: Bool = false) async {
         guard let repository, let saved = enrollment, saved.hasActiveSession else { return }
+        guard !syncInFlight else { return }
         if accountBusy && !quiet { return }
+        syncInFlight = true
         if !quiet { accountBusy = true }
+        defer {
+            syncInFlight = false
+            if !quiet { accountBusy = false }
+        }
         do {
             let result = try await accountClient.sync(repository: repository, enrollment: saved)
             try reload()
@@ -284,7 +293,6 @@ final class ChartModel {
         } catch {
             if !quiet { message = error.localizedDescription }
         }
-        if !quiet { accountBusy = false }
     }
 
     func createCoupleInvite() async {
@@ -364,6 +372,18 @@ final class ChartModel {
         accountBusy = true
         do { try await operation() } catch { message = error.localizedDescription }
         accountBusy = false
+    }
+
+    private func startForegroundPolling() {
+        guard syncLoop == nil else { return }
+        syncLoop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard !Task.isCancelled else { return }
+                guard let self, !self.accountBusy else { continue }
+                await self.syncNow(quiet: true)
+            }
+        }
     }
 
     private func resumeRedaction() async {

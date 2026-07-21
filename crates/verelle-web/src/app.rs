@@ -5,6 +5,7 @@ use crate::{
 use chrono::{NaiveDate, NaiveTime};
 use js_sys::Date;
 use leptos::{mount::mount_to_body, prelude::*};
+use std::time::Duration;
 use uuid::Uuid;
 use verelle_core::{
     BleedingIntensity, CycleStartBasis, IntercourseKind, LhQualitative, MonitorReading,
@@ -68,7 +69,7 @@ fn App() -> impl IntoView {
                 vault.set(loaded);
                 storage_ready.set(true);
                 if should_sync {
-                    persist_and_sync(vault, busy, notice);
+                    persist_and_sync(vault, busy, notice, true);
                 }
             }
             Err(error) => {
@@ -77,6 +78,11 @@ fn App() -> impl IntoView {
             }
         }
     });
+
+    set_interval(
+        move || persist_and_sync(vault, busy, notice, false),
+        Duration::from_secs(5),
+    );
 
     let observations = Memo::new(move |_| vault.get().observations().unwrap_or_default());
     let charts = Memo::new(move |_| build_charts(&observations.get()));
@@ -221,7 +227,7 @@ fn App() -> impl IntoView {
         current.acknowledge_recovery_code();
         vault.set(current);
         recovery_acknowledged.set(false);
-        persist_and_sync(vault, busy, notice);
+        persist_and_sync(vault, busy, notice, true);
     };
 
     let clear_preview = move |_| {
@@ -333,7 +339,7 @@ fn App() -> impl IntoView {
         );
     };
 
-    let sync_now = move |_| persist_and_sync(vault, busy, notice);
+    let sync_now = move |_| persist_and_sync(vault, busy, notice, true);
 
     let delete_observation = move |record_key: verelle_core::RecordKey| {
         if !can_record.get_untracked() {
@@ -350,7 +356,7 @@ fn App() -> impl IntoView {
                 notice.set(Some(
                     "Deletion saved; ciphertext redaction queued".to_owned(),
                 ));
-                persist_and_sync(vault, busy, notice);
+                persist_and_sync(vault, busy, notice, true);
             }
             Err(error) => notice.set(Some(error)),
         }
@@ -450,7 +456,7 @@ fn App() -> impl IntoView {
                         "Shared chart accepted; encrypted sync is ready".to_owned(),
                     ));
                     busy.set(false);
-                    persist_and_sync(vault, busy, notice);
+                    persist_and_sync(vault, busy, notice, true);
                 }
                 Err(error) => {
                     vault.set(current);
@@ -613,6 +619,7 @@ fn App() -> impl IntoView {
                         <div class="local-facts">
                             <div><span>"Saved facts"</span><strong>{move || observations.get().len()}</strong></div>
                             <div><span>"Cloud sync"</span><strong>{move || sync_status(&vault.get(), busy.get())}</strong></div>
+                            <div><span>"Last synced"</span><strong>{move || vault.get().last_synced_at.unwrap_or_else(|| "Never".to_owned())}</strong></div>
                         </div>
                         <Show when=move || !observations.get().is_empty()>
                             <div class="recent-entries">
@@ -1099,7 +1106,7 @@ fn record_and_sync(
     match result {
         Ok(()) => {
             notice.set(Some(success_message.to_owned()));
-            persist_and_sync(vault, busy, notice);
+            persist_and_sync(vault, busy, notice, true);
         }
         Err(error) => notice.set(Some(error)),
     }
@@ -1109,6 +1116,7 @@ fn persist_and_sync(
     vault: RwSignal<BrowserVault>,
     busy: RwSignal<bool>,
     notice: RwSignal<Option<String>>,
+    announce: bool,
 ) {
     if busy.get_untracked() {
         return;
@@ -1124,6 +1132,7 @@ fn persist_and_sync(
                 // redaction so a crash cannot replay an operation whose body is gone.
                 account::save_vault(&current).await?;
                 current.finish_pending_redactions().await?;
+                current.last_synced_at = Date::new_0().to_iso_string().as_string();
                 account::save_vault(&current).await?;
                 Ok::<_, String>(summary)
             } else {
@@ -1137,10 +1146,12 @@ fn persist_and_sync(
         match result {
             Ok(summary) => {
                 vault.set(current);
-                notice.set(Some(format!(
-                    "Encrypted sync complete · {} pushed · {} pulled",
-                    summary.pushed, summary.pulled
-                )));
+                if announce {
+                    notice.set(Some(format!(
+                        "Encrypted sync complete · {} pushed · {} pulled",
+                        summary.pushed, summary.pulled
+                    )));
+                }
             }
             Err(error) => notice.set(Some(format!(
                 "Saved locally; sync did not complete: {error}"

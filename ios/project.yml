@@ -48,6 +48,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Verelle
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: app.verelle.mobile
+        INFOPLIST_KEY_WKWatchKitApp: YES
         SKIP_INSTALL: YES
   VerelleTests:
     type: bundle.unit-test

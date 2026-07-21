@@ -70,6 +70,7 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -128,6 +129,7 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
     val pendingCoupleStore = remember { PendingCoupleAcceptanceStore(context) }
     val pendingRedactionStore = remember { PendingRedactionStore(context) }
     val pendingRecoveryCodeStore = remember { PendingRecoveryCodeStore(context) }
+    val syncFreshnessStore = remember { SyncFreshnessStore(context) }
     val initialEnrollment = remember {
         runCatching { enrollmentStore.load()?.let(EnrollmentSummary::from) }
     }
@@ -149,6 +151,8 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
     var accountEntryMode by remember { mutableStateOf(AccountEntryMode.CREATE) }
     var charts by remember(repository) { mutableStateOf(emptyList<FfiChart>()) }
     var pendingCount by remember(repository) { mutableStateOf(0uL) }
+    var lastSyncedAt by remember { mutableStateOf(syncFreshnessStore.lastSuccessUnixMillis()) }
+    var foregroundSyncInFlight by remember { mutableStateOf(false) }
     var date by remember { mutableStateOf(LocalDate.now().toString()) }
     var methodCycleNumber by remember { mutableStateOf("1") }
     var reading by remember { mutableStateOf(FfiMonitorReading.LOW) }
@@ -160,13 +164,37 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
         )
     }
 
-    suspend fun reload() {
+    suspend fun reload(enqueueSync: Boolean = true) {
         val snapshot = withContext(Dispatchers.IO) {
             repository.charts() to repository.pendingOutboxCount()
         }
         charts = snapshot.first
         pendingCount = snapshot.second
-        VerelleSyncWorker.enqueue(context)
+        if (enqueueSync) VerelleSyncWorker.enqueue(context)
+        lastSyncedAt = syncFreshnessStore.lastSuccessUnixMillis()
+    }
+
+    suspend fun foregroundSync(showResult: Boolean) {
+        if (foregroundSyncInFlight) return
+        val saved = withContext(Dispatchers.IO) { enrollmentStore.load() } ?: return
+        if (saved.expiresAtUnixSeconds <= Instant.now().epochSecond) return
+        foregroundSyncInFlight = true
+        try {
+            val result = withContext(Dispatchers.IO) {
+                SyncHttpClient().sync(repository, saved)
+            }
+            syncFreshnessStore.recordSuccess()
+            reload(enqueueSync = false)
+            if (showResult) {
+                message = "Encrypted sync complete · ${result.pushed} sent · ${result.pulled} received"
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (showResult) message = error.message ?: "Encrypted sync failed"
+        } finally {
+            foregroundSyncInFlight = false
+        }
     }
 
     LaunchedEffect(repository) {
@@ -256,6 +284,13 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                 message = error.message ?: "Pending server deletion could not be completed"
             },
         )
+    }
+
+    LaunchedEffect(enrollment?.expiresAtUnixSeconds) {
+        while (true) {
+            delay(5_000)
+            foregroundSync(showResult = false)
+        }
     }
 
     LazyColumn(
@@ -526,6 +561,20 @@ private fun RecordAndChartScreen(repository: LocalRepository) {
                         "Encrypted dataset ${enrolled.datasetId}",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    Text(
+                        lastSyncedAt?.let { "Last synced ${Instant.ofEpochMilli(it)}" }
+                            ?: "Not yet synced on this installation",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("sync-freshness"),
+                    )
+                    OutlinedButton(
+                        onClick = { coroutineScope.launch { foregroundSync(showResult = true) } },
+                        enabled = !foregroundSyncInFlight &&
+                            enrolled.expiresAtUnixSeconds > Instant.now().epochSecond,
+                        modifier = Modifier.fillMaxWidth().testTag("sync-now"),
+                    ) {
+                        Text(if (foregroundSyncInFlight) "Syncing…" else "Sync now")
+                    }
                     if (enrolled.email.isNotBlank()) {
                         Text(
                             "Sign in on this enrolled Android device",
