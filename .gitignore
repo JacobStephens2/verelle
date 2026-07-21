@@ -3,6 +3,7 @@
 /android/.gradle/
 /android/.kotlin/
 /android/app/build/
+/android/wear/build/
 /android/build/
 /android/local.properties
 *.db
