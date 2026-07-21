@@ -16,6 +16,11 @@ fn every_fixture_matches_its_expected_chart_structure() {
         let fixture: GoldenFixture =
             serde_json::from_str(&fs::read_to_string(&path).expect("read fixture"))
                 .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
+        for observation in &fixture.observations {
+            observation
+                .validate()
+                .unwrap_or_else(|error| panic!("validate {}: {error}", path.display()));
+        }
         let actual: Vec<ExpectedChart> = build_charts(&fixture.observations)
             .into_iter()
             .map(ExpectedChart::from)

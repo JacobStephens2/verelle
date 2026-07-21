@@ -1,7 +1,7 @@
 //! `SQLite` client store implementing the transaction boundaries in
 //! `docs/specs/sync-state-machine.md`.
 
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use std::{
     collections::BTreeSet,
     path::Path,
@@ -10,7 +10,7 @@ use std::{
 use thiserror::Error;
 use uuid::Uuid;
 use verelle_core::{
-    ExportError, Observation, VersionStamp, observations_to_csv, observations_to_json,
+    ExportError, Observation, RecordKey, VersionStamp, observations_to_csv, observations_to_json,
 };
 use verelle_sync::{OperationMutation, PlainOperation, SyncError, TransportOp, merge_operations};
 
@@ -79,6 +79,10 @@ pub enum StoreError {
     OperationIdConflict,
     #[error("transport metadata does not match the local operation")]
     TransportMismatch,
+    #[error("a queued operation ID was reused with different transport bytes")]
+    QueuedTransportConflict,
+    #[error("the outbox cannot contain mixed key epochs")]
+    MixedEpochOutbox,
     #[error("epoch rotation must replace the complete queued operation set")]
     OutboxSetMismatch,
     #[error("pull page starts at cursor {page_cursor}, but the local cursor is {local_cursor}")]
@@ -95,6 +99,8 @@ pub enum StoreError {
     IntegerRange,
     #[error("export failed: {0}")]
     Export(#[from] ExportError),
+    #[error("record must have a winning tombstone before plaintext history can be purged")]
+    RecordNotTombstoned,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,7 +167,9 @@ impl Store {
             "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY NOT NULL, applied_ms INTEGER NOT NULL);",
         )?;
         if self.schema_version()? < 1 {
-            let transaction = self.connection.transaction()?;
+            let transaction = self
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
             transaction.execute_batch(MIGRATION_1_UP)?;
             transaction.execute(
                 "INSERT INTO schema_migrations(version, applied_ms) VALUES(1, ?1)",
@@ -177,7 +185,9 @@ impl Store {
         match self.schema_version()? {
             0 => Ok(()),
             1 => {
-                let transaction = self.connection.transaction()?;
+                let transaction = self
+                    .connection
+                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
                 transaction.execute_batch(MIGRATION_1_DOWN)?;
                 transaction.execute("DELETE FROM schema_migrations WHERE version = 1", [])?;
                 transaction.commit()?;
@@ -195,12 +205,36 @@ impl Store {
         transport: &TransportOp,
     ) -> Result<AppendOutcome, StoreError> {
         operation.validate()?;
+        transport.validate()?;
         if operation.op_id != transport.op_id {
             return Err(StoreError::TransportMismatch);
         }
-        let transaction = self.connection.transaction()?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mixed_epoch: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM outbox WHERE key_epoch != ?1)",
+            [to_sql_i64(transport.key_epoch)?],
+            |row| row.get(0),
+        )?;
+        if mixed_epoch {
+            return Err(StoreError::MixedEpochOutbox);
+        }
         let inserted = insert_operation(&transaction, operation, None)?;
         if !inserted {
+            let queued: Option<(i64, Vec<u8>)> = transaction
+                .query_row(
+                    "SELECT key_epoch, envelope FROM outbox WHERE op_id = ?1",
+                    [operation.op_id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            if queued.is_some_and(|(key_epoch, envelope)| {
+                u64::try_from(key_epoch).ok() != Some(transport.key_epoch)
+                    || envelope != transport.envelope
+            }) {
+                return Err(StoreError::QueuedTransportConflict);
+            }
             transaction.commit()?;
             return Ok(AppendOutcome::Duplicate);
         }
@@ -223,7 +257,9 @@ impl Store {
     /// valid because deletion manifests may redact ciphertext rows.
     pub fn apply_remote_page(&mut self, mut page: RemotePage) -> Result<(), StoreError> {
         page.operations.sort_by_key(|item| item.server_seq);
-        let transaction = self.connection.transaction()?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let cursor = read_cursor(&transaction)?;
         if cursor != page.after_cursor {
             return Err(StoreError::CursorMismatch {
@@ -267,7 +303,9 @@ impl Store {
     }
 
     pub fn acknowledge_pushed(&mut self, op_ids: &[Uuid]) -> Result<(), StoreError> {
-        let transaction = self.connection.transaction()?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         for op_id in op_ids {
             transaction.execute("DELETE FROM outbox WHERE op_id = ?1", [op_id.to_string()])?;
         }
@@ -310,7 +348,19 @@ impl Store {
     /// Atomically replaces every supplied queued envelope during an epoch
     /// rotation. Plaintext operations and materialized chart rows do not move.
     pub fn replace_outbox_batch(&mut self, replacements: &[TransportOp]) -> Result<(), StoreError> {
-        let transaction = self.connection.transaction()?;
+        replacements.iter().try_for_each(TransportOp::validate)?;
+        if replacements
+            .iter()
+            .map(|transport| transport.key_epoch)
+            .collect::<BTreeSet<_>>()
+            .len()
+            > 1
+        {
+            return Err(StoreError::MixedEpochOutbox);
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let queued_ids = {
             let mut statement = transaction.prepare("SELECT op_id FROM outbox")?;
             statement
@@ -338,13 +388,17 @@ impl Store {
         Ok(())
     }
 
-    pub fn mark_push_attempt(&self, op_ids: &[Uuid]) -> Result<(), StoreError> {
+    pub fn mark_push_attempt(&mut self, op_ids: &[Uuid]) -> Result<(), StoreError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         for op_id in op_ids {
-            self.connection.execute(
+            transaction.execute(
                 "UPDATE outbox SET attempt_count = attempt_count + 1 WHERE op_id = ?1",
                 [op_id.to_string()],
             )?;
         }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -388,6 +442,59 @@ impl Store {
         )?;
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+    }
+
+    /// Returns every known operation superseded by the current winner for a
+    /// logical record. For deletion, capture these IDs in the authenticated
+    /// server-redaction request before purging their local plaintext.
+    pub fn superseded_operation_ids(
+        &self,
+        record_key: &RecordKey,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        let mut statement = self.connection.prepare(
+            "SELECT o.op_id FROM operations o JOIN materialized_records m ON m.record_key = o.record_key WHERE o.record_key = ?1 AND o.op_id != m.winner_op_id ORDER BY o.op_id",
+        )?;
+        let rows = statement.query_map([record_key.to_string()], |row| row.get::<_, String>(0))?;
+        rows.map(|row| Uuid::parse_str(&row?).map_err(|_| StoreError::OperationIdConflict))
+            .collect()
+    }
+
+    /// Purges locally stored plaintext only after the caller has received an
+    /// idempotent server-redaction acknowledgement for `redacted_op_ids` (or
+    /// immediately for a local-only dataset). The winning tombstone remains.
+    /// Unknown/already-purged IDs are harmless, making response-loss retries
+    /// idempotent.
+    pub fn purge_redacted_operations(
+        &mut self,
+        record_key: &RecordKey,
+        redacted_op_ids: &[Uuid],
+    ) -> Result<usize, StoreError> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let winner: Option<(String, bool)> = transaction
+            .query_row(
+                "SELECT winner_op_id, tombstone FROM materialized_records WHERE record_key = ?1",
+                [record_key.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((winner_op_id, true)) = winner else {
+            return Err(StoreError::RecordNotTombstoned);
+        };
+
+        let mut purged = 0;
+        for op_id in redacted_op_ids {
+            if op_id.to_string() == winner_op_id {
+                continue;
+            }
+            purged += transaction.execute(
+                "DELETE FROM operations WHERE op_id = ?1 AND record_key = ?2",
+                params![op_id.to_string(), record_key.to_string()],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(purged)
     }
 
     pub fn export_json(&self) -> Result<String, StoreError> {
@@ -572,6 +679,40 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_retry_must_reuse_identical_transport_bytes() {
+        let mut store = Store::open_in_memory().unwrap();
+        let op = operation("a", 1);
+        let key = SecretKey::random();
+        let first = encrypt_operation(&key, 1, Uuid::nil(), &op).unwrap();
+        let re_encrypted = encrypt_operation(&key, 1, Uuid::nil(), &op).unwrap();
+        assert_ne!(first.envelope, re_encrypted.envelope);
+        store.append_local(&op, &first).unwrap();
+        assert!(matches!(
+            store.append_local(&op, &re_encrypted),
+            Err(StoreError::QueuedTransportConflict)
+        ));
+        assert_eq!(store.pending_outbox(10).unwrap(), vec![first]);
+    }
+
+    #[test]
+    fn local_commit_cannot_create_a_mixed_epoch_outbox() {
+        let mut store = Store::open_in_memory().unwrap();
+        let first = operation("a", 1);
+        let second =
+            PlainOperation::tombstone(first.record_key.clone(), VersionStamp::new(2, 0, "a"));
+        let key = SecretKey::random();
+        let first_wire = encrypt_operation(&key, 1, Uuid::nil(), &first).unwrap();
+        let second_wire = encrypt_operation(&key, 2, Uuid::nil(), &second).unwrap();
+        store.append_local(&first, &first_wire).unwrap();
+        assert!(matches!(
+            store.append_local(&second, &second_wire),
+            Err(StoreError::MixedEpochOutbox)
+        ));
+        assert_eq!(store.pending_outbox(10).unwrap(), vec![first_wire]);
+        assert_eq!(store.materialized_observations().unwrap().len(), 1);
+    }
+
+    #[test]
     fn injected_outbox_failure_rolls_back_operation_and_chart() {
         let mut store = Store::open_in_memory().unwrap();
         store.connection.execute_batch(
@@ -585,6 +726,43 @@ mod tests {
         ));
         assert!(store.materialized_observations().unwrap().is_empty());
         assert!(store.pending_outbox(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn storage_exhaustion_fails_the_write_without_acknowledged_state() {
+        let mut store = Store::open_in_memory().unwrap();
+        let page_count: i64 = store
+            .connection
+            .query_row("PRAGMA page_count", [], |row| row.get(0))
+            .unwrap();
+        store
+            .connection
+            .pragma_update(None, "max_page_count", page_count)
+            .unwrap();
+
+        let mut op = operation("a", 1);
+        let OperationMutation::Upsert { observation } = &mut op.mutation else {
+            unreachable!();
+        };
+        observation.value = ObservationValue::Note {
+            text: "x".repeat(100 * 1024),
+        };
+        op.record_key = observation.record_key();
+        let transport = encrypt_operation(&SecretKey::random(), 1, Uuid::nil(), &op).unwrap();
+        let error = store.append_local(&op, &transport).unwrap_err();
+        assert!(matches!(
+            error,
+            StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: rusqlite::ErrorCode::DiskFull,
+                    ..
+                },
+                _
+            ))
+        ));
+        assert!(store.materialized_observations().unwrap().is_empty());
+        assert!(store.pending_outbox(10).unwrap().is_empty());
+        assert!(store.max_version_seen().unwrap().is_none());
     }
 
     #[test]
@@ -692,6 +870,42 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_writer_contention_never_exposes_a_partial_commit() {
+        let file = NamedTempFile::new().unwrap();
+        let mut first = Store::open(file.path()).unwrap();
+        let mut second = Store::open(file.path()).unwrap();
+        second
+            .connection
+            .busy_timeout(std::time::Duration::from_millis(10))
+            .unwrap();
+        let lock = first
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+
+        let op = operation("b", 1);
+        let wire = encrypt_operation(&SecretKey::random(), 1, Uuid::nil(), &op).unwrap();
+        let error = second.append_local(&op, &wire).unwrap_err();
+        assert!(matches!(
+            error,
+            StoreError::Sqlite(rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error {
+                    code: rusqlite::ErrorCode::DatabaseBusy,
+                    ..
+                },
+                _
+            ))
+        ));
+        assert!(second.materialized_observations().unwrap().is_empty());
+        assert!(second.pending_outbox(10).unwrap().is_empty());
+
+        lock.rollback().unwrap();
+        second.append_local(&op, &wire).unwrap();
+        assert_eq!(second.materialized_observations().unwrap().len(), 1);
+        assert_eq!(second.pending_outbox(10).unwrap(), vec![wire]);
+    }
+
+    #[test]
     fn epoch_rotation_replaces_queued_ciphertext_without_touching_plaintext() {
         let mut store = Store::open_in_memory().unwrap();
         let op = operation("a", 1);
@@ -729,5 +943,90 @@ mod tests {
                 .iter()
                 .all(|item| item.key_epoch == 1)
         );
+    }
+
+    #[test]
+    fn epoch_rotation_rejects_mixed_epoch_replacements() {
+        let mut store = Store::open_in_memory().unwrap();
+        let first = operation("a", 1);
+        let second =
+            PlainOperation::tombstone(first.record_key.clone(), VersionStamp::new(2, 0, "a"));
+        let old_key = SecretKey::random();
+        for operation in [&first, &second] {
+            let wire = encrypt_operation(&old_key, 1, Uuid::nil(), operation).unwrap();
+            store.append_local(operation, &wire).unwrap();
+        }
+
+        let new_key = SecretKey::random();
+        let replacements = [
+            encrypt_operation(&new_key, 2, Uuid::nil(), &first).unwrap(),
+            encrypt_operation(&new_key, 3, Uuid::nil(), &second).unwrap(),
+        ];
+        assert!(matches!(
+            store.replace_outbox_batch(&replacements),
+            Err(StoreError::MixedEpochOutbox)
+        ));
+        assert!(
+            store
+                .pending_outbox(10)
+                .unwrap()
+                .iter()
+                .all(|item| item.key_epoch == 1)
+        );
+    }
+
+    #[test]
+    fn acknowledged_redaction_purges_superseded_plaintext_and_keeps_tombstone() {
+        let mut store = Store::open_in_memory().unwrap();
+        let key = SecretKey::random();
+        let couple_id = Uuid::new_v4();
+        let first = operation("a", 1);
+        let second = operation("a", 2);
+        let tombstone =
+            PlainOperation::tombstone(first.record_key.clone(), VersionStamp::new(3, 0, "a"));
+        for operation in [&first, &second, &tombstone] {
+            let transport = encrypt_operation(&key, 1, couple_id, operation).unwrap();
+            store.append_local(operation, &transport).unwrap();
+        }
+
+        assert!(store.materialized_observations().unwrap().is_empty());
+        let redaction_ids = store.superseded_operation_ids(&first.record_key).unwrap();
+        assert_eq!(
+            redaction_ids.iter().copied().collect::<BTreeSet<_>>(),
+            [first.op_id, second.op_id].into_iter().collect()
+        );
+        assert_eq!(
+            store
+                .purge_redacted_operations(&first.record_key, &redaction_ids)
+                .unwrap(),
+            2
+        );
+        assert!(
+            store
+                .superseded_operation_ids(&first.record_key)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(store.pending_outbox(10).unwrap().len(), 1);
+        assert_eq!(store.queued_plain_operations().unwrap(), vec![tombstone]);
+        assert_eq!(
+            store
+                .purge_redacted_operations(&first.record_key, &redaction_ids)
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn plaintext_purge_requires_a_winning_tombstone() {
+        let mut store = Store::open_in_memory().unwrap();
+        let operation = operation("a", 1);
+        let transport =
+            encrypt_operation(&SecretKey::random(), 1, Uuid::new_v4(), &operation).unwrap();
+        store.append_local(&operation, &transport).unwrap();
+        assert!(matches!(
+            store.purge_redacted_operations(&operation.record_key, &[operation.op_id]),
+            Err(StoreError::RecordNotTombstoned)
+        ));
     }
 }

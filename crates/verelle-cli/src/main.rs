@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use verelle_core::{
     ExpectedChart, GoldenFixture, build_charts, observations_to_csv, observations_to_json,
 };
@@ -34,6 +37,8 @@ enum Command {
         #[arg(value_enum)]
         format: Format,
     },
+    /// Render the materialized observations in a local Verelle `SQLite` file.
+    ChartStore { database: PathBuf },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -55,25 +60,35 @@ fn main() -> Result<()> {
             print_export(&fixture.observations, format)?;
         }
         Command::ExportStore { database, format } => {
-            let store =
-                Store::open(&database).with_context(|| format!("open {}", database.display()))?;
+            let store = open_existing_store(&database)?;
             match format {
                 Format::Json => println!("{}", store.export_json()?),
                 Format::Csv => print!("{}", store.export_csv()?),
             }
         }
+        Command::ChartStore { database } => {
+            let store = open_existing_store(&database)?;
+            let charts = build_charts(&store.materialized_observations()?);
+            println!("{}", serde_json::to_string_pretty(&charts)?);
+        }
     }
     Ok(())
 }
 
-fn load_fixture(path: &PathBuf) -> Result<GoldenFixture> {
-    serde_json::from_str(
+fn load_fixture(path: &Path) -> Result<GoldenFixture> {
+    let fixture: GoldenFixture = serde_json::from_str(
         &fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?,
     )
-    .with_context(|| format!("parse {}", path.display()))
+    .with_context(|| format!("parse {}", path.display()))?;
+    for observation in &fixture.observations {
+        observation
+            .validate()
+            .with_context(|| format!("validate {}", path.display()))?;
+    }
+    Ok(fixture)
 }
 
-fn validate_fixtures(directory: &PathBuf) -> Result<()> {
+fn validate_fixtures(directory: &Path) -> Result<()> {
     let mut paths: Vec<_> = fs::read_dir(directory)
         .with_context(|| format!("read {}", directory.display()))?
         .map(|entry| entry.map(|item| item.path()))
@@ -101,6 +116,13 @@ fn validate_fixtures(directory: &PathBuf) -> Result<()> {
     }
     println!("validated {} fixture files", paths.len());
     Ok(())
+}
+
+fn open_existing_store(path: &Path) -> Result<Store> {
+    if !path.is_file() {
+        bail!("local store does not exist: {}", path.display());
+    }
+    Store::open(path).with_context(|| format!("open {}", path.display()))
 }
 
 fn print_export(observations: &[verelle_core::Observation], format: Format) -> Result<()> {

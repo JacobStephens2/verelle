@@ -5,6 +5,7 @@ members = [
     "crates/verelle-sync",
     "crates/verelle-store",
     "crates/verelle-cli",
+    "crates/verelle-ffi",
 ]
 resolver = "3"
 
@@ -30,6 +31,7 @@ serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
+uniffi = "=0.29.5"
 uuid = { version = "1", features = ["serde", "v4"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 

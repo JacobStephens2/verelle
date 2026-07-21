@@ -254,8 +254,14 @@ fn associated_data(key_epoch: u64, context: &[u8]) -> Vec<u8> {
 
 /// A high-entropy recovery code. The rendered string is intended for offline
 /// custody; neither it nor a reusable derivative belongs on the server.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryCode(String);
+
+impl std::fmt::Debug for RecoveryCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RecoveryCode([REDACTED])")
+    }
+}
 
 impl RecoveryCode {
     pub fn generate() -> Self {
@@ -267,11 +273,15 @@ impl RecoveryCode {
     }
 
     pub fn parse(value: impl Into<String>) -> Result<Self, CryptoError> {
-        let value = value.into();
-        let decoded = URL_SAFE_NO_PAD
-            .decode(&value)
-            .map_err(|_| CryptoError::MalformedRecoveryCode)?;
-        if decoded.len() != KEY_LEN {
+        let mut value = value.into();
+        let Ok(mut decoded) = URL_SAFE_NO_PAD.decode(&value) else {
+            value.zeroize();
+            return Err(CryptoError::MalformedRecoveryCode);
+        };
+        let correct_length = decoded.len() == KEY_LEN;
+        decoded.zeroize();
+        if !correct_length {
+            value.zeroize();
             return Err(CryptoError::MalformedRecoveryCode);
         }
         Ok(Self(value))
@@ -362,5 +372,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(recovered.expose(), data_key.expose());
+        assert_eq!(format!("{code:?}"), "RecoveryCode([REDACTED])");
     }
 }

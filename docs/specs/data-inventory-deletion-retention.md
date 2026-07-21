@@ -60,6 +60,13 @@ has applied the tombstone and retained only the minimum tombstone state. An
 offline device may hold a prior copy until it reconnects; product copy must say
 this honestly. Export produced after deletion excludes the observation.
 
+The client-store primitive is implemented: it enumerates superseded operation
+IDs for the authenticated redaction request and, only after acknowledgement (or
+immediately for a local-only dataset), purges those operation/outbox rows while
+requiring and retaining the winning tombstone. Repeated acknowledgements and
+purges are idempotent. Production authenticated redaction and manifest handling
+remain pending the server and OQ-10.
+
 ### 2. Unlink a couple
 
 Unlink executes the key lifecycle immediately. It is an authorization/key event,
@@ -124,4 +131,3 @@ OQ-10 must confirm live-system deadline, backup deadline/statutory ceiling,
 shared-subject handling, legal holds, identity/authentication evidence, minors,
 processor flow-down, HBNR mapping, and whether indefinite manifest retention is
 appropriately minimized. The published policy and UI cannot precede that review.
-

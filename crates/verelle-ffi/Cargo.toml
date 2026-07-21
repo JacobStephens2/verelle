@@ -1,0 +1,35 @@
+[package]
+name = "verelle-ffi"
+description = "Typed UniFFI bridge from Verelle's Rust chart core to native shells"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "verelle_ffi"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+[features]
+cli = ["uniffi/cli"]
+
+[dependencies]
+chrono.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uniffi.workspace = true
+uuid.workspace = true
+verelle-core = { path = "../verelle-core" }
+verelle-crypto = { path = "../verelle-crypto" }
+verelle-store = { path = "../verelle-store" }
+verelle-sync = { path = "../verelle-sync" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

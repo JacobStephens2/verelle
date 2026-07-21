@@ -98,8 +98,9 @@ RotationBarrier
 5. Commit, then acknowledge the UI. Disk-full, serialization, encryption, or
    transaction errors are reported as a failed write and never shown as saved.
 
-The current `verelle-store` transaction and its injected-trigger test implement
-this boundary. Platform shells must not add a second non-atomic queue.
+The current `verelle-store` `BEGIN IMMEDIATE` transaction, injected-trigger,
+storage-exhaustion, and concurrent-writer tests implement this boundary.
+Platform shells must not add a second non-atomic queue.
 
 ### Push and response loss
 
@@ -172,3 +173,8 @@ Exact values are server configuration, initially: at most 100 operations or
 session/member rate limits, and ciphertext-only request logging. Limit changes
 are backward-compatible and do not alter convergence.
 
+The client transport and blind-relay reference model enforce the nonzero epoch,
+256 KiB envelope, 100-operation page, 1 MiB page, supported envelope shape, and
+transport/envelope epoch match before any operation is accepted. The SQLite
+outbox additionally rejects mixed epochs and requires a duplicate retry to
+reuse the exact queued ciphertext.

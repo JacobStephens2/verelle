@@ -1,7 +1,24 @@
 use chrono::{Duration, NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use thiserror::Error;
 use uuid::Uuid;
+
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum DomainError {
+    #[error("{field} must be finite")]
+    NonFiniteNumber { field: &'static str },
+    #[error("{field} must not be negative")]
+    NegativeNumber { field: &'static str },
+    #[error("{field} must be between 0 and 100")]
+    PercentageOutOfRange { field: &'static str },
+    #[error("cycle numbers start at one")]
+    ZeroCycleNumber,
+    #[error("recorded_by must not be blank")]
+    BlankRecordedBy,
+    #[error("version device_id must not be blank")]
+    BlankDeviceId,
+}
 
 /// A deterministic last-writer-wins stamp. Device ID is the documented
 /// tiebreaker when two hybrid clocks have the same value.
@@ -19,6 +36,13 @@ impl VersionStamp {
             logical,
             device_id: device_id.into(),
         }
+    }
+
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.device_id.trim().is_empty() {
+            return Err(DomainError::BlankDeviceId);
+        }
+        Ok(())
     }
 }
 
@@ -245,6 +269,76 @@ impl ObservationValue {
             end_day_offset: end_overflow_seconds / 86_400,
         })
     }
+
+    /// Validate data-integrity constraints that are independent of any
+    /// fertility protocol or interpretation.
+    pub fn validate(&self) -> Result<(), DomainError> {
+        match self {
+            Self::CycleStart {
+                method_cycle_number,
+                postpartum_cycle_number,
+                ..
+            } => {
+                if method_cycle_number == &Some(0) || postpartum_cycle_number == &Some(0) {
+                    return Err(DomainError::ZeroCycleNumber);
+                }
+            }
+            Self::QuantitativeHormones { e3g, lh, .. } => {
+                validate_optional_non_negative(*e3g, "e3g")?;
+                validate_optional_non_negative(*lh, "lh")?;
+            }
+            Self::LhStrip {
+                tc_ratio,
+                numeric_lh,
+                ..
+            } => {
+                validate_optional_non_negative(*tc_ratio, "tc_ratio")?;
+                validate_optional_non_negative(*numeric_lh, "numeric_lh")?;
+            }
+            Self::Mucus {
+                confidence: Some(confidence),
+                ..
+            } if *confidence > 100 => {
+                return Err(DomainError::PercentageOutOfRange {
+                    field: "mucus confidence",
+                });
+            }
+            Self::Temperature {
+                value,
+                sleep_quality,
+                ..
+            } => {
+                validate_finite(*value, "temperature")?;
+                if sleep_quality.is_some_and(|quality| quality > 100) {
+                    return Err(DomainError::PercentageOutOfRange {
+                        field: "sleep quality",
+                    });
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+fn validate_optional_non_negative(
+    value: Option<f64>,
+    field: &'static str,
+) -> Result<(), DomainError> {
+    if let Some(value) = value {
+        validate_finite(value, field)?;
+        if value < 0.0 {
+            return Err(DomainError::NegativeNumber { field });
+        }
+    }
+    Ok(())
+}
+
+fn validate_finite(value: f64, field: &'static str) -> Result<(), DomainError> {
+    if !value.is_finite() {
+        return Err(DomainError::NonFiniteNumber { field });
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -273,6 +367,14 @@ impl Observation {
             marker: self.value.marker_type(),
         }
     }
+
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.recorded_by.trim().is_empty() {
+            return Err(DomainError::BlankRecordedBy);
+        }
+        self.version.validate()?;
+        self.value.validate()
+    }
 }
 
 #[cfg(test)]
@@ -292,5 +394,45 @@ mod tests {
         assert_eq!(window.start_day_offset, -1);
         assert_eq!(window.end, NaiveTime::from_hms_opt(5, 0, 0).unwrap());
         assert_eq!(window.end_day_offset, 0);
+    }
+
+    #[test]
+    fn rejects_only_structural_numeric_errors_without_interpreting_values() {
+        let negative_hormone = ObservationValue::QuantitativeHormones {
+            e3g: Some(-1.0),
+            lh: None,
+            e3g_unit: None,
+            lh_unit: None,
+        };
+        assert_eq!(
+            negative_hormone.validate(),
+            Err(DomainError::NegativeNumber { field: "e3g" })
+        );
+
+        let non_finite_temperature = ObservationValue::Temperature {
+            value: f64::NAN,
+            unit: TemperatureUnit::Celsius,
+            time: None,
+            sleep_quality: None,
+            disturbed: false,
+        };
+        assert_eq!(
+            non_finite_temperature.validate(),
+            Err(DomainError::NonFiniteNumber {
+                field: "temperature"
+            })
+        );
+
+        let out_of_range_quality = ObservationValue::Mucus {
+            sensation: None,
+            appearance: None,
+            category: None,
+            baseline_change: None,
+            confidence: Some(101),
+        };
+        assert!(matches!(
+            out_of_range_quality.validate(),
+            Err(DomainError::PercentageOutOfRange { .. })
+        ));
     }
 }

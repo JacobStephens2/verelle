@@ -10,9 +10,9 @@ mod fixture;
 
 pub use chart::{CycleChart, DayCell, MechanicalAnnotation, build_charts};
 pub use domain::{
-    BleedingIntensity, CycleStartBasis, IntercourseKind, LhQualitative, MarkerType, MonitorReading,
-    MucusAppearance, MucusCategory, MucusSensation, Observation, ObservationValue, PeakSource,
-    RecordKey, TemperatureUnit, TestingWindow, VersionStamp,
+    BleedingIntensity, CycleStartBasis, DomainError, IntercourseKind, LhQualitative, MarkerType,
+    MonitorReading, MucusAppearance, MucusCategory, MucusSensation, Observation, ObservationValue,
+    PeakSource, RecordKey, TemperatureUnit, TestingWindow, VersionStamp,
 };
 pub use export::{ExportError, observations_to_csv, observations_to_json};
 pub use fixture::{ExpectedChart, ExpectedDay, GoldenFixture};

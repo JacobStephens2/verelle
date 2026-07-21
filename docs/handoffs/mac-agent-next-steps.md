@@ -6,6 +6,11 @@ workstation and report readiness. It is **not** authorization to provision
 DigitalOcean resources, implement production authentication, or start an iOS
 shell before the platform choice is recorded.
 
+> Superseded for platform selection on 2026-07-20: OQ-2 is now closed by ADR
+> 0004, Android is the Phase 2 platform, and the Android walking skeleton has
+> begun. The secret/cloud safety constraints and later iOS/DigitalOcean
+> conditions remain controlling where applicable.
+
 ## Required input from Jacob
 
 Jacob must provide one exact, pushed Git commit as `HANDOFF_COMMIT`. Do not work

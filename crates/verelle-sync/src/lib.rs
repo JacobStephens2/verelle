@@ -8,8 +8,12 @@ use std::{
 };
 use thiserror::Error;
 use uuid::Uuid;
-use verelle_core::{Observation, RecordKey, VersionStamp};
+use verelle_core::{DomainError, Observation, RecordKey, VersionStamp};
 use verelle_crypto::{CryptoError, EncryptedEnvelope, SecretKey, open, seal};
+
+pub const MAX_PAGE_OPERATIONS: u64 = 100;
+pub const MAX_PAGE_ENVELOPE_BYTES: usize = 1024 * 1024;
+pub const MAX_ENVELOPE_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -46,7 +50,9 @@ impl PlainOperation {
     }
 
     pub fn validate(&self) -> Result<(), SyncError> {
+        self.version.validate()?;
         if let OperationMutation::Upsert { observation } = &self.mutation {
+            observation.validate()?;
             if observation.record_key() != self.record_key {
                 return Err(SyncError::RecordKeyMismatch);
             }
@@ -63,6 +69,24 @@ pub struct TransportOp {
     pub op_id: Uuid,
     pub key_epoch: u64,
     pub envelope: Vec<u8>,
+}
+
+impl TransportOp {
+    pub fn validate(&self) -> Result<(), SyncError> {
+        if self.key_epoch == 0 {
+            return Err(SyncError::InvalidEpoch);
+        }
+        if self.envelope.len() > MAX_ENVELOPE_BYTES {
+            return Err(SyncError::EnvelopeTooLarge {
+                max_bytes: MAX_ENVELOPE_BYTES,
+            });
+        }
+        let envelope = EncryptedEnvelope::from_bytes(&self.envelope)?;
+        if envelope.key_epoch != self.key_epoch {
+            return Err(SyncError::EnvelopeEpochMismatch);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,12 +114,20 @@ pub struct MaterializedRecord {
 
 #[derive(Debug, Error)]
 pub enum SyncError {
+    #[error("operation contains invalid domain data: {0}")]
+    Domain(#[from] DomainError),
     #[error("operation record key does not match its observation")]
     RecordKeyMismatch,
     #[error("operation version does not match its observation")]
     VersionMismatch,
     #[error("operation identifier does not match encrypted transport metadata")]
     OperationIdMismatch,
+    #[error("transport key epoch must be greater than zero")]
+    InvalidEpoch,
+    #[error("encrypted envelope epoch does not match transport metadata")]
+    EnvelopeEpochMismatch,
+    #[error("encrypted envelope exceeds {max_bytes} bytes")]
+    EnvelopeTooLarge { max_bytes: usize },
     #[error("serialization failed: {0}")]
     Serialization(#[from] serde_json::Error),
     #[error("cryptographic operation failed: {0}")]
@@ -104,6 +136,14 @@ pub enum SyncError {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RelayError {
+    #[error("key epoch must be greater than zero")]
+    InvalidEpoch,
+    #[error("encrypted envelope is malformed or unsupported")]
+    InvalidEnvelope,
+    #[error("encrypted envelope epoch does not match transport metadata")]
+    EnvelopeEpochMismatch,
+    #[error("encrypted envelope exceeds {max_bytes} bytes")]
+    EnvelopeTooLarge { max_bytes: usize },
     #[error("operation uses stale epoch {received}; current epoch is {current}")]
     StaleEpoch { current: u64, received: u64 },
     #[error("operation ID was reused with different ciphertext")]
@@ -112,6 +152,8 @@ pub enum RelayError {
     RedactedOperation,
     #[error("pull page limit must be greater than zero")]
     InvalidPageLimit,
+    #[error("pull page limit {received} exceeds maximum {maximum}")]
+    PageLimitTooLarge { maximum: u64, received: u64 },
     #[error("pull cursor {after_cursor} is ahead of relay sequence {last_sequence}")]
     CursorAhead {
         after_cursor: u64,
@@ -149,6 +191,19 @@ impl BlindRelay {
     }
 
     pub fn push(&mut self, operation: TransportOp) -> Result<u64, RelayError> {
+        if operation.key_epoch == 0 {
+            return Err(RelayError::InvalidEpoch);
+        }
+        if operation.envelope.len() > MAX_ENVELOPE_BYTES {
+            return Err(RelayError::EnvelopeTooLarge {
+                max_bytes: MAX_ENVELOPE_BYTES,
+            });
+        }
+        let envelope = EncryptedEnvelope::from_bytes(&operation.envelope)
+            .map_err(|_| RelayError::InvalidEnvelope)?;
+        if envelope.key_epoch != operation.key_epoch {
+            return Err(RelayError::EnvelopeEpochMismatch);
+        }
         if operation.key_epoch != self.current_epoch {
             return Err(RelayError::StaleEpoch {
                 current: self.current_epoch,
@@ -172,26 +227,39 @@ impl BlindRelay {
         if limit == 0 {
             return Err(RelayError::InvalidPageLimit);
         }
+        if limit > MAX_PAGE_OPERATIONS {
+            return Err(RelayError::PageLimitTooLarge {
+                maximum: MAX_PAGE_OPERATIONS,
+                received: limit,
+            });
+        }
         if after_cursor > self.last_sequence {
             return Err(RelayError::CursorAhead {
                 after_cursor,
                 last_sequence: self.last_sequence,
             });
         }
-        let next_cursor = after_cursor.saturating_add(limit).min(self.last_sequence);
-        let operations = if next_cursor == after_cursor {
-            Vec::new()
-        } else {
-            self.rows
-                .range((after_cursor.saturating_add(1))..=next_cursor)
-                .filter_map(|(server_seq, operation)| {
-                    operation.clone().map(|operation| SequencedTransportOp {
-                        server_seq: *server_seq,
-                        operation,
-                    })
-                })
-                .collect()
-        };
+        let page_sequence_end = after_cursor.saturating_add(limit).min(self.last_sequence);
+        let mut next_cursor = after_cursor;
+        let mut envelope_bytes: usize = 0;
+        let mut operations = Vec::new();
+        for (server_seq, operation) in self
+            .rows
+            .range((after_cursor.saturating_add(1))..=page_sequence_end)
+        {
+            if let Some(operation) = operation {
+                let next_bytes = envelope_bytes.saturating_add(operation.envelope.len());
+                if next_bytes > MAX_PAGE_ENVELOPE_BYTES {
+                    break;
+                }
+                envelope_bytes = next_bytes;
+                operations.push(SequencedTransportOp {
+                    server_seq: *server_seq,
+                    operation: operation.clone(),
+                });
+            }
+            next_cursor = *server_seq;
+        }
         Ok(TransportPage {
             after_cursor,
             next_cursor,
@@ -222,15 +290,20 @@ pub fn encrypt_operation(
     couple_id: Uuid,
     operation: &PlainOperation,
 ) -> Result<TransportOp, SyncError> {
+    if key_epoch == 0 {
+        return Err(SyncError::InvalidEpoch);
+    }
     operation.validate()?;
     let plaintext = serde_json::to_vec(operation)?;
     let context = operation_context(couple_id, operation.op_id);
     let envelope = seal(key, key_epoch, &context, &plaintext)?;
-    Ok(TransportOp {
+    let transport = TransportOp {
         op_id: operation.op_id,
         key_epoch,
         envelope: envelope.to_bytes(),
-    })
+    };
+    transport.validate()?;
+    Ok(transport)
 }
 
 pub fn decrypt_operation(
@@ -238,6 +311,7 @@ pub fn decrypt_operation(
     couple_id: Uuid,
     transport: &TransportOp,
 ) -> Result<PlainOperation, SyncError> {
+    transport.validate()?;
     let envelope = EncryptedEnvelope::from_bytes(&transport.envelope)?;
     let context = operation_context(couple_id, transport.op_id);
     let plaintext = open(key, transport.key_epoch, &context, &envelope)?;
@@ -489,5 +563,115 @@ mod tests {
         assert_eq!(second_page.next_cursor, 2);
         let accepted_new = encrypt_operation(&new_key, 2, couple, &accepted).unwrap();
         assert_eq!(relay.push(accepted_new), Err(RelayError::RedactedOperation));
+    }
+
+    #[test]
+    fn relay_rejects_malformed_epoch_inconsistent_and_oversized_envelopes() {
+        let mut relay = BlindRelay::new(1);
+        let malformed = TransportOp {
+            op_id: Uuid::new_v4(),
+            key_epoch: 1,
+            envelope: vec![0; 64],
+        };
+        assert_eq!(relay.push(malformed), Err(RelayError::InvalidEnvelope));
+
+        let key = SecretKey::random();
+        let couple = Uuid::new_v4();
+        let operation = upsert("a", 1, 0);
+        let mut inconsistent = encrypt_operation(&key, 2, couple, &operation).unwrap();
+        inconsistent.key_epoch = 1;
+        assert_eq!(
+            relay.push(inconsistent),
+            Err(RelayError::EnvelopeEpochMismatch)
+        );
+
+        let oversized = TransportOp {
+            op_id: Uuid::new_v4(),
+            key_epoch: 1,
+            envelope: vec![0; MAX_ENVELOPE_BYTES + 1],
+        };
+        assert_eq!(
+            relay.push(oversized),
+            Err(RelayError::EnvelopeTooLarge {
+                max_bytes: MAX_ENVELOPE_BYTES
+            })
+        );
+    }
+
+    #[test]
+    fn relay_enforces_page_limits() {
+        let relay = BlindRelay::new(1);
+        assert_eq!(relay.pull(0, 0), Err(RelayError::InvalidPageLimit));
+        assert_eq!(
+            relay.pull(0, MAX_PAGE_OPERATIONS + 1),
+            Err(RelayError::PageLimitTooLarge {
+                maximum: MAX_PAGE_OPERATIONS,
+                received: MAX_PAGE_OPERATIONS + 1
+            })
+        );
+    }
+
+    #[test]
+    fn relay_pages_stop_before_the_ciphertext_byte_limit() {
+        let key = SecretKey::random();
+        let couple = Uuid::new_v4();
+        let mut relay = BlindRelay::new(1);
+        for physical in 1..=5 {
+            let mut operation = upsert("a", physical, 0);
+            let OperationMutation::Upsert { observation } = &mut operation.mutation else {
+                unreachable!();
+            };
+            observation.value = ObservationValue::Note {
+                text: "x".repeat(240 * 1024),
+            };
+            operation.record_key = observation.record_key();
+            relay
+                .push(encrypt_operation(&key, 1, couple, &operation).unwrap())
+                .unwrap();
+        }
+
+        let first = relay.pull(0, 5).unwrap();
+        assert_eq!(first.operations.len(), 4);
+        assert_eq!(first.next_cursor, 4);
+        assert!(first.more);
+        assert!(
+            first
+                .operations
+                .iter()
+                .map(|item| item.operation.envelope.len())
+                .sum::<usize>()
+                <= MAX_PAGE_ENVELOPE_BYTES
+        );
+
+        let second = relay.pull(first.next_cursor, 5).unwrap();
+        assert_eq!(second.operations.len(), 1);
+        assert_eq!(second.next_cursor, 5);
+        assert!(!second.more);
+    }
+
+    #[test]
+    fn client_rejects_zero_epoch_and_oversized_operations_before_queueing() {
+        let key = SecretKey::random();
+        let couple = Uuid::new_v4();
+        let operation = upsert("a", 1, 0);
+        assert!(matches!(
+            encrypt_operation(&key, 0, couple, &operation),
+            Err(SyncError::InvalidEpoch)
+        ));
+
+        let mut oversized = operation;
+        let OperationMutation::Upsert { observation } = &mut oversized.mutation else {
+            unreachable!();
+        };
+        observation.value = ObservationValue::Note {
+            text: "x".repeat(MAX_ENVELOPE_BYTES),
+        };
+        oversized.record_key = observation.record_key();
+        assert!(matches!(
+            encrypt_operation(&key, 1, couple, &oversized),
+            Err(SyncError::EnvelopeTooLarge {
+                max_bytes: MAX_ENVELOPE_BYTES
+            })
+        ));
     }
 }
