@@ -31,4 +31,4 @@ The Android, iOS, web, Wear OS, and watchOS surfaces are implemented; `verelle.a
 - iPhone app with embedded watchOS app installs in the simulator and its unit test passes.
 - Browser local-mode record, same-day rerender, delete, and default-form behavior checked with no console errors.
 - Isolated PostgreSQL integration: OPAQUE account/authenticated encrypted sync, single-use couple invite, idempotent unlink/session revocation/epoch advance, and blind relay idempotency/redaction/stale-epoch behavior.
-- Production pre-deploy encrypted backup; migrations 6–8; public `/healthz` and `/readyz`; static web/privacy deployment; OPAQUE setup rotation; synthetic-data deletion ledger.
+- Production pre-deploy encrypted backup; migrations 6–9; public `/healthz` and `/readyz`; CSP-verified static web/privacy deployment; OPAQUE setup rotation; synthetic-data deletion ledger.
