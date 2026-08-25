@@ -1,14 +1,35 @@
 name: ci
 
+# The v1 stack (Rust workspace, Leptos web client, Android/Compose and SwiftUI
+# shells) is retired by ADR 0009 and archived at the `v1-archive` tag. Its jobs
+# are kept below for reference but disabled: they build code nobody maintains,
+# and two of them had already rotted by 2026-08-25 — a floating `stable`
+# toolchain picked up clippy 1.98's `chunks_exact_to_as_chunks` lint under
+# `-D warnings`, and the hosted Ubuntu image stopped shipping `sdkmanager`.
+#
+# To build v1, check out `v1-archive` and pin the toolchain to 1.88.0.
+#
+# The replacement (Vue 3.5 + Vite + Capacitor + Evolu) has no CI yet. Add its
+# jobs here as it lands; delete the disabled ones once it does.
+
 on:
   push:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "prototype/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "prototype/**"
 
 permissions:
   contents: read
 
 jobs:
   rust:
+    if: false # retired with the v1 Rust workspace — see ADR 0009
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +47,7 @@ jobs:
           cargo +1.88.0 check --workspace --all-targets --locked
 
   android:
+    if: false # retired with the v1 Android/Compose shell — see ADR 0009
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +73,7 @@ jobs:
           assembleDebugAndroidTest
 
   web:
+    if: false # retired with the Leptos CSR client — see ADR 0009
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +90,7 @@ jobs:
         run: trunk build --release
 
   ios:
+    if: false # retired with the SwiftUI shell — see ADR 0009
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
