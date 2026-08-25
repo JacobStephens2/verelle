@@ -1,5 +1,17 @@
 # Plan: Verelle (revision 3)
 
+> **Superseded for scope, stack, and sequencing — do not build from this file.**
+>
+> This plan describes v1: a Rust core behind Kotlin, SwiftUI and Leptos shells
+> with an Axum server over PostgreSQL. ADR 0009 retired all of it to the
+> `v1-archive` tag. The current MVP is spec
+> [#6](https://github.com/JacobStephens2/verelle/issues/6); see
+> `docs/plans/mvp-restart.md`. M1 is withdrawn by ADR 0014.
+>
+> Still current here, and not reproduced elsewhere: the Marquette Method
+> reference, the threat model, and the regulatory reasoning behind the
+> record-and-display boundary (ADR 0001, ADR 0011).
+
 *Author: Jacob Stephens. Revision 3, 2026-07-18. Amended 2026-07-20: OQ-2, OQ-5, and OQ-8 are closed; Android/iOS/web and both watch shells exist; the household server and web client are deployed. Exact implementation and acceptance-gate status is maintained in `docs/launch/phase-readiness.md`. Changes from revision 2: gate G2 closed by re-scope - v1.0 ships as a record-and-display charting tool with no computed fertility status (Jacob's decision, this date); gate G3 re-scoped - the acquired source package at docs/marquette-method-business-logic-specification-for-verelle.md unblocks v1 entirely and seeds the deferred v2 computed-status gate package (OQ-11). Gate G1 closed earlier this date (C-2). Revision 2 is preserved at docs/plans/reviews/verelle-plan-rev2-2026-07-18.md; revision 1 and its adversarial review and adjudication are in docs/plans/reviews/. External claims verified 2026-07-18 unless noted. **Readiness: READY for the v1.0 build scope, not for public launch.** The v2 computed-status feature remains gated behind OQ-11.*
 
 ## 1. Summary
