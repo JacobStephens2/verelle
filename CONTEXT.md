@@ -74,6 +74,28 @@ The act of joining a second device to an existing chart using a short code. The
 code never reaches the server.
 _Avoid_: Invite, linking, couple invite
 
+### Sharing and sync
+
+**Owner secret**:
+The 32-byte secret a chart is derived from. Whoever holds it can read and write
+that chart; whoever does not, cannot. Losing it loses the chart — there is no
+operator who can restore it.
+_Avoid_: Password, key, credential, account secret
+
+**Shared owner**:
+The owner secret the couple holds in common. It *is* the couple, as far as the
+data is concerned — one shared owner, one chart, two people.
+_Avoid_: Couple key, group key, shared account
+
+**Device owner**:
+The owner secret belonging to one phone alone, distinct from the shared owner.
+_Avoid_: Local account, device key
+
+**Relay**:
+The server that passes encrypted changes between the couple's phones. It cannot
+read them. It does learn that a given owner synced, when, and roughly how much.
+_Avoid_: Server, backend, sync server, cloud
+
 ### The boundary
 
 **Record-and-display**:

@@ -1,8 +1,11 @@
-# ADR 0006: rebuild Verelle as a Capacitor/Vue fork of Chart35
+# ADR 0009: rebuild Verelle as a Capacitor/Vue fork of Chart35
 
 - Status: accepted
 - Date: 2026-08-25
-- Supersedes: ADR 0004 (retain Leptos CSR after the browser spike)
+- Supersedes: ADR 0004 (retain Leptos CSR after the browser spike) and
+  ADR 0004 (Android is the first phone platform) — the repo has two 0004s
+- Note: drafted as 0006 during the 2026-08-25 design session; renumbered to
+  avoid colliding with ADR 0006 (Stripe on web)
 
 ## Decision
 

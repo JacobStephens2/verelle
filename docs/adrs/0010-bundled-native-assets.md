@@ -1,7 +1,9 @@
-# ADR 0007: native shells bundle their assets and never live-load
+# ADR 0010: native shells bundle their assets and never live-load
 
 - Status: accepted
 - Date: 2026-08-25
+- Note: drafted as 0007 during the 2026-08-25 design session; the spike's
+  `prototype/evolu-capacitor/VERDICT.md` refers to it by that earlier number
 
 ## Decision
 
