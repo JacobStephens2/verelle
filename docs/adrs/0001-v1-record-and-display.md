@@ -3,6 +3,7 @@
 - Status: accepted
 - Date: 2026-07-18
 - Source: plan D1
+- Amended by: ADR 0008 (mechanical transcription is not a fertility verdict)
 
 ## Decision
 
