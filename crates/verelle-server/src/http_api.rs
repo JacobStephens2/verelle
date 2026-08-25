@@ -240,15 +240,17 @@ mod tests {
     struct SyntheticAuthorizer;
 
     impl DatasetAuthorizer for SyntheticAuthorizer {
-        async fn authorize(
+        fn authorize(
             &self,
             bearer_token: String,
             _dataset_id: Uuid,
-        ) -> Option<AuthorizedPrincipal> {
-            (bearer_token == "synthetic-test-token").then(|| AuthorizedPrincipal {
-                account_id: Uuid::nil(),
-                device_id: Uuid::nil(),
-            })
+        ) -> impl Future<Output = Option<AuthorizedPrincipal>> + Send {
+            std::future::ready((bearer_token == "synthetic-test-token").then(|| {
+                AuthorizedPrincipal {
+                    account_id: Uuid::nil(),
+                    device_id: Uuid::nil(),
+                }
+            }))
         }
     }
 
