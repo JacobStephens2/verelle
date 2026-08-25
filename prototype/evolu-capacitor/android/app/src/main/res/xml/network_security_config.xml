@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROTOTYPE. Throwaway.
+     Permits cleartext ONLY to the loopback addresses the probe's local relay
+     inspector and report collector run on, so criterion 3 (the relay sees only
+     ciphertext) can be checked against a relay we can read. Real Verelle syncs
+     over wss:// and needs none of this. -->
+<network-security-config>
+  <base-config cleartextTrafficPermitted="false" />
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">localhost</domain>
+    <domain includeSubdomains="false">127.0.0.1</domain>
+    <domain includeSubdomains="false">10.0.2.2</domain>
+  </domain-config>
+</network-security-config>

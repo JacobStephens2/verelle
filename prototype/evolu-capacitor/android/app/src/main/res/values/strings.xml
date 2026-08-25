@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">VerelleProbe</string>
+    <string name="title_activity_main">VerelleProbe</string>
+    <string name="package_name">com.verelle.probe</string>
+    <string name="custom_url_scheme">com.verelle.probe</string>
+</resources>
