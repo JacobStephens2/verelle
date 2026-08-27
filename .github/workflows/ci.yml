@@ -113,22 +113,24 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" \
             build/Build/Products/Debug-iphonesimulator/App.app
-          xcrun simctl launch "$device" app.verelle
-          sleep 15
+          # Capacitor bridges the WebView console to the app's stdout, not to
+          # os_log, so the launch has to be attached to a pty to see it.
+          xcrun simctl launch --console-pty "$device" app.verelle > app-console.txt 2>&1 &
+          launch_pid=$!
+          sleep 20
           xcrun simctl io "$device" screenshot verelle-launch.png
+          kill "$launch_pid" 2>/dev/null || true
 
           # `launchctl list` inside the simulator: a crashed app is gone from it.
           xcrun simctl spawn "$device" launchctl list | grep -q app.verelle \
             || { echo "FAIL: app.verelle is not running after launch"; exit 1; }
           echo "ok: app.verelle still running after launch"
 
-          # Alive is not painted. Capacitor forwards the WebView console to the
-          # platform log, so the breadcrumb ChartFrame.vue logs on mount is what
-          # separates a rendered Chart from a blank WebView.
-          xcrun simctl spawn "$device" log show --last 5m --style compact \
-            --predicate 'processImagePath CONTAINS "App.app"' > launch-log.txt
-          grep -q "verelle: chart frame painted, 42 cycle day columns" launch-log.txt \
-            || { echo "FAIL: the chart frame never reported painting"; tail -50 launch-log.txt; exit 1; }
+          # Alive is not painted, and a blank WebView passes an alive check.
+          # The breadcrumb ChartFrame.vue logs on mount is what separates a
+          # rendered Chart from a blank one.
+          grep -q "verelle: chart frame painted, 42 cycle day columns" app-console.txt \
+            || { echo "FAIL: the chart frame never reported painting"; cat app-console.txt; exit 1; }
           echo "ok: the chart frame painted 42 cycle day columns in the WebView"
 
       - uses: actions/upload-artifact@v4
