@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="tile_label">Verelle quick record</string>
-    <string name="tile_description">See the latest chart entry and open quick record.</string>
-    <string name="complication_label">Verelle recent entry</string>
-</resources>

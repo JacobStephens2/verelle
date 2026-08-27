@@ -2,7 +2,7 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-Verelle uses a single shared domain context across its Rust workspace, server, web, Android, and iOS components. Treat these components as delivery surfaces for one product rather than independent domain contexts.
+Verelle uses a single shared domain context across its web app and its iOS and Android Capacitor shells. Treat these as delivery surfaces for one product rather than independent domain contexts.
 
 ## Before exploring, read these
 
@@ -17,8 +17,8 @@ If either location doesn't exist, **proceed silently**. Don't flag its absence o
 /
 ├── CONTEXT.md
 ├── docs/adrs/
-├── crates/
-├── apps/
+├── src/
+├── scripts/
 ├── android/
 └── ios/
 ```

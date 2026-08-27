@@ -1,17 +1,5 @@
 name: ci
 
-# The v1 stack (Rust workspace, Leptos web client, Android/Compose and SwiftUI
-# shells) is retired by ADR 0009 and archived at the `v1-archive` tag. Its jobs
-# are kept below for reference but disabled: they build code nobody maintains,
-# and two of them had already rotted by 2026-08-25 — a floating `stable`
-# toolchain picked up clippy 1.98's `chunks_exact_to_as_chunks` lint under
-# `-D warnings`, and the hosted Ubuntu image stopped shipping `sdkmanager`.
-#
-# To build v1, check out `v1-archive` and pin the toolchain to 1.88.0.
-#
-# The replacement (Vue 3.5 + Vite + Capacitor + Evolu) has no CI yet. Add its
-# jobs here as it lands; delete the disabled ones once it does.
-
 on:
   push:
     paths-ignore:
@@ -28,84 +16,87 @@ permissions:
   contents: read
 
 jobs:
-  rust:
-    if: false # retired with the v1 Rust workspace — see ADR 0009
+  web:
+    name: Web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
-          components: clippy,rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --locked
-      - run: cargo run --locked -p verelle-cli -- validate-fixtures fixtures
-      - name: Check declared Rust 1.88 minimum
-        run: |
-          rustup toolchain install 1.88.0 --profile minimal
-          cargo +1.88.0 check --workspace --all-targets --locked
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # ADR 0010: the shells bundle their assets. `cap sync` regenerates the
+      # native configs, and the guard fails the job if a `server` key appears
+      # in either of them.
+      - name: Sync native projects
+        run: npx cap sync
+
+      - name: Verify no server url reaches the native configs
+        run: npm run verify:no-server-url
+
+      - name: Browser smoke — empty chart
+        env:
+          VERELLE_CHROME_PATH: /usr/bin/google-chrome
+        run: npm run smoke:empty-chart
 
   android:
-    if: false # retired with the v1 Android/Compose shell — see ADR 0009
+    name: Android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,x86_64-linux-android
-      - uses: Swatinem/rust-cache@v2
+          java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Install Android build dependencies
-        run: |
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
-          cargo install cargo-ndk --version 4.1.2 --locked
-      - name: Build app and device-test APKs
-        working-directory: android
-        run: >-
-          ./gradlew --no-daemon
-          testDebugUnitTest
-          assembleDebug
-          assembleDebugAndroidTest
 
-  web:
-    if: false # retired with the Leptos CSR client — see ADR 0009
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-      - name: Install pinned Trunk release
-        run: cargo install trunk --version 0.21.14 --locked
-      - name: Build browser release
-        working-directory: crates/verelle-web
-        env:
-          NO_COLOR: "true"
-        run: trunk build --release
+      - run: npm ci
+      - name: Build web assets into the shell
+        run: |
+          npm run build
+          npx cap sync android
+
+      - name: Build the debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
 
   ios:
-    if: false # retired with the SwiftUI shell — see ADR 0009
+    name: iOS
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@v2
-      - name: Install XcodeGen
-        run: brew install xcodegen
-      - name: Build the Rust XCFramework
-        run: ./scripts/build-ios-ffi.sh
-      - name: Generate and build the iPhone project
-        working-directory: ios
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - name: Build web assets into the shell
         run: |
-          xcodegen generate
-          xcodebuild -project Verelle.xcodeproj -scheme Verelle \
+          npm run build
+          npx cap sync ios
+
+      # Unsigned: CI proves the shell compiles for the simulator. Signed builds
+      # happen at release time, not here.
+      - name: Build for the simulator
+        working-directory: ios/App
+        run: |
+          xcodebuild -scheme App \
             -destination 'generic/platform=iOS Simulator' \
             build CODE_SIGNING_ALLOWED=NO

@@ -1,14 +1,25 @@
-/target/
+node_modules/
 /dist/
+*.local
+
+# Capacitor copies the built web app into the native projects; it is build
+# output, not source. `npx cap sync` regenerates it.
+/android/app/src/main/assets/public/
+/android/app/src/main/assets/capacitor.config.json
+/ios/App/App/public/
+/ios/App/App/capacitor.config.json
+
 /android/.gradle/
 /android/.kotlin/
-/android/app/build/
-/android/wear/build/
 /android/build/
+/android/app/build/
 /android/local.properties
-*.db
-*.db-shm
-*.db-wal
+/android/capacitor-cordova-android-plugins/
+/ios/App/Pods/
+/ios/App/build/
+/ios/DerivedData/
+/ios/App/output/
+
 .DS_Store
 .idea/
 .vscode/
