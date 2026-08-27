@@ -1,12 +1,22 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 
 import { chartFrame } from "../chart/frame";
+import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
 
-const props = defineProps<{ today?: string }>();
+const props = defineProps<{ today?: CivilDate }>();
 
 const frame = computed(() => chartFrame(props.today ?? todayCivilDate()));
+
+// A launch breadcrumb. Capacitor forwards this to the platform log, which is
+// the only thing that can tell a WebView that painted the Chart from one that
+// came up blank - and a blank WebView is the failure the native shells have to
+// stay clear of. `.github/workflows/ci.yml` asserts on this line after
+// launching the app on an iOS simulator.
+onMounted(() => {
+  console.info(`verelle: chart frame painted, ${frame.value.columns.length} cycle day columns`);
+});
 </script>
 
 <template>

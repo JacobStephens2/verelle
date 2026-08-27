@@ -1,5 +1,5 @@
 // ADR 0010: the native shells bundle their assets and never live-load. This
-// fails the build if a `server` url appears anywhere it would take effect —
+// fails the build if a `server` url appears anywhere it would take effect -
 // the source Capacitor config, or either generated native config.
 //
 // It is a build gate rather than a code review note because the failure it
@@ -32,10 +32,9 @@ if (source === null) {
   failures.push(`${sourceConfig}: missing`);
 } else {
   // Comments in this file explain why `server.url` is absent, so match the
-  // assignment rather than the words.
-  const assignsServerUrl = /^\s*url\s*:/m.test(stripComments(source));
-  const declaresServer = /^\s*server\s*:/m.test(stripComments(source));
-  if (assignsServerUrl || declaresServer) {
+  // `server:` key itself rather than the words. A url only takes effect under
+  // that key, so catching the key catches the url.
+  if (/^\s*server\s*:/m.test(stripComments(source))) {
     failures.push(`${sourceConfig}: declares a server config`);
   }
 }
@@ -61,7 +60,7 @@ function stripComments(text) {
 }
 
 if (failures.length > 0) {
-  console.error("server.url must never be set — see ADR 0010:");
+  console.error("server.url must never be set - see ADR 0010:");
   for (const failure of failures) console.error(`  FAIL ${failure}`);
   process.exit(1);
 }

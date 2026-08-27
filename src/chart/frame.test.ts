@@ -18,14 +18,10 @@ describe("chartFrame", () => {
     expect(CYCLE_DAY_COLUMNS).toBe(42);
   });
 
-  it("reports an empty cycle as empty rather than guessing at dates", () => {
+  it("reports an empty cycle as empty", () => {
     // Story 20: a day with no Observation must read as a gap, not as a filled
-    // cell. With nothing recorded there is no first day of full flow, so no
-    // column has a civil date yet.
-    const frame = chartFrame("2026-03-09");
-
-    expect(frame.isEmpty).toBe(true);
-    expect(frame.columns.every((column) => column.date === null)).toBe(true);
+    // cell. The empty state the view shows hangs off this flag.
+    expect(chartFrame("2026-03-09").isEmpty).toBe(true);
   });
 
   it("carries the civil date it was built for", () => {

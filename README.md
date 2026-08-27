@@ -25,7 +25,7 @@ git checkout v1-archive
 ## Stack
 
 Vite + TypeScript + Vue 3.5, with Capacitor shells for iOS and Android
-(ADR 0009). The shells **bundle** their web assets and never live-load —
+(ADR 0009). The shells **bundle** their web assets and never live-load -
 `server.url` is not set in `capacitor.config.ts` and must never be, because
 recording has to work from a cold launch with no network (ADR 0010).
 `scripts/verify-no-server-url.mjs` fails the build if it reappears, in the
@@ -62,11 +62,11 @@ one step.
 ## Layout
 
 ```text
-src/chart/       the pure chart modules — no Evolu, no Vue, no DOM
+src/chart/       the pure chart modules - no Evolu, no Vue, no DOM
 src/components/  the Vue surface
 scripts/         build guards and browser-smoke harnesses
 docs/adrs/       the decisions; read the ones touching what you are changing
-CONTEXT.md       the domain glossary — every term means what that file says
+CONTEXT.md       the domain glossary - every term means what that file says
 ```
 
 ## Repository status

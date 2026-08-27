@@ -3,14 +3,14 @@ name: ci
 on:
   push:
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "prototype/**"
+     - "**/*.md"
+     - "docs/**"
+     - "prototype/**"
   pull_request:
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "prototype/**"
+     - "**/*.md"
+     - "docs/**"
+     - "prototype/**"
 
 permissions:
   contents: read
@@ -20,33 +20,33 @@ jobs:
     name: Web
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+     - uses: actions/checkout@v5
+     - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+     - run: npm ci
 
-      - name: Typecheck
+     - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
+     - name: Test
         run: npm test
 
-      - name: Build
+     - name: Build
         run: npm run build
 
       # ADR 0010: the shells bundle their assets. `cap sync` regenerates the
       # native configs, and the guard fails the job if a `server` key appears
       # in either of them.
-      - name: Sync native projects
+     - name: Sync native projects
         run: npx cap sync
 
-      - name: Verify no server url reaches the native configs
+     - name: Verify no server url reaches the native configs
         run: npm run verify:no-server-url
 
-      - name: Browser smoke — empty chart
+     - name: Browser smoke - empty chart
         env:
           VERELLE_CHROME_PATH: /usr/bin/google-chrome
         run: npm run smoke:empty-chart
@@ -55,24 +55,24 @@ jobs:
     name: Android
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+     - uses: actions/checkout@v5
+     - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-java@v5
+     - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
+     - uses: gradle/actions/setup-gradle@v4
 
-      - run: npm ci
-      - name: Build web assets into the shell
+     - run: npm ci
+     - name: Build web assets into the shell
         run: |
           npm run build
           npx cap sync android
 
-      - name: Build the debug APK
+     - name: Build the debug APK
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug
 
@@ -80,21 +80,21 @@ jobs:
     name: iOS
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+     - uses: actions/checkout@v5
+     - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - run: npm ci
-      - name: Build web assets into the shell
+     - run: npm ci
+     - name: Build web assets into the shell
         run: |
           npm run build
           npx cap sync ios
 
       # Unsigned: CI proves the shell compiles for the simulator. Signed builds
       # happen at release time, not here.
-      - name: Build for the simulator
+     - name: Build for the simulator
         working-directory: ios/App
         run: |
           xcodebuild -scheme App \
@@ -105,7 +105,7 @@ jobs:
       # Compiling is not launching. The failure class this ticket's shell has
       # to stay clear of is an app that builds and then shows a blank WebView,
       # so boot a simulator and check the app is still alive after launch.
-      - name: Launch on a simulator
+     - name: Launch on a simulator
         working-directory: ios/App
         run: |
           set -euo pipefail
@@ -114,14 +114,24 @@ jobs:
           xcrun simctl install "$device" \
             build/Build/Products/Debug-iphonesimulator/App.app
           xcrun simctl launch "$device" app.verelle
-          sleep 10
+          sleep 15
           xcrun simctl io "$device" screenshot verelle-launch.png
+
           # `launchctl list` inside the simulator: a crashed app is gone from it.
           xcrun simctl spawn "$device" launchctl list | grep -q app.verelle \
             || { echo "FAIL: app.verelle is not running after launch"; exit 1; }
-          echo "ok: app.verelle still running 10s after launch"
+          echo "ok: app.verelle still running after launch"
 
-      - uses: actions/upload-artifact@v4
+          # Alive is not painted. Capacitor forwards the WebView console to the
+          # platform log, so the breadcrumb ChartFrame.vue logs on mount is what
+          # separates a rendered Chart from a blank WebView.
+          xcrun simctl spawn "$device" log show --last 5m --style compact \
+            --predicate 'processImagePath CONTAINS "App.app"' > launch-log.txt
+          grep -q "verelle: chart frame painted, 42 cycle day columns" launch-log.txt \
+            || { echo "FAIL: the chart frame never reported painting"; tail -50 launch-log.txt; exit 1; }
+          echo "ok: the chart frame painted 42 cycle day columns in the WebView"
+
+     - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ios-launch-screenshot

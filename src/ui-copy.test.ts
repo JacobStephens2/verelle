@@ -10,20 +10,20 @@ import { describe, expect, it } from "vitest";
 const FORBIDDEN = ["fertile", "infertile", "safe", "should"];
 
 // Where user-visible text lives: Vue templates and the app shell. Restricted
-// to those on purpose — a comment in a .ts file explaining why a word is
+// to those on purpose - a comment in a .ts file explaining why a word is
 // banned is not a UI string, and neither is `env(safe-area-inset-top)` in a
 // stylesheet. A scan that flagged those would be deleted the first time it
 // cried wolf.
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const COPY_ROOTS = [path.join(REPO_ROOT, "src"), path.join(REPO_ROOT, "index.html")];
 
-async function copyFilesBelow(entryPath: string): Promise<string[]> {
+async function uiCopyFilesUnder(entryPath: string): Promise<string[]> {
   const stats = await readdir(entryPath, { withFileTypes: true }).catch(() => null);
   if (stats === null) return /\.(vue|html)$/.test(entryPath) ? [entryPath] : [];
 
   const files: string[] = [];
   for (const entry of stats) {
-    files.push(...(await copyFilesBelow(path.join(entryPath, entry.name))));
+    files.push(...(await uiCopyFilesUnder(path.join(entryPath, entry.name))));
   }
   return files;
 }
@@ -40,7 +40,7 @@ function renderedText(file: string, contents: string): string {
 
 describe("UI copy", () => {
   it("never applies an interpretation word to a day", async () => {
-    const files = (await Promise.all(COPY_ROOTS.map(copyFilesBelow))).flat();
+    const files = (await Promise.all(COPY_ROOTS.map(uiCopyFilesUnder))).flat();
     expect(files.length).toBeGreaterThan(0);
 
     const offences: string[] = [];

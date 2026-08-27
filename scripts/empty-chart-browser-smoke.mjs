@@ -17,7 +17,7 @@ import puppeteer from "puppeteer-core";
 const PORT = 4193;
 const origin = `http://127.0.0.1:${PORT}`;
 const chromePath = process.env.VERELLE_CHROME_PATH || "/usr/bin/google-chrome";
-// The frame is 42 cycle day columns wide — see CYCLE_DAY_COLUMNS in
+// The frame is 42 cycle day columns wide - see CYCLE_DAY_COLUMNS in
 // src/chart/frame.ts and the Clearblue 21–42 day range it comes from.
 const EXPECTED_CYCLE_DAY_COLUMNS = 42;
 // Long enough that a slow CI runner paints, short enough that a permanent
