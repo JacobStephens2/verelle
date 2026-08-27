@@ -102,38 +102,38 @@ jobs:
             -derivedDataPath build \
             build CODE_SIGNING_ALLOWED=NO
 
-      # Compiling is not launching. The failure class this ticket's shell has
-      # to stay clear of is an app that builds and then shows a blank WebView,
-      # so boot a simulator and check the app is still alive after launch.
+      # Compiling is not launching, and alive is not painted - a blank
+      # WebView passes any liveness check. ChartFrame.vue logs the frame's
+      # laid-out bounding box on mount and Capacitor bridges that to the app's
+      # stdout, not to os_log, so the launch is attached to a pty and the job
+      # waits for a line reporting 42 columns at a non-zero size.
       - name: Launch on a simulator
         working-directory: ios/App
         run: |
           set -euo pipefail
+          painted='verelle: chart frame painted, 42 cycle day columns, [1-9][0-9]*x[1-9][0-9]*'
           device=$(xcrun simctl create verelle-ci 'iPhone 16')
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" \
             build/Build/Products/Debug-iphonesimulator/App.app
-          # Capacitor bridges the WebView console to the app's stdout, not to
-          # os_log, so the launch has to be attached to a pty to see it.
+
+          : > app-console.txt
           xcrun simctl launch --console-pty "$device" app.verelle > app-console.txt 2>&1 &
           launch_pid=$!
-          sleep 20
-          xcrun simctl io "$device" screenshot verelle-launch.png
+          for _ in $(seq 1 60); do
+            grep -qE "$painted" app-console.txt && break
+            sleep 1
+          done
 
-          # `launchctl list` inside the simulator: a crashed app is gone from
-          # it. Checked before the pty is closed, because closing it takes the
-          # app down with it.
-          xcrun simctl spawn "$device" launchctl list | grep -q app.verelle \
-            || { echo "FAIL: app.verelle is not running after launch"; cat app-console.txt; exit 1; }
-          echo "ok: app.verelle still running after launch"
+          # The screenshot is evidence for a human, not the assertion: a
+          # headless simulator often hands back a white frame for a WebView it
+          # has in fact laid out.
+          xcrun simctl io "$device" screenshot verelle-launch.png || true
           kill "$launch_pid" 2>/dev/null || true
 
-          # Alive is not painted, and a blank WebView passes an alive check.
-          # The breadcrumb ChartFrame.vue logs on mount is what separates a
-          # rendered Chart from a blank one.
-          grep -E "verelle: chart frame painted, 42 cycle day columns, [1-9][0-9]*x[1-9][0-9]*" \
-            app-console.txt \
-            || { echo "FAIL: the chart frame never reported painting at a non-zero size"; cat app-console.txt; exit 1; }
+          grep -E "$painted" app-console.txt \
+            || { echo "FAIL: the chart frame never reported painting at a non-zero size"; \
+                 cat app-console.txt; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: always()
