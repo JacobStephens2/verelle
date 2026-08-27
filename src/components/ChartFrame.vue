@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, useTemplateRef } from "vue";
 
 import { chartFrame } from "../chart/frame";
 import type { CivilDate } from "../chart/civil-date";
@@ -9,18 +9,28 @@ const props = defineProps<{ today?: CivilDate }>();
 
 const frame = computed(() => chartFrame(props.today ?? todayCivilDate()));
 
-// A launch breadcrumb. Capacitor forwards this to the platform log, which is
-// the only thing that can tell a WebView that painted the Chart from one that
-// came up blank - and a blank WebView is the failure the native shells have to
-// stay clear of. `.github/workflows/ci.yml` asserts on this line after
-// launching the app on an iOS simulator.
+const root = useTemplateRef<HTMLElement>("root");
+
+// A launch breadcrumb, reporting the column count and the frame's laid-out
+// size. Capacitor forwards it to the app's stdout, which is the only thing
+// that can tell a WebView that painted the Chart from one that came up blank,
+// and a blank WebView is the failure the native shells have to stay clear of.
+// `.github/workflows/ci.yml` asserts on this line after launching the app on
+// an iOS simulator. The rAF is so the numbers describe a laid-out frame rather
+// than a mounted but unmeasured one.
 onMounted(() => {
-  console.info(`verelle: chart frame painted, ${frame.value.columns.length} cycle day columns`);
+  requestAnimationFrame(() => {
+    const box = root.value?.getBoundingClientRect();
+    console.info(
+      `verelle: chart frame painted, ${frame.value.columns.length} cycle day columns, ` +
+        `${Math.round(box?.width ?? 0)}x${Math.round(box?.height ?? 0)} at y=${Math.round(box?.top ?? 0)}`,
+    );
+  });
 });
 </script>
 
 <template>
-  <section class="chart" data-testid="chart-frame" aria-label="Chart">
+  <section ref="root" class="chart" data-testid="chart-frame" aria-label="Chart">
     <header class="chart__header">
       <h1 class="chart__title">Chart</h1>
       <p class="chart__today" data-testid="chart-today">{{ frame.today }}</p>

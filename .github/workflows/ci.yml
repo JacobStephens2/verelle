@@ -131,9 +131,9 @@ jobs:
           # Alive is not painted, and a blank WebView passes an alive check.
           # The breadcrumb ChartFrame.vue logs on mount is what separates a
           # rendered Chart from a blank one.
-          grep -q "verelle: chart frame painted, 42 cycle day columns" app-console.txt \
-            || { echo "FAIL: the chart frame never reported painting"; cat app-console.txt; exit 1; }
-          echo "ok: the chart frame painted 42 cycle day columns in the WebView"
+          grep -E "verelle: chart frame painted, 42 cycle day columns, [1-9][0-9]*x[1-9][0-9]*" \
+            app-console.txt \
+            || { echo "FAIL: the chart frame never reported painting at a non-zero size"; cat app-console.txt; exit 1; }
 
       - uses: actions/upload-artifact@v4
         if: always()
