@@ -119,12 +119,14 @@ jobs:
           launch_pid=$!
           sleep 20
           xcrun simctl io "$device" screenshot verelle-launch.png
-          kill "$launch_pid" 2>/dev/null || true
 
-          # `launchctl list` inside the simulator: a crashed app is gone from it.
+          # `launchctl list` inside the simulator: a crashed app is gone from
+          # it. Checked before the pty is closed, because closing it takes the
+          # app down with it.
           xcrun simctl spawn "$device" launchctl list | grep -q app.verelle \
-            || { echo "FAIL: app.verelle is not running after launch"; exit 1; }
+            || { echo "FAIL: app.verelle is not running after launch"; cat app-console.txt; exit 1; }
           echo "ok: app.verelle still running after launch"
+          kill "$launch_pid" 2>/dev/null || true
 
           # Alive is not painted, and a blank WebView passes an alive check.
           # The breadcrumb ChartFrame.vue logs on mount is what separates a
