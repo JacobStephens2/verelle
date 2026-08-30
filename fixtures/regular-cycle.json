@@ -30,7 +30,7 @@
       "civilDate": "2026-07-03",
       "monitorReading": "Peak",
       "bleeding": "None",
-      "userMarkedPeak": true,
+      "userMarkedPeak": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -71,7 +71,7 @@
         "days": [
           { "civilDate": "2026-07-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
           { "civilDate": "2026-07-02", "cycleDay": 2, "monitorReading": "Missed", "markers": ["monitor", "bleeding"], "annotations": [] },
-          { "civilDate": "2026-07-03", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor", "bleeding", "user_marked_peak"], "annotations": [] },
+          { "civilDate": "2026-07-03", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor", "bleeding"], "annotations": [] },
           { "civilDate": "2026-07-04", "cycleDay": 4, "monitorReading": null, "markers": ["bleeding", "temperature"], "annotations": [] },
           { "civilDate": "2026-07-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": [] },
           { "civilDate": "2026-07-06", "cycleDay": 6, "monitorReading": "Error", "markers": ["monitor", "bleeding"], "annotations": [] }
