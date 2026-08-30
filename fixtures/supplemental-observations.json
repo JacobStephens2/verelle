@@ -1,0 +1,97 @@
+{
+  "name": "the supplemental fixture keeps optional Observations around a multi-day gap",
+  "today": "2026-07-08",
+  "observations": [
+    {
+      "civilDate": "2026-07-01",
+      "monitorReading": null,
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-02",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": true,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-03",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "Stretchy",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-04",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": 36.55,
+      "temperatureUnit": "C",
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-05",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": "Invalid",
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-08",
+      "monitorReading": null,
+      "bleeding": null,
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": "recorded without interpretation"
+    }
+  ],
+  "expected": {
+    "today": "2026-07-08",
+    "cycles": [
+      {
+        "startDate": "2026-07-01",
+        "days": [
+          { "civilDate": "2026-07-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-07-02", "cycleDay": 2, "monitorReading": null, "markers": ["bleeding", "intercourse"], "annotations": [] },
+          { "civilDate": "2026-07-03", "cycleDay": 3, "monitorReading": null, "markers": ["bleeding", "mucus"], "annotations": [] },
+          { "civilDate": "2026-07-04", "cycleDay": 4, "monitorReading": null, "markers": ["bleeding", "temperature"], "annotations": [] },
+          { "civilDate": "2026-07-05", "cycleDay": 5, "monitorReading": null, "markers": ["bleeding", "lh_strip"], "annotations": [] },
+          { "civilDate": "2026-07-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-07-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-07-08", "cycleDay": 8, "monitorReading": null, "markers": ["note"], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}

@@ -1,4 +1,8 @@
-import type { Observation } from "../observations/observation";
+import type {
+  Bleeding,
+  MonitorReading,
+  Observation,
+} from "../observations/observation";
 import { isFullFlow } from "../observations/observation";
 import type { CivilDate } from "./civil-date";
 import { civilDatePlusDays, daysBetweenCivilDates } from "./civil-date";
@@ -9,14 +13,33 @@ export const CYCLE_DAY_COLUMNS = 42;
 /** The mechanical labels issue #10 will place on Chart days. */
 export type PeakAnnotation = "P" | "P+1" | "P+2" | "P+3";
 
+/** A recorded Observation field that the compact Chart marks on a day. */
+export type ObservationMarker =
+  | "monitor"
+  | "bleeding"
+  | "user_marked_peak"
+  | "intercourse"
+  | "lh_strip"
+  | "mucus"
+  | "temperature"
+  | "note";
+
 /** One Civil date in a numbered Cycle. */
 export interface ChartDay {
   readonly civilDate: CivilDate;
   readonly cycleDay: number;
-  /** `null` means nobody recorded anything on this date. */
-  readonly observation: Observation | null;
+  readonly monitorReading: MonitorReading | null;
+  /** Empty means nobody recorded a field on this date. */
+  readonly markers: readonly ObservationMarker[];
   /** Empty until issue #10 adds the Peak count projection. */
   readonly annotations: readonly PeakAnnotation[];
+}
+
+/** A dated Observation that precedes the first recorded Cycle Day 1. */
+export interface UnassignedChartDay {
+  readonly civilDate: CivilDate;
+  readonly monitorReading: MonitorReading | null;
+  readonly markers: readonly ObservationMarker[];
 }
 
 /** A Cycle, from one Cycle Day 1 to the day before the next. */
@@ -35,7 +58,22 @@ export interface ChartCycle {
 export interface Chart {
   readonly today: CivilDate;
   readonly cycles: readonly ChartCycle[];
-  readonly unassignedObservations: readonly Observation[];
+  readonly unassignedDays: readonly UnassignedChartDay[];
+}
+
+function markersFor(observation: Observation | undefined): ObservationMarker[] {
+  if (observation === undefined) return [];
+
+  const markers: ObservationMarker[] = [];
+  if (observation.monitorReading !== null) markers.push("monitor");
+  if (observation.bleeding !== null) markers.push("bleeding");
+  if (observation.userMarkedPeak !== null) markers.push("user_marked_peak");
+  if (observation.intercourse !== null) markers.push("intercourse");
+  if (observation.lhStrip !== null) markers.push("lh_strip");
+  if (observation.mucus !== null) markers.push("mucus");
+  if (observation.temperature !== null) markers.push("temperature");
+  if (observation.note !== null) markers.push("note");
+  return markers;
 }
 
 /**
@@ -60,12 +98,18 @@ export function projectChart(
     left.civilDate.localeCompare(right.civilDate),
   );
 
-  const cycleStarts = datedObservations.filter((observation) => {
-    if (!isFullFlow(observation.bleeding)) return false;
-
-    const previousDate = civilDatePlusDays(observation.civilDate, -1);
-    return !isFullFlow(observationsByDate.get(previousDate)?.bleeding ?? null);
-  });
+  const cycleStarts: Observation[] = [];
+  let previousRecordedBleeding: Bleeding | undefined;
+  for (const observation of datedObservations) {
+    if (observation.bleeding === null) continue;
+    if (
+      isFullFlow(observation.bleeding) &&
+      (previousRecordedBleeding === undefined || !isFullFlow(previousRecordedBleeding))
+    ) {
+      cycleStarts.push(observation);
+    }
+    previousRecordedBleeding = observation.bleeding;
+  }
 
   const firstCycleStart = cycleStarts[0]?.civilDate;
   const unassignedObservations =
@@ -84,7 +128,8 @@ export function projectChart(
       return {
         civilDate,
         cycleDay: dayIndex + 1,
-        observation: observationsByDate.get(civilDate) ?? null,
+        monitorReading: observationsByDate.get(civilDate)?.monitorReading ?? null,
+        markers: markersFor(observationsByDate.get(civilDate)),
         annotations: [],
       };
     });
@@ -92,5 +137,11 @@ export function projectChart(
     return { startDate: start.civilDate, days };
   });
 
-  return { today, cycles, unassignedObservations };
+  const unassignedDays = unassignedObservations.map((observation) => ({
+    civilDate: observation.civilDate,
+    monitorReading: observation.monitorReading,
+    markers: markersFor(observation),
+  }));
+
+  return { today, cycles, unassignedDays };
 }

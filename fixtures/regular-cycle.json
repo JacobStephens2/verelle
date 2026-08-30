@@ -1,0 +1,83 @@
+{
+  "name": "the regular Cycle keeps Missed and Error distinct from an empty day",
+  "today": "2026-07-06",
+  "observations": [
+    {
+      "civilDate": "2026-07-01",
+      "monitorReading": null,
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-02",
+      "monitorReading": "Missed",
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-03",
+      "monitorReading": "Peak",
+      "bleeding": "None",
+      "userMarkedPeak": true,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-04",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": 36.55,
+      "temperatureUnit": "C",
+      "note": null
+    },
+    {
+      "civilDate": "2026-07-06",
+      "monitorReading": "Error",
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-07-06",
+    "cycles": [
+      {
+        "startDate": "2026-07-01",
+        "days": [
+          { "civilDate": "2026-07-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-07-02", "cycleDay": 2, "monitorReading": "Missed", "markers": ["monitor", "bleeding"], "annotations": [] },
+          { "civilDate": "2026-07-03", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor", "bleeding", "user_marked_peak"], "annotations": [] },
+          { "civilDate": "2026-07-04", "cycleDay": 4, "monitorReading": null, "markers": ["bleeding", "temperature"], "annotations": [] },
+          { "civilDate": "2026-07-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-07-06", "cycleDay": 6, "monitorReading": "Error", "markers": ["monitor", "bleeding"], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}

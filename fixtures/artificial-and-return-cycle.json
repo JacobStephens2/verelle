@@ -1,0 +1,88 @@
+{
+  "name": "the former artificial-and-return fixture reshaped as two day-row Cycles",
+  "today": "2026-08-06",
+  "observations": [
+    {
+      "civilDate": "2026-08-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-02",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-04",
+      "monitorReading": null,
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-05",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": "Invalid",
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-06",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "Creamy",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-08-06",
+    "cycles": [
+      {
+        "startDate": "2026-08-01",
+        "days": [
+          { "civilDate": "2026-08-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-08-02", "cycleDay": 2, "monitorReading": "Low", "markers": ["monitor", "bleeding"], "annotations": [] },
+          { "civilDate": "2026-08-03", "cycleDay": 3, "monitorReading": null, "markers": [], "annotations": [] }
+        ]
+      },
+      {
+        "startDate": "2026-08-04",
+        "days": [
+          { "civilDate": "2026-08-04", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-08-05", "cycleDay": 2, "monitorReading": null, "markers": ["bleeding", "lh_strip"], "annotations": [] },
+          { "civilDate": "2026-08-06", "cycleDay": 3, "monitorReading": null, "markers": ["bleeding", "mucus"], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}

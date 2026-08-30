@@ -5,7 +5,7 @@ import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
 import type { ChartDay } from "../chart/projection";
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
-import type { Observation } from "../observations/observation";
+import type { MonitorReading, Observation } from "../observations/observation";
 
 const props = defineProps<{
   today?: CivilDate;
@@ -56,6 +56,12 @@ const rows = computed<readonly ChartRow[]>(() => {
     ),
   }));
 });
+
+function monitorReadingText(
+  day: { readonly monitorReading: MonitorReading | null } | null | undefined,
+): string {
+  return day?.monitorReading ?? "";
+}
 
 const root = useTemplateRef<HTMLElement>("root");
 
@@ -123,7 +129,7 @@ onMounted(() => {
                    is data the device displayed and nothing more (CONTEXT.md,
                    ADR 0011). A day with no Observation stays blank, so a gap
                    in the record reads as a gap. -->
-              {{ day?.observation?.monitorReading ?? "" }}
+              {{ monitorReadingText(day) }}
             </td>
           </tr>
         </tbody>
@@ -131,7 +137,7 @@ onMounted(() => {
     </div>
 
     <section
-      v-if="chart.unassignedObservations.length > 0"
+      v-if="chart.unassignedDays.length > 0"
       class="chart__unassigned"
       aria-labelledby="unassigned-title"
     >
@@ -144,20 +150,20 @@ onMounted(() => {
       </p>
       <div class="chart__unassigned-days">
         <div
-          v-for="observation in chart.unassignedObservations"
-          :key="observation.civilDate"
+          v-for="day in chart.unassignedDays"
+          :key="day.civilDate"
           class="chart__unassigned-day"
-          :data-civil-date="observation.civilDate"
+          :data-civil-date="day.civilDate"
           data-testid="chart-cell"
         >
-          <time :datetime="observation.civilDate">{{ observation.civilDate }}</time>
-          <span>{{ observation.monitorReading ?? "" }}</span>
+          <time :datetime="day.civilDate">{{ day.civilDate }}</time>
+          <span>{{ monitorReadingText(day) }}</span>
         </div>
       </div>
     </section>
 
     <p
-      v-if="chart.cycles.length === 0 && chart.unassignedObservations.length === 0"
+      v-if="chart.cycles.length === 0 && chart.unassignedDays.length === 0"
       class="chart__empty"
       data-testid="chart-empty-state"
     >
