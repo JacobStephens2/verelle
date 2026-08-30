@@ -77,6 +77,47 @@ const todayInBrowser = (page) =>
 const todaysCellSelector = (today) =>
   `[data-testid="chart-cell"][data-civil-date="${today}"]`;
 
+const recordDateSelector = '[data-testid="record-date-input"]';
+
+const civilDatePlusDays = (date, days) =>
+  new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
+const setRecordDate = (page, date) =>
+  page.$eval(
+    recordDateSelector,
+    (input, nextDate) => {
+      if (!(input instanceof HTMLInputElement)) return;
+      input.value = nextDate;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    },
+    date,
+  );
+
+const waitForRecordDate = (page, date) =>
+  page.waitForFunction(
+    (selector, expectedDate) => {
+      const input = document.querySelector(selector);
+      return input instanceof HTMLInputElement && input.value === expectedDate;
+    },
+    { timeout: PAINT_TIMEOUT_MS },
+    recordDateSelector,
+    date,
+  );
+
+const waitForMonitorReading = (page, date, expectedReading) =>
+  page.waitForFunction(
+    (civilDate, monitorReading) =>
+      document
+        .querySelector(`[data-testid="chart-cell"][data-civil-date="${civilDate}"]`)
+        ?.querySelector('[data-testid="monitor-reading"]')
+        ?.textContent?.trim() === monitorReading,
+    { timeout: PAINT_TIMEOUT_MS },
+    date,
+    expectedReading,
+  );
+
 const readTodaysCell = (page, today) =>
   page.$eval(todaysCellSelector(today), (cell) => ({
     monitorReading:
@@ -130,11 +171,39 @@ try {
   });
   const today = await todayInBrowser(page);
   assert.equal(
-    await page.$eval('[data-testid="record-date"]', (el) => el.textContent?.trim()),
+    await page.$eval(recordDateSelector, (input) =>
+      input instanceof HTMLInputElement ? input.value : "",
+    ),
     today,
     "The app did not open on today",
   );
   console.log(`ok: opened on ${today} with no navigation`);
+
+  // A missed day is reachable directly from the recording screen, without
+  // walking backward through one day at a time. Future dates are not valid
+  // recording targets.
+  const datePicker = await page.$eval('[data-testid="record-date-input"]', (input) => ({
+    value: input instanceof HTMLInputElement ? input.value : "",
+    max: input instanceof HTMLInputElement ? input.max : "",
+  }));
+  assert.deepEqual(datePicker, { value: today, max: today });
+  console.log("ok: a past Civil date is directly reachable from today");
+
+  const pastDate = civilDatePlusDays(today, -3);
+  await setRecordDate(page, pastDate);
+  await waitForRecordDate(page, pastDate);
+  await page.select('[data-testid="lh-strip"]', "Positive");
+  await page.select('[data-testid="mucus"]', "Stretchy");
+  await page.type('[data-testid="temperature"]', "97.8");
+  await page.type('[data-testid="note"]', "Copied from the paper Chart");
+  await page.click('[data-testid="monitor-Low"]');
+  await page.click('[data-testid="bleeding-Heavy"]');
+  await page.click('[data-testid="save"]');
+  await waitForMonitorReading(page, pastDate, "Low");
+  console.log(`ok: recorded the missed day ${pastDate} directly from the date picker`);
+
+  await setRecordDate(page, today);
+  await waitForRecordDate(page, today);
 
   // 2. All four mandatory fields are settable inside a phone screen without
   //    scrolling, and the optional fields are not shown.
@@ -209,7 +278,157 @@ try {
   await waitForTodaysMarkedPeak(page, today);
   console.log("ok: today's Chart cell shows the recorded Monitor reading and P");
 
-  // 8. The Owner secret reaches no web-storage surface (ADR 0013).
+  // 8. A Chart day is the navigation into its complete Observation. The
+  //    compact cell can omit fields; the detail view may not.
+  await page.click(
+    `[data-testid="chart-day"][data-civil-date="${pastDate}"]`,
+  );
+  await waitForRecordDate(page, pastDate);
+  assert.equal(
+    await page.$eval('[data-testid="record-observation"]', (element) =>
+      element.getAttribute("aria-label"),
+    ),
+    "Observation details",
+  );
+  assert.equal(
+    await page.$eval('[data-testid="record-title"]', (element) =>
+      element.textContent?.trim(),
+    ),
+    "Observation details",
+  );
+  for (const selector of [
+    '[data-testid="lh-strip"]',
+    '[data-testid="mucus"]',
+    '[data-testid="temperature"]',
+    '[data-testid="note"]',
+  ]) {
+    assert.notEqual(await page.$(selector), null, `${selector} was hidden in day details`);
+  }
+  assert.equal(
+    await page.$eval(
+      '[data-testid="monitor-Low"]',
+      (element) => element.getAttribute("aria-pressed"),
+    ),
+    "true",
+  );
+  assert.equal(
+    await page.$eval(
+      '[data-testid="bleeding-Heavy"]',
+      (element) => element.getAttribute("aria-pressed"),
+    ),
+    "true",
+  );
+  assert.equal(await page.$eval('[data-testid="lh-strip"]', (element) => element.value), "Positive");
+  assert.equal(await page.$eval('[data-testid="mucus"]', (element) => element.value), "Stretchy");
+  assert.equal(await page.$eval('[data-testid="temperature"]', (element) => element.value), "97.8");
+  assert.equal(
+    await page.$eval('[data-testid="temperature-unit"]', (element) => element.value),
+    "F",
+  );
+  assert.equal(
+    await page.$eval('[data-testid="note"]', (element) => element.value),
+    "Copied from the paper Chart",
+  );
+  console.log(`ok: tapping ${pastDate} opens every field recorded for it`);
+
+  // Editing the Observation writes the same Civil date and repaints its
+  // compact Chart cell rather than creating a second row.
+  await page.click('[data-testid="monitor-Error"]');
+  await page.$eval('[data-testid="note"]', (element) => {
+    if (!(element instanceof HTMLTextAreaElement)) return;
+    element.value = "Corrected against the paper Chart";
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.click('[data-testid="save"]');
+  await waitForMonitorReading(page, pastDate, "Error");
+  console.log(`ok: editing ${pastDate} updates its existing Chart day`);
+
+  // The date between the two recorded days is a real Cycle Day with no
+  // Observation. It opens the same complete editor, blank and ready to save.
+  const missedDate = civilDatePlusDays(today, -2);
+  await page.click(
+    `[data-testid="chart-day"][data-civil-date="${missedDate}"]`,
+  );
+  await waitForRecordDate(page, missedDate);
+  const blankDetails = await page.evaluate(() => ({
+    pressedChoices: [
+      ...document.querySelectorAll(
+        '[data-testid^="monitor-"][aria-pressed="true"], [data-testid^="bleeding-"][aria-pressed="true"]',
+      ),
+    ].length,
+    markedPeak:
+      document.querySelector('[data-testid="user-marked-peak"]') instanceof
+        HTMLInputElement &&
+      document.querySelector('[data-testid="user-marked-peak"]').checked,
+    intercourse:
+      document.querySelector('[data-testid="intercourse"]') instanceof HTMLInputElement &&
+      document.querySelector('[data-testid="intercourse"]').checked,
+    lhStrip: document.querySelector('[data-testid="lh-strip"]')?.value,
+    mucus: document.querySelector('[data-testid="mucus"]')?.value,
+    temperature: document.querySelector('[data-testid="temperature"]')?.value,
+    note: document.querySelector('[data-testid="note"]')?.value,
+  }));
+  assert.deepEqual(blankDetails, {
+    pressedChoices: 0,
+    markedPeak: false,
+    intercourse: false,
+    lhStrip: "Not recorded",
+    mucus: "Not recorded",
+    temperature: "",
+    note: "",
+  });
+  await page.click('[data-testid="monitor-Missed"]');
+  await page.click('[data-testid="bleeding-None"]');
+  await page.click('[data-testid="save"]');
+  await waitForMonitorReading(page, missedDate, "Missed");
+  console.log(`ok: unrecorded ${missedDate} opens blank and records in place`);
+
+  // Filling the remaining day completes the past Cycle. Today's new full-flow
+  // Observation closes it, so the exact paper transcription must become one
+  // Previous row followed by today's Current row.
+  const lastPastDate = civilDatePlusDays(today, -1);
+  await page.click(
+    `[data-testid="chart-day"][data-civil-date="${lastPastDate}"]`,
+  );
+  await waitForRecordDate(page, lastPastDate);
+  await page.click('[data-testid="monitor-Peak"]');
+  await page.click('[data-testid="bleeding-None"]');
+  await page.click('[data-testid="save"]');
+  await waitForMonitorReading(page, lastPastDate, "Peak");
+
+  const chartRows = await page.$$eval('[data-testid="chart-cycle"]', (rows) =>
+    rows.map((row) => ({
+      label: row.querySelector('th[scope="row"]')?.textContent?.trim() ?? "",
+      days: [...row.querySelectorAll('[data-testid="chart-cell"][data-civil-date]')].map(
+        (cell) => ({
+          civilDate: cell.getAttribute("data-civil-date"),
+          monitorReading:
+            cell.querySelector('[data-testid="monitor-reading"]')?.textContent?.trim() ??
+            null,
+          peakAnnotations: [
+            ...cell.querySelectorAll('[data-testid="peak-annotation"]'),
+          ].map((annotation) => annotation.textContent?.trim() ?? ""),
+        }),
+      ),
+    })),
+  );
+  assert.deepEqual(chartRows, [
+    {
+      label: `Previous · ${pastDate}`,
+      days: [
+        { civilDate: pastDate, monitorReading: "Error", peakAnnotations: [] },
+        { civilDate: missedDate, monitorReading: "Missed", peakAnnotations: [] },
+        { civilDate: lastPastDate, monitorReading: "Peak", peakAnnotations: [] },
+      ],
+    },
+    {
+      label: `Current · ${today}`,
+      days: [{ civilDate: today, monitorReading: "High", peakAnnotations: ["P"] }],
+    },
+  ]);
+  console.log(`ok: the completed past Cycle matches its exact transcribed Chart row`);
+
+  // 9. The Owner secret reaches no web-storage surface (ADR 0013).
   const webStorage = await page.evaluate(async () => ({
     localStorage: Object.keys(localStorage),
     sessionStorage: Object.keys(sessionStorage),
@@ -220,7 +439,7 @@ try {
   }
   console.log("ok: localStorage, sessionStorage and IndexedDB are all empty");
 
-  // 9. A reload is the browser's cold relaunch: the Observation is still there.
+  // 10. A reload is the browser's cold relaunch: the Observation is still there.
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForTodaysMarkedPeak(page, today);
   const stillPressed = await page.$eval(
@@ -232,7 +451,7 @@ try {
     `ok: after a reload, today's cell still reads ${JSON.stringify(await readTodaysCell(page, today))}`,
   );
 
-  // 10. Un-marking the same date removes P and stays removed after a reload.
+  // 11. Un-marking the same date removes P and stays removed after a reload.
   await page.click('[data-testid="user-marked-peak"]');
   await page.click('[data-testid="save"]');
   await page.waitForFunction(
@@ -254,7 +473,7 @@ try {
   if (!markStayedCleared) fail("The recording screen did not preserve the un-marked Peak");
   console.log("ok: un-marking removes P and the cleared mark survives a reload");
 
-  // 11. Nothing failed quietly on the way there.
+  // 12. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     fail(`Console errors during the run: ${JSON.stringify(consoleErrors)}`);
   }

@@ -18,20 +18,36 @@ import {
   MONITOR_READINGS,
   MUCUS_OBSERVATIONS,
   TEMPERATURE_UNITS,
+  unrecordedObservation,
   updateOf,
 } from "../observations/observation";
 import { useObservationStore } from "../observations/store";
 
 const props = defineProps<{
+  date: CivilDate;
   today: CivilDate;
   observations: readonly Observation[];
+  showAllFields?: boolean;
+}>();
+
+const emit = defineEmits<{
+  selectDate: [date: CivilDate];
 }>();
 
 const store = useObservationStore();
+const title = computed(() =>
+  props.showAllFields === true ? "Observation details" : "Today",
+);
 
 const recorded = computed(() =>
-  props.observations.find((observation) => observation.civilDate === props.today),
+  props.observations.find((observation) => observation.civilDate === props.date),
 );
+
+const selectDate = (event: Event) => {
+  const input = event.currentTarget;
+  if (!(input instanceof HTMLInputElement) || input.value === "") return;
+  if (input.value <= props.today) emit("selectDate", input.value);
+};
 
 const monitorReading = ref<MonitorReading | null>(null);
 const bleeding = ref<Bleeding | null>(null);
@@ -39,13 +55,16 @@ const userMarkedPeak = ref(false);
 const intercourse = ref(false);
 const lhStrip = ref<LhStrip | null>(null);
 const mucus = ref<Mucus | null>(null);
-const temperature = ref("");
+// Vue's v-model converts a number input to a number once edited, while a
+// cleared control remains an empty string.
+const temperature = ref<string | number>("");
 const temperatureUnit = ref<TemperatureUnit>("F");
 const note = ref("");
 
 // The optional fields are collapsed by default: every optional row is one more
 // thing to skip at 6am, which is what the "more" affordance exists to stop.
 const showMore = ref(false);
+const moreFieldsVisible = computed(() => props.showAllFields === true || showMore.value);
 
 /**
  * The fields this partner has actually edited since the last save. It decides
@@ -61,29 +80,38 @@ const edit = (field: keyof ObservationFields) => {
   edited.value = next;
 };
 
-// What the couple has already recorded is what the controls start on, so
-// re-opening a day shows the day rather than a blank form. A field this
-// partner is midway through editing is left alone, so a write landing from the
-// other phone never moves what she is looking at.
+const load = (observation: Observation, preserveEdited: boolean) => {
+  const settled = (field: keyof ObservationFields) =>
+    !preserveEdited || !edited.value.has(field);
+  if (settled("monitorReading")) monitorReading.value = observation.monitorReading;
+  if (settled("bleeding")) bleeding.value = observation.bleeding;
+  if (settled("userMarkedPeak")) userMarkedPeak.value = observation.userMarkedPeak ?? false;
+  if (settled("intercourse")) intercourse.value = observation.intercourse ?? false;
+  if (settled("lhStrip")) lhStrip.value = observation.lhStrip;
+  if (settled("mucus")) mucus.value = observation.mucus;
+  if (settled("temperature")) {
+    temperature.value = observation.temperature === null ? "" : String(observation.temperature);
+    temperatureUnit.value = observation.temperatureUnit ?? "F";
+  }
+  if (settled("note")) note.value = observation.note ?? "";
+};
+
+// Moving to another Civil date is a new editor session: load that date in
+// full, including an entirely empty Observation when nobody recorded it.
 watch(
-  recorded,
-  (observation) => {
-    if (observation === undefined) return;
-    const settled = (field: keyof ObservationFields) => !edited.value.has(field);
-    if (settled("monitorReading")) monitorReading.value = observation.monitorReading;
-    if (settled("bleeding")) bleeding.value = observation.bleeding;
-    if (settled("userMarkedPeak")) userMarkedPeak.value = observation.userMarkedPeak ?? false;
-    if (settled("intercourse")) intercourse.value = observation.intercourse ?? false;
-    if (settled("lhStrip")) lhStrip.value = observation.lhStrip;
-    if (settled("mucus")) mucus.value = observation.mucus;
-    if (settled("temperature")) {
-      temperature.value = observation.temperature === null ? "" : String(observation.temperature);
-      temperatureUnit.value = observation.temperatureUnit ?? "F";
-    }
-    if (settled("note")) note.value = observation.note ?? "";
+  () => props.date,
+  (date) => {
+    edited.value = new Set();
+    load(recorded.value ?? unrecordedObservation(date), false);
   },
   { immediate: true },
 );
+
+// An incoming write for the date already on screen refreshes only settled
+// fields, so another phone never moves a control this partner is editing.
+watch(recorded, (observation) => {
+  load(observation ?? unrecordedObservation(props.date), true);
+});
 
 /**
  * The confirmation of the last save, and nothing else. It is deliberately not
@@ -102,14 +130,15 @@ const confirm = (date: CivilDate) => {
 };
 
 const save = async () => {
-  const date = props.today;
+  const date = props.date;
   const fields = edited.value;
 
   // A half-typed or unparseable temperature is no temperature. The store
   // validates before it writes, and a throw there would lose the whole save
   // over an optional field.
-  const reading = Number(temperature.value);
-  const hasTemperature = temperature.value.trim() !== "" && Number.isFinite(reading);
+  const temperatureText = String(temperature.value).trim();
+  const reading = Number(temperatureText);
+  const hasTemperature = temperatureText !== "" && Number.isFinite(reading);
 
   const update = updateOf(
     {
@@ -141,10 +170,18 @@ const save = async () => {
 </script>
 
 <template>
-  <section class="record" aria-label="Today" data-testid="record-observation">
+  <section class="record" :aria-label="title" data-testid="record-observation">
     <header class="record__header">
-      <h2 class="record__title">Today</h2>
-      <p class="record__date" data-testid="record-date">{{ today }}</p>
+      <h2 class="record__title" data-testid="record-title">{{ title }}</h2>
+      <input
+        type="date"
+        class="record__date-input"
+        aria-label="Observation date"
+        :value="date"
+        :max="today"
+        data-testid="record-date-input"
+        @change="selectDate"
+      />
     </header>
 
     <ChoiceRow
@@ -186,9 +223,10 @@ const save = async () => {
 
     <div class="record__actions">
       <button
+        v-if="!showAllFields"
         type="button"
         class="record__more"
-        :aria-expanded="showMore"
+        :aria-expanded="moreFieldsVisible"
         aria-controls="record-more"
         data-testid="toggle-more"
         @click="showMore = !showMore"
@@ -209,7 +247,7 @@ const save = async () => {
       Saved {{ savedAt }}
     </p>
 
-    <div v-if="showMore" id="record-more" class="record__more-fields">
+    <div v-if="moreFieldsVisible" id="record-more" class="record__more-fields">
       <label class="record__more-field">
         <span class="record__legend">LH strip</span>
         <select v-model="lhStrip" data-testid="lh-strip" @change="edit('lhStrip')">
@@ -288,9 +326,15 @@ const save = async () => {
   font-weight: 600;
 }
 
-.record__date {
-  margin: 0;
-  color: var(--verelle-ink-muted);
+.record__date-input {
+  min-height: 2.25rem;
+  max-width: 8.5rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+  color: inherit;
+  font: inherit;
   font-variant-numeric: tabular-nums;
 }
 

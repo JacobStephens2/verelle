@@ -31,9 +31,12 @@ final class ObservationPersistenceUITests: XCTestCase {
                 .waitForExistence(timeout: launchTimeout),
             "Saving the Observation was never visibly confirmed"
         )
+        let recordedChartDay = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Monitor reading High'")
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts["High"].waitForExistence(timeout: launchTimeout),
-            "The recorded Monitor reading never appeared on the Chart"
+            recordedChartDay.waitForExistence(timeout: launchTimeout),
+            "The recorded Monitor reading never appeared on an accessible Chart day"
         )
 
         // XCUIApplication.terminate() kills the app process, matching a swipe
@@ -43,7 +46,7 @@ final class ObservationPersistenceUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(
-            app.staticTexts["High"].waitForExistence(timeout: launchTimeout),
+            recordedChartDay.waitForExistence(timeout: launchTimeout),
             "The recorded Monitor reading disappeared after a cold relaunch"
         )
         for field in mandatoryFields {

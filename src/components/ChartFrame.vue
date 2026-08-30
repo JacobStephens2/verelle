@@ -12,6 +12,10 @@ const props = defineProps<{
   observations?: readonly Observation[];
 }>();
 
+const emit = defineEmits<{
+  selectDate: [date: CivilDate];
+}>();
+
 const chart = computed(() =>
   projectChart(props.observations ?? [], props.today ?? todayCivilDate()),
 );
@@ -61,6 +65,17 @@ function monitorReadingText(
   day: { readonly monitorReading: MonitorReading | null } | null | undefined,
 ): string {
   return day?.monitorReading ?? "";
+}
+
+function chartDayLabel(day: ChartDay): string {
+  const details = [`Cycle Day ${day.cycleDay}`, day.civilDate];
+  if (day.monitorReading !== null) {
+    details.push(`Monitor reading ${day.monitorReading}`);
+  }
+  if (day.annotations.length > 0) {
+    details.push(`Peak count ${day.annotations.join(", ")}`);
+  }
+  return details.join(", ");
 }
 
 const root = useTemplateRef<HTMLElement>("root");
@@ -129,21 +144,31 @@ onMounted(() => {
                    is data the device displayed and nothing more (CONTEXT.md,
                    ADR 0011). A day with no Observation stays blank, so a gap
                    in the record reads as a gap. -->
-              <span
-                v-if="day?.monitorReading"
-                class="chart__monitor-reading"
-                data-testid="monitor-reading"
+              <button
+                v-if="day"
+                type="button"
+                class="chart__day"
+                :aria-label="chartDayLabel(day)"
+                :data-civil-date="day.civilDate"
+                data-testid="chart-day"
+                @click="emit('selectDate', day.civilDate)"
               >
-                {{ monitorReadingText(day) }}
-              </span>
-              <span
-                v-for="annotation in day?.annotations ?? []"
-                :key="annotation"
-                class="chart__peak-annotation"
-                data-testid="peak-annotation"
-              >
-                {{ annotation }}
-              </span>
+                <span
+                  v-if="day.monitorReading"
+                  class="chart__monitor-reading"
+                  data-testid="monitor-reading"
+                >
+                  {{ monitorReadingText(day) }}
+                </span>
+                <span
+                  v-for="annotation in day.annotations"
+                  :key="annotation"
+                  class="chart__peak-annotation"
+                  data-testid="peak-annotation"
+                >
+                  {{ annotation }}
+                </span>
+              </button>
             </td>
           </tr>
         </tbody>
@@ -163,16 +188,18 @@ onMounted(() => {
         first day of full flow is recorded.
       </p>
       <div class="chart__unassigned-days">
-        <div
+        <button
           v-for="day in chart.unassignedDays"
           :key="day.civilDate"
+          type="button"
           class="chart__unassigned-day"
           :data-civil-date="day.civilDate"
           data-testid="chart-cell"
+          @click="emit('selectDate', day.civilDate)"
         >
           <time :datetime="day.civilDate">{{ day.civilDate }}</time>
           <span>{{ monitorReadingText(day) }}</span>
-        </div>
+        </button>
       </div>
     </section>
 
@@ -278,6 +305,17 @@ onMounted(() => {
   display: block;
 }
 
+.chart__day {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .chart__peak-annotation {
   margin-top: 0.125rem;
   font-weight: 700;
@@ -330,6 +368,10 @@ onMounted(() => {
   border-radius: 6px;
   text-align: center;
   font-size: 0.75rem;
+  background: var(--verelle-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
 
 .chart__unassigned-day time {
