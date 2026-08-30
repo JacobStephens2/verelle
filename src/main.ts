@@ -9,8 +9,15 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import { createEvoluObservationStore } from "./observations/evolu-store";
 import { observationStoreKey } from "./observations/store";
+import { createCapacitorOwnerSecretStore } from "./owners/capacitor-owner-secret-store";
+import { createOwnerManager } from "./owners/owner-manager";
+import { ownerManagerKey } from "./owners/owner-manager-store";
 import "./style.css";
 
 // The store is created once, here, and handed down. Evolu is reached only
 // through it; no view imports Evolu.
-createApp(App).provide(observationStoreKey, createEvoluObservationStore()).mount("#app");
+const ownerManager = createOwnerManager(createCapacitorOwnerSecretStore());
+createApp(App)
+  .provide(ownerManagerKey, ownerManager)
+  .provide(observationStoreKey, createEvoluObservationStore(ownerManager))
+  .mount("#app");

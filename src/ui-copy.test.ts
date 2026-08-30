@@ -55,4 +55,14 @@ describe("UI copy", () => {
 
     expect(offences).toEqual([]);
   });
+
+  it("states the irreversible consequence of losing the Shared owner", async () => {
+    const backupScreen = renderedText(
+      "BackupRestore.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "BackupRestore.vue"), "utf8"),
+    );
+
+    expect(backupScreen).toContain("If you lose these words, you lose the Chart.");
+    expect(backupScreen).toContain("Nobody can restore it.");
+  });
 });

@@ -71,5 +71,6 @@ CONTEXT.md       the domain glossary - every term means what that file says
 
 ## Repository status
 
-Pre-release health-adjacent software with local recording but no pairing,
-durable Owner secret, or production sync yet. Do not entrust real data to it.
+Pre-release health-adjacent software with local recording and durable Owner
+secrets, but no pairing or verified cross-platform partner sync yet. Do not
+entrust real data to it.

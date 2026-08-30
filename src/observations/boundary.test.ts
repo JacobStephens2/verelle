@@ -11,6 +11,24 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const SRC = path.join(REPO_ROOT, "src");
 const EVOLU_STORE = path.join(SRC, "observations", "evolu-store.ts");
 const POLYFILLS = path.join(SRC, "evolu-polyfills.ts");
+const IOS_OWNER_PLUGIN = path.join(
+  REPO_ROOT,
+  "ios",
+  "App",
+  "App",
+  "OwnerSecretsPlugin.swift",
+);
+const ANDROID_OWNER_PLUGIN = path.join(
+  REPO_ROOT,
+  "android",
+  "app",
+  "src",
+  "main",
+  "java",
+  "app",
+  "verelle",
+  "OwnerSecretsPlugin.java",
+);
 
 async function filesUnder(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -25,18 +43,20 @@ async function filesUnder(directory: string): Promise<string[]> {
 
 const relative = (file: string) => path.relative(REPO_ROOT, file);
 
-describe("the observation-store boundary", () => {
-  it("is the only place in the app that imports Evolu", async () => {
+describe("the Evolu boundaries", () => {
+  it("confines Evolu to the observation store and owner lifecycle", async () => {
     const importers: string[] = [];
     for (const file of await filesUnder(SRC)) {
       if (file === EVOLU_STORE || file === POLYFILLS) continue;
+      if (file.startsWith(path.join(SRC, "owners") + path.sep)) continue;
       if (/@evolu\//.test(await readFile(file, "utf8"))) importers.push(relative(file));
     }
 
     // The Chart projection has to stay a pure function of Observations plus
     // today (issue #9), and that only holds while Evolu is reachable from one
-    // module. A view that imports it is the first step to a query in a
-    // template.
+    // module, except for the owner lifecycle that turns keystore bytes into
+    // Evolu's AppOwner and SharedOwner. A view that imports it is the first
+    // step to a query or owner conversion in a template.
     expect(importers).toEqual([]);
   });
 
@@ -100,10 +120,74 @@ describe("the Owner secret", () => {
       // Reads and writes, not prose. A comment saying why these are banned is
       // not a use of them, and a scan that flagged one would be deleted the
       // first time it cried wolf.
-      for (const surface of ["localStorage", "sessionStorage", "indexedDB"]) {
+      for (const surface of [
+        "localStorage",
+        "sessionStorage",
+        "indexedDB",
+        "openDatabase",
+        "caches",
+        "cookieStore",
+      ]) {
         if (new RegExp(`\\b${surface}\\s*[.[]`).test(contents)) {
           offences.push(`${relative(file)}: ${surface}`);
         }
+      }
+    }
+
+    expect(offences).toEqual([]);
+  });
+
+  it("uses the iOS Keychain and Android Keystore behind the Capacitor adapter", async () => {
+    const [ios, android, adapter] = await Promise.all([
+      readFile(IOS_OWNER_PLUGIN, "utf8"),
+      readFile(ANDROID_OWNER_PLUGIN, "utf8"),
+      readFile(path.join(SRC, "owners", "capacitor-owner-secret-store.ts"), "utf8"),
+    ]);
+
+    expect(ios).toMatch(/kSecClassGenericPassword/);
+    expect(ios).toMatch(/SecItemCopyMatching/);
+    expect(ios).toMatch(/SecItem(?:Add|Update)/);
+    expect(android).toMatch(/AndroidKeyStore/);
+    expect(android).toMatch(/AES\/GCM\/NoPadding/);
+    expect(android).toMatch(/Cipher\.ENCRYPT_MODE/);
+    expect(adapter).toMatch(/registerPlugin<OwnerSecretsPlugin>/);
+  });
+
+  it("turns off bridge payload logging and never logs owner material itself", async () => {
+    const config = await readFile(path.join(REPO_ROOT, "capacitor.config.ts"), "utf8");
+    expect(config).toMatch(/loggingBehavior:\s*["']none["']/);
+
+    const ownerFiles = [
+      ...(await filesUnder(path.join(SRC, "owners"))).filter(
+        (file) => !file.endsWith(".test.ts"),
+      ),
+      IOS_OWNER_PLUGIN,
+      ANDROID_OWNER_PLUGIN,
+    ];
+    const loggingCalls: string[] = [];
+    for (const file of ownerFiles) {
+      const contents = await readFile(file, "utf8");
+      if (/\b(?:console\.|CAPLog\.|Logger\.|Log\.)/.test(contents)) {
+        loggingCalls.push(relative(file));
+      }
+    }
+
+    expect(loggingCalls).toEqual([]);
+  });
+
+  it("contains no provisional or committed Owner secret", async () => {
+    const trackedSourceFiles = (
+      await filesUnder(SRC)
+    ).filter((file) => !file.endsWith(".test.ts"));
+    const offences: string[] = [];
+    for (const file of trackedSourceFiles) {
+      const contents = await readFile(file, "utf8");
+      if (/\btestOwnerSecret\b/.test(contents)) offences.push(relative(file));
+
+      // A committed BIP39 backup is a 24-word string literal. Prose and UI
+      // paragraphs are not matched because they contain punctuation.
+      if (/(["'`])(?:[a-z]+ ){23}[a-z]+\1/u.test(contents)) {
+        offences.push(`${relative(file)}: 24-word phrase`);
       }
     }
 

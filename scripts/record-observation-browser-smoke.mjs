@@ -15,6 +15,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import puppeteer from "puppeteer-core";
 
+import {
+  findOwnerMaterialInBrowserStorage,
+  installBrowserSmokeOwner,
+} from "./browser-smoke-owner.mjs";
+
 const PORT = 4194;
 const origin = `http://127.0.0.1:${PORT}`;
 const chromePath = process.env.VERELLE_CHROME_PATH || "/usr/bin/google-chrome";
@@ -24,6 +29,7 @@ const VIEWPORT = { width: 390, height: 844 };
 // Long enough that a slow CI runner opens SQLite over OPFS, short enough that a
 // permanent spinner is reported as a failure rather than as a hung job.
 const PAINT_TIMEOUT_MS = 20000;
+const RESTORE_TIMEOUT_MS = 60000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -127,7 +133,7 @@ const readTodaysCell = (page, today) =>
     ),
   }));
 
-const waitForTodaysMarkedPeak = (page, today) =>
+const waitForTodaysMarkedPeak = (page, today, timeout = PAINT_TIMEOUT_MS) =>
   page.waitForFunction(
     (date) => {
       const cell = document.querySelector(
@@ -142,7 +148,7 @@ const waitForTodaysMarkedPeak = (page, today) =>
           ?.textContent?.trim() === "P"
       );
     },
-    { timeout: PAINT_TIMEOUT_MS },
+    { timeout },
     today,
   );
 
@@ -154,8 +160,10 @@ try {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
-  const page = await browser.newPage();
+  const recordingContext = await browser.createBrowserContext();
+  const page = await recordingContext.newPage();
   await page.setViewport(VIEWPORT);
+  const recordingOwner = await installBrowserSmokeOwner(page);
 
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
@@ -428,18 +436,118 @@ try {
   ]);
   console.log(`ok: the completed past Cycle matches its exact transcribed Chart row`);
 
-  // 9. The Owner secret reaches no web-storage surface (ADR 0013).
-  const webStorage = await page.evaluate(async () => ({
-    localStorage: Object.keys(localStorage),
-    sessionStorage: Object.keys(sessionStorage),
-    indexedDb: (await indexedDB.databases()).map((db) => db.name),
-  }));
-  for (const [surface, keys] of Object.entries(webStorage)) {
-    if (keys.length > 0) fail(`${surface} holds ${JSON.stringify(keys)}; it must hold nothing`);
-  }
-  console.log("ok: localStorage, sessionStorage and IndexedDB are all empty");
+  // 9. The backup screen reveals the runtime Shared owner phrase, says plainly
+  //    what losing it means, and validates the restore path. The phrase is
+  //    deliberately never printed or included in an artifact.
+  await page.click('[data-testid="open-backup"]');
+  await page.waitForSelector('[data-testid="shared-owner-words"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  const recordedWords = await page.$$eval(
+    '[data-testid="shared-owner-words"] li',
+    (elements) => elements.map((element) => element.textContent?.trim() ?? ""),
+  );
+  assert.equal(recordedWords.length, 24, "The backup did not contain 24 words");
+  const recordedPhrase = recordedWords.join(" ");
+  const lossWarning = await page.$eval(
+    '[data-testid="owner-loss-warning"]',
+    (element) => element.textContent?.trim().replace(/\s+/g, " ") ?? "",
+  );
+  assert.equal(
+    lossWarning,
+    "If you lose these words, you lose the Chart. Nobody can restore it.",
+  );
 
-  // 10. A reload is the browser's cold relaunch: the Observation is still there.
+  await page.type('[data-testid="restore-phrase"]', "not a backup phrase");
+  await page.click('[data-testid="restore-chart"]');
+  assert.equal(
+    await page.$eval(
+      '[data-testid="restore-error"]',
+      (element) => element.textContent?.trim() ?? "",
+    ),
+    "Enter all 24 words exactly as they were shown.",
+  );
+  // A separate browser context has a separate IndexedDB, OPFS, Cache Storage,
+  // cookies, and Web Storage namespace. Its runtime keystore also starts with
+  // a different Device owner and Shared owner, making this a fresh install
+  // rather than a same-profile reload disguised as one.
+  const recordedOwnerSecrets = recordingOwner.currentOwnerSecrets();
+  const restoreContext = await browser.createBrowserContext();
+  const restorePage = await restoreContext.newPage();
+  await restorePage.setViewport(VIEWPORT);
+  const restoreOwner = await installBrowserSmokeOwner(restorePage, {
+    additionalEncodedOwnerSecrets: [recordedOwnerSecrets.sharedOwner],
+  });
+  restorePage.on("pageerror", (error) =>
+    consoleErrors.push(`fresh install: ${String(error)}`),
+  );
+  restorePage.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(`fresh install: ${message.text()}`);
+    }
+  });
+
+  await restorePage.goto(origin, { waitUntil: "domcontentloaded" });
+  await restorePage.waitForSelector('[data-testid="chart-empty-state"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  await restorePage.click('[data-testid="open-backup"]');
+  await restorePage.waitForSelector('[data-testid="shared-owner-words"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  await restorePage.$eval(
+    '[data-testid="restore-phrase"]',
+    (element, phrase) => {
+      if (!(element instanceof HTMLTextAreaElement)) return;
+      element.value = phrase;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    recordedPhrase,
+  );
+  await Promise.all([
+    restorePage.waitForNavigation({
+      waitUntil: "domcontentloaded",
+      timeout: PAINT_TIMEOUT_MS,
+    }),
+    restorePage.click('[data-testid="restore-chart"]'),
+  ]);
+  await waitForTodaysMarkedPeak(restorePage, today, RESTORE_TIMEOUT_MS);
+  if (
+    restoreOwner.currentOwnerSecrets().sharedOwner !==
+    recordedOwnerSecrets.sharedOwner
+  ) {
+    throw new Error("The fresh install did not persist the restored Shared owner");
+  }
+  console.log("ok: the 24 offline words restored the Chart in a fresh install");
+
+  // 10. Track the runtime secrets at the storage APIs and scan every stored
+  // representation, including Evolu's Worker-owned OPFS files (ADR 0013).
+  const recordingStorageViolations = await findOwnerMaterialInBrowserStorage(page, {
+    encodedOwnerSecrets: Object.values(recordedOwnerSecrets),
+    textMaterials: [recordedPhrase],
+  });
+  const restoreStorageViolations = await findOwnerMaterialInBrowserStorage(
+    restorePage,
+    {
+      encodedOwnerSecrets: [
+        ...Object.values(restoreOwner.initialOwnerSecrets),
+        recordedOwnerSecrets.sharedOwner,
+      ],
+      textMaterials: [recordedPhrase],
+    },
+  );
+  for (const surface of recordingStorageViolations) {
+    fail(`The recording install wrote Owner secret material to ${surface}`);
+  }
+  for (const surface of restoreStorageViolations) {
+    fail(`The fresh install wrote Owner secret material to ${surface}`);
+  }
+  console.log(
+    "ok: no Owner secret material reached Web Storage, IndexedDB, cookies, caches, Storage Buckets, or OPFS",
+  );
+  await restoreContext.close();
+
+  // 11. A reload is the browser's cold relaunch: the Observation is still there.
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForTodaysMarkedPeak(page, today);
   const stillPressed = await page.$eval(
@@ -451,7 +559,7 @@ try {
     `ok: after a reload, today's cell still reads ${JSON.stringify(await readTodaysCell(page, today))}`,
   );
 
-  // 11. Un-marking the same date removes P and stays removed after a reload.
+  // 12. Un-marking the same date removes P and stays removed after a reload.
   await page.click('[data-testid="user-marked-peak"]');
   await page.click('[data-testid="save"]');
   await page.waitForFunction(
@@ -473,7 +581,7 @@ try {
   if (!markStayedCleared) fail("The recording screen did not preserve the un-marked Peak");
   console.log("ok: un-marking removes P and the cleared mark survives a reload");
 
-  // 12. Nothing failed quietly on the way there.
+  // 13. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     fail(`Console errors during the run: ${JSON.stringify(consoleErrors)}`);
   }

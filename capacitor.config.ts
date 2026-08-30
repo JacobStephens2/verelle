@@ -14,6 +14,9 @@ const config: CapacitorConfig = {
   appId: "app.verelle",
   appName: "Verelle",
   webDir: "dist",
+  // Capacitor logs plugin payloads in debug builds. OwnerSecrets necessarily
+  // crosses that bridge, so bridge logging must stay off in every build.
+  loggingBehavior: "none",
   ios: {
     // Edge-to-edge WebView; CSS env(safe-area-inset-*) handles the notch and
     // the home indicator.

@@ -14,6 +14,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import puppeteer from "puppeteer-core";
 
+import { installBrowserSmokeOwner } from "./browser-smoke-owner.mjs";
+
 const PORT = 4193;
 const origin = `http://127.0.0.1:${PORT}`;
 const chromePath = process.env.VERELLE_CHROME_PATH || "/usr/bin/google-chrome";
@@ -71,6 +73,7 @@ try {
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
+  await installBrowserSmokeOwner(page);
 
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
