@@ -12,6 +12,7 @@
 // Run with: npm run smoke:empty-chart
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import puppeteer from "puppeteer-core";
 
 const PORT = 4193;
@@ -71,6 +72,18 @@ try {
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
+  const browserSmokeOwnerSecrets = {
+    deviceOwner: randomBytes(32).toString("base64"),
+    sharedOwner: randomBytes(32).toString("base64"),
+  };
+  await page.evaluateOnNewDocument((ownerSecrets) => {
+    Object.defineProperty(globalThis, "__VERELLE_BROWSER_SMOKE_OWNER_SECRETS__", {
+      value: ownerSecrets,
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    });
+  }, browserSmokeOwnerSecrets);
 
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));

@@ -2,6 +2,7 @@ import XCTest
 
 final class ObservationPersistenceUITests: XCTestCase {
     private let launchTimeout: TimeInterval = 30
+    private let saveTimeout: TimeInterval = 8
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -28,7 +29,7 @@ final class ObservationPersistenceUITests: XCTestCase {
 
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Saved '")).firstMatch
-                .waitForExistence(timeout: launchTimeout),
+                .waitForExistence(timeout: saveTimeout),
             "Saving the Observation was never visibly confirmed"
         )
         let recordedChartDay = app.buttons.matching(

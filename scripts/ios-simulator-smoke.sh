@@ -4,15 +4,13 @@
 # cold relaunch.
 #
 # Compiling is not launching, and alive is not painted: a blank WebView passes
-# any liveness check. ChartFrame.vue logs the frame's laid-out bounding box on
-# mount, and Capacitor bridges that to the app's stdout rather than to os_log,
-# so the launch is attached to a pty and this waits for a line reporting the
-# full set of cycle day columns at a non-zero size.
-#
-# A paint breadcrumb alone would also pass if Evolu silently hung. The native
-# UI test drives all four mandatory fields through WebKit accessibility, waits
+# a process-liveness check. The native UI test drives all four mandatory fields
+# through WebKit accessibility, waits
 # for the saved Monitor reading in the Chart, terminates the process, launches
 # it again, and reads that same value back from the Chart and recording screen.
+# It is also the paint check: Capacitor bridge logging is deliberately disabled
+# because debug logging includes plugin payloads, and OwnerSecrets payloads are
+# key material that must never be logged (ADR 0013).
 #
 # The whole boot-install-launch is retried, because the hosted macOS runners
 # fairly often hand back a simulator that never finishes booting - it sits on
@@ -37,15 +35,7 @@ case "$app_path" in
     ;;
 esac
 
-console=$(mktemp -t verelle-app-console)
-cleanup() {
-  rm -f "$console"
-}
-trap cleanup EXIT
-
 bundle_id=app.verelle
-painted='verelle: chart frame painted, 42 cycle day columns, [1-9][0-9]*x[1-9][0-9]*'
-paint_timeout_seconds=90
 attempts=2
 
 # An iPhone the runner already has. Creating a device instead costs a fresh
@@ -67,45 +57,28 @@ for attempt in $(seq 1 "$attempts"); do
 
   xcrun simctl install "$device" "$app_path"
 
-  : > "$console"
-  xcrun simctl launch --console-pty "$device" "$bundle_id" > "$console" 2>&1 &
-  launch_pid=$!
-
-  for _ in $(seq 1 "$paint_timeout_seconds"); do
-    if grep -qE "$painted" "$console"; then break; fi
-    sleep 1
-  done
-
-  # Evidence for a human, not the assertion: a headless simulator often hands
-  # back a white frame for a WebView it has in fact laid out.
+  xcrun simctl launch "$device" "$bundle_id" >/dev/null
+  sleep 2
+  # Evidence for a human, not the assertion: the accessibility-driven UI test
+  # below is what fails if the WebView did not paint or Evolu hung.
   xcrun simctl io "$device" screenshot "$screenshot" || true
-  kill "$launch_pid" 2>/dev/null || true
 
-  if grep -E "$painted" "$console"; then
-    echo "ok: the chart frame painted in the WebView on attempt $attempt"
-
-    if xcodebuild -quiet test \
-      -project "$project" \
-      -scheme App \
-      -destination "id=$device" \
-      -derivedDataPath "$derived_data"; then
-      # Xcode closes the app when the UI test runner exits. Open it once more
-      # so the artifact shows the same persisted state the test just asserted.
-      xcrun simctl launch "$device" "$bundle_id" >/dev/null
-      sleep 2
-      xcrun simctl io "$device" screenshot "$screenshot" || true
-      echo "ok: the recorded Observation survived a cold iOS relaunch"
-      exit 0
-    fi
-
+  if xcodebuild -quiet test \
+    -project "$project" \
+    -scheme App \
+    -destination "id=$device" \
+    -derivedDataPath "$derived_data"; then
+    # Xcode closes the app when the UI test runner exits. Open it once more
+    # so the artifact shows the same persisted state the test just asserted.
+    xcrun simctl launch "$device" "$bundle_id" >/dev/null
+    sleep 2
     xcrun simctl io "$device" screenshot "$screenshot" || true
-    echo "FAIL: the recorded Observation did not survive a cold iOS relaunch"
-    exit 1
+    echo "ok: the recorded Observation survived a cold iOS relaunch"
+    exit 0
   fi
 
-  echo "attempt $attempt: the chart frame never reported painting"
-  cat "$console"
+  echo "attempt $attempt: the WebView persistence test failed"
 done
 
-echo "FAIL: the chart frame never reported painting at a non-zero size in $attempts attempts"
+echo "FAIL: the recorded Observation did not survive a cold iOS relaunch"
 exit 1

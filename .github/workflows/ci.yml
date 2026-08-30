@@ -99,15 +99,16 @@ jobs:
           npm run build
           npx cap sync ios
 
-      # Unsigned: CI proves the shell compiles for the simulator. Signed builds
-      # happen at release time, not here.
+      # The simulator build is ad-hoc signed. Keychain rejects unsigned apps
+      # with errSecMissingEntitlement, so disabling signing would prevent the
+      # OwnerSecrets plugin from exercising the same path as a phone.
       - name: Build for the simulator
         working-directory: ios/App
         run: |
           xcodebuild -scheme App \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
-            build CODE_SIGNING_ALLOWED=NO
+            build
 
       - name: Record and cold relaunch on a simulator
         working-directory: ios/App

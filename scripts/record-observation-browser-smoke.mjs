@@ -13,6 +13,7 @@
 // Run with: npm run smoke:record-observation
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import puppeteer from "puppeteer-core";
 
 const PORT = 4194;
@@ -156,6 +157,18 @@ try {
   });
   const page = await browser.newPage();
   await page.setViewport(VIEWPORT);
+  const browserSmokeOwnerSecrets = {
+    deviceOwner: randomBytes(32).toString("base64"),
+    sharedOwner: randomBytes(32).toString("base64"),
+  };
+  await page.evaluateOnNewDocument((ownerSecrets) => {
+    Object.defineProperty(globalThis, "__VERELLE_BROWSER_SMOKE_OWNER_SECRETS__", {
+      value: ownerSecrets,
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    });
+  }, browserSmokeOwnerSecrets);
 
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
@@ -428,7 +441,54 @@ try {
   ]);
   console.log(`ok: the completed past Cycle matches its exact transcribed Chart row`);
 
-  // 9. The Owner secret reaches no web-storage surface (ADR 0013).
+  // 9. The backup screen reveals the runtime Shared owner phrase, says plainly
+  //    what losing it means, and validates the restore path. The phrase is
+  //    deliberately never printed or included in an artifact.
+  await page.click('[data-testid="open-backup"]');
+  await page.waitForSelector('[data-testid="shared-owner-words"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  const recordedWords = await page.$$eval(
+    '[data-testid="shared-owner-words"] li',
+    (elements) => elements.map((element) => element.textContent?.trim() ?? ""),
+  );
+  assert.equal(recordedWords.length, 24, "The backup did not contain 24 words");
+  const recordedPhrase = recordedWords.join(" ");
+  const lossWarning = await page.$eval(
+    '[data-testid="owner-loss-warning"]',
+    (element) => element.textContent?.trim().replace(/\s+/g, " ") ?? "",
+  );
+  assert.equal(
+    lossWarning,
+    "If you lose these words, you lose the Chart. Nobody can restore it.",
+  );
+
+  await page.type('[data-testid="restore-phrase"]', "not a backup phrase");
+  await page.click('[data-testid="restore-chart"]');
+  assert.equal(
+    await page.$eval(
+      '[data-testid="restore-error"]',
+      (element) => element.textContent?.trim() ?? "",
+    ),
+    "Enter all 24 words exactly as they were shown.",
+  );
+  await page.$eval(
+    '[data-testid="restore-phrase"]',
+    (element, phrase) => {
+      if (!(element instanceof HTMLTextAreaElement)) return;
+      element.value = phrase;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    recordedPhrase,
+  );
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: PAINT_TIMEOUT_MS }),
+    page.click('[data-testid="restore-chart"]'),
+  ]);
+  await waitForTodaysMarkedPeak(page, today);
+  console.log("ok: the offline backup screen shows 24 words and restores the Chart");
+
+  // 10. The Owner secret reaches no web-storage surface (ADR 0013).
   const webStorage = await page.evaluate(async () => ({
     localStorage: Object.keys(localStorage),
     sessionStorage: Object.keys(sessionStorage),
@@ -439,7 +499,7 @@ try {
   }
   console.log("ok: localStorage, sessionStorage and IndexedDB are all empty");
 
-  // 10. A reload is the browser's cold relaunch: the Observation is still there.
+  // 11. A reload is the browser's cold relaunch: the Observation is still there.
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForTodaysMarkedPeak(page, today);
   const stillPressed = await page.$eval(
@@ -451,7 +511,7 @@ try {
     `ok: after a reload, today's cell still reads ${JSON.stringify(await readTodaysCell(page, today))}`,
   );
 
-  // 11. Un-marking the same date removes P and stays removed after a reload.
+  // 12. Un-marking the same date removes P and stays removed after a reload.
   await page.click('[data-testid="user-marked-peak"]');
   await page.click('[data-testid="save"]');
   await page.waitForFunction(
@@ -473,7 +533,7 @@ try {
   if (!markStayedCleared) fail("The recording screen did not preserve the un-marked Peak");
   console.log("ok: un-marking removes P and the cleared mark survives a reload");
 
-  // 12. Nothing failed quietly on the way there.
+  // 13. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     fail(`Console errors during the run: ${JSON.stringify(consoleErrors)}`);
   }

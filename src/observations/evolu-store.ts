@@ -9,7 +9,6 @@
  */
 import {
   AppName,
-  createAppOwner,
   createEvolu,
   createIdFromString,
   createQueryBuilder,
@@ -22,15 +21,16 @@ import {
   nullOr,
   NonEmptyTrimmedString100,
   SqliteBoolean,
-  testOwnerSecret,
   union,
   type Evolu,
   type MutationValues,
+  type SharedOwner,
 } from "@evolu/common";
 import { createEvoluDeps } from "@evolu/web";
 import { ref } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
+import type { OwnerManager } from "../owners/owner-manager";
 import type { Observation, ObservationUpdate } from "./observation";
 import { unrecordedObservation } from "./observation";
 import type { ObservationStore } from "./store";
@@ -160,7 +160,8 @@ function toColumns(update: ObservationUpdate): ObservationColumns {
 
 async function boot(
   observations: ReturnType<typeof ref<readonly Observation[]>>,
-): Promise<Evolu<typeof Schema>> {
+  ownerManager: OwnerManager,
+): Promise<{ readonly evolu: Evolu<typeof Schema>; readonly sharedOwner: SharedOwner }> {
   // Must run before createEvoluDeps(). iOS 26's WKWebView exposes SharedWorker,
   // but under capacitor://localhost it fails SILENTLY: no error surfaces and
   // every query hangs forever, presenting as a permanent spinner with a clean
@@ -177,27 +178,24 @@ async function boot(
   // phones take or it is testing an app nobody runs.
   delete (globalThis as { SharedWorker?: unknown }).SharedWorker;
 
+  const { deviceOwner, sharedOwner } = await ownerManager.load();
   const run = createRun(createEvoluDeps());
   const result = await run(
     createEvolu(Schema, {
       appName: AppName.orThrow("Verelle"),
-      // PROVISIONAL, replaced in issue #12 by owner material from the platform
-      // keystore (ADR 0013). Evolu's own deterministic test secret is used
-      // deliberately: it is not a secret, it protects nothing, and it is named
-      // so that it cannot quietly become permanent. It is never written to
-      // localStorage, sessionStorage, IndexedDB or any other web-storage
-      // surface, which is the trap the spike fell into on purpose and ADR 0013
-      // exists to stop.
-      appOwner: createAppOwner(testOwnerSecret),
-      // No sync in this ticket. Passing no transports also means the
-      // provisional owner above never reaches a relay.
-      transports: [],
+      // The Device owner unlocks this installation's encrypted database. Its
+      // secret was loaded from the platform keystore before Evolu is created.
+      appOwner: deviceOwner,
     }),
   );
 
   // The error type is `never` - creating the database cannot fail in a way
   // the app could handle - so unwrapping is honest rather than lazy.
   const evolu = getOrThrow(result);
+  // Every Observation belongs to the couple's Shared owner. Registering it
+  // with Evolu also lets a fresh install download and decrypt its Chart after
+  // restoring the recorded Shared owner phrase.
+  evolu.useOwner(sharedOwner);
   const publish = () => {
     observations.value = evolu
       .getQueryRows(allObservations)
@@ -207,7 +205,7 @@ async function boot(
   evolu.subscribeQuery(allObservations)(publish);
   await evolu.loadQuery(allObservations);
   publish();
-  return evolu;
+  return { evolu, sharedOwner };
 }
 
 /**
@@ -219,16 +217,16 @@ async function boot(
  * promise rather than dropped. Nothing here disables a control while it works
  * - v1's global busy flag is exactly the bug this shape avoids.
  */
-export function createEvoluObservationStore(): ObservationStore {
+export function createEvoluObservationStore(ownerManager: OwnerManager): ObservationStore {
   const observations = ref<readonly Observation[]>([]);
-  const ready = boot(observations);
+  const ready = boot(observations, ownerManager);
   // A boot failure belongs to the save that needed the database, where the
   // caller can react to it, not to a bare unhandled rejection at launch.
   void ready.catch(() => undefined);
 
   return {
     upsert: async (civilDate: CivilDate, update: ObservationUpdate) => {
-      const evolu = await ready;
+      const { evolu, sharedOwner } = await ready;
       await new Promise<void>((resolve) => {
         evolu.upsert(
           "observation",
@@ -240,7 +238,7 @@ export function createEvoluObservationStore(): ObservationStore {
             civilDate: NonEmptyTrimmedString100.orThrow(civilDate),
             ...toColumns(update),
           },
-          { onComplete: resolve },
+          { onComplete: resolve, ownerId: sharedOwner.id },
         );
       });
     },
