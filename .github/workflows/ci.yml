@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -51,6 +51,13 @@ jobs:
           VERELLE_CHROME_PATH: /usr/bin/google-chrome
         run: npm run smoke:empty-chart
 
+      # Boots the real app, records today's Observation, reloads, and asserts
+      # it survived. The reload is the browser's cold relaunch.
+      - name: Browser smoke - record an observation
+        env:
+          VERELLE_CHROME_PATH: /usr/bin/google-chrome
+        run: npm run smoke:record-observation
+
   android:
     name: Android
     runs-on: ubuntu-latest
@@ -58,7 +65,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - uses: actions/setup-java@v5
         with:
@@ -83,7 +90,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -102,7 +109,7 @@ jobs:
             -derivedDataPath build \
             build CODE_SIGNING_ALLOWED=NO
 
-      - name: Launch on a simulator
+      - name: Record and cold relaunch on a simulator
         working-directory: ios/App
         run: |
           ../../scripts/ios-simulator-smoke.sh \
@@ -112,6 +119,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ios-launch-screenshot
+          name: ios-cold-relaunch-screenshot
           path: ios/App/verelle-launch.png
           if-no-files-found: warn

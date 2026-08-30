@@ -4,10 +4,16 @@ import { computed, onMounted, useTemplateRef } from "vue";
 import { chartFrame } from "../chart/frame";
 import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
+import type { Observation } from "../observations/observation";
 
-const props = defineProps<{ today?: CivilDate }>();
+const props = defineProps<{
+  today?: CivilDate;
+  observations?: readonly Observation[];
+}>();
 
-const frame = computed(() => chartFrame(props.today ?? todayCivilDate()));
+const frame = computed(() =>
+  chartFrame(props.today ?? todayCivilDate(), props.observations ?? []),
+);
 
 const root = useTemplateRef<HTMLElement>("root");
 
@@ -60,8 +66,17 @@ onMounted(() => {
               v-for="column in frame.columns"
               :key="column.cycleDay"
               class="chart__cell"
+              :class="{ 'chart__cell--today': column.isToday }"
+              :data-civil-date="column.civilDate ?? undefined"
               data-testid="chart-cell"
-            ></td>
+            >
+              <!-- The reading in full, never an initial. A `P` on the Chart
+                   may only ever come from a User-marked Peak; a Monitor Peak
+                   is data the device displayed and nothing more (CONTEXT.md,
+                   ADR 0011). A day with no Observation stays blank, so a gap
+                   in the record reads as a gap. -->
+              {{ column.observation?.monitorReading ?? "" }}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -70,6 +85,14 @@ onMounted(() => {
     <p v-if="frame.isEmpty" class="chart__empty" data-testid="chart-empty-state">
       Nothing recorded yet. Observations will appear here, one column per cycle
       day.
+    </p>
+    <p
+      v-else-if="!frame.isAnchoredToFullFlow"
+      class="chart__empty"
+      data-testid="chart-unanchored"
+    >
+      Cycle day 1 is not set yet. Record a day of full flow and the columns will
+      count from it.
     </p>
   </section>
 </template>
@@ -124,8 +147,8 @@ onMounted(() => {
 
 .chart__cycle-day,
 .chart__cell {
-  width: 2.25rem;
-  min-width: 2.25rem;
+  width: 4rem;
+  min-width: 4rem;
   border: 1px solid var(--verelle-rule);
   text-align: center;
 }
@@ -141,6 +164,12 @@ onMounted(() => {
 
 .chart__cell {
   height: 3rem;
+  font-size: 0.75rem;
+}
+
+.chart__cell--today {
+  background: var(--verelle-surface-sunken);
+  font-weight: 600;
 }
 
 .chart__empty {

@@ -14,10 +14,13 @@
     "test:watch": "vitest",
     "verify:no-server-url": "node scripts/verify-no-server-url.mjs",
     "native:assets": "npm run build && cap sync && npm run verify:no-server-url",
-    "smoke:empty-chart": "node scripts/empty-chart-browser-smoke.mjs"
+    "smoke:empty-chart": "node scripts/empty-chart-browser-smoke.mjs",
+    "smoke:record-observation": "node scripts/record-observation-browser-smoke.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.0",
+    "@evolu/common": "^8.7.0",
+    "@evolu/web": "^3.1.0",
     "vue": "^3.5.41"
   },
   "devDependencies": {

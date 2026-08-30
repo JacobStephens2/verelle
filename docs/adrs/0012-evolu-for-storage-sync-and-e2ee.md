@@ -49,6 +49,14 @@ COOP/COEP headers, and `instantiateStreaming` never meets Capacitor's patched
    Deleting it selects Evolu's one-tab dedicated-Worker path, which Android
    already uses. A Capacitor app is only ever one tab, so nothing is lost.
 
+   **Amended 2026-08-30 (issue #8): the delete is unconditional, not
+   native-only.** The same fault has a milder form in desktop Chrome over
+   `http://127.0.0.1`. On the SharedWorker path a reload comes back to an empty
+   Chart while the record sits unread in OPFS, and again nothing is logged.
+   `scripts/record-observation-browser-smoke.mjs` reproduces it one line apart.
+   Verelle is one tab on every surface it ships to, and the browser smoke has to
+   exercise the path the phones take or it is testing an app nobody runs.
+
 **The relay learns metadata, not content.** Frames carry the `OwnerId` — it is
 in the connection URL by design, for relay auth — plus sizes and timing. So the
 constraint "the operator must be structurally unable to read the couple's chart"
