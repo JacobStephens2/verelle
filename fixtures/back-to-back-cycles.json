@@ -1,0 +1,208 @@
+{
+  "name": "two back-to-back Cycles start on the first day of full flow",
+  "today": "2026-03-08",
+  "observations": [
+    {
+      "civilDate": "2026-03-01",
+      "monitorReading": "Low",
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-03-02",
+      "monitorReading": "High",
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": false,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-03-03",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": true,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-03-05",
+      "monitorReading": "Missed",
+      "bleeding": "Light",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-03-06",
+      "monitorReading": "Low",
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-03-08",
+      "monitorReading": "High",
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-03-08",
+    "cycles": [
+      {
+        "startDate": "2026-03-01",
+        "days": [
+          {
+            "civilDate": "2026-03-01",
+            "cycleDay": 1,
+            "observation": {
+              "civilDate": "2026-03-01",
+              "monitorReading": "Low",
+              "bleeding": "Heavy",
+              "userMarkedPeak": null,
+              "intercourse": null,
+              "lhStrip": null,
+              "mucus": null,
+              "temperature": null,
+              "temperatureUnit": null,
+              "note": null
+            },
+            "annotations": []
+          },
+          {
+            "civilDate": "2026-03-02",
+            "cycleDay": 2,
+            "observation": {
+              "civilDate": "2026-03-02",
+              "monitorReading": "High",
+              "bleeding": "Moderate",
+              "userMarkedPeak": null,
+              "intercourse": false,
+              "lhStrip": null,
+              "mucus": null,
+              "temperature": null,
+              "temperatureUnit": null,
+              "note": null
+            },
+            "annotations": []
+          },
+          {
+            "civilDate": "2026-03-03",
+            "cycleDay": 3,
+            "observation": {
+              "civilDate": "2026-03-03",
+              "monitorReading": null,
+              "bleeding": "None",
+              "userMarkedPeak": null,
+              "intercourse": true,
+              "lhStrip": null,
+              "mucus": null,
+              "temperature": null,
+              "temperatureUnit": null,
+              "note": null
+            },
+            "annotations": []
+          },
+          {
+            "civilDate": "2026-03-04",
+            "cycleDay": 4,
+            "observation": null,
+            "annotations": []
+          }
+        ]
+      },
+      {
+        "startDate": "2026-03-05",
+        "days": [
+          {
+            "civilDate": "2026-03-05",
+            "cycleDay": 1,
+            "observation": {
+              "civilDate": "2026-03-05",
+              "monitorReading": "Missed",
+              "bleeding": "Light",
+              "userMarkedPeak": null,
+              "intercourse": null,
+              "lhStrip": null,
+              "mucus": null,
+              "temperature": null,
+              "temperatureUnit": null,
+              "note": null
+            },
+            "annotations": []
+          },
+          {
+            "civilDate": "2026-03-06",
+            "cycleDay": 2,
+            "observation": {
+              "civilDate": "2026-03-06",
+              "monitorReading": "Low",
+              "bleeding": "Heavy",
+              "userMarkedPeak": null,
+              "intercourse": null,
+              "lhStrip": null,
+              "mucus": null,
+              "temperature": null,
+              "temperatureUnit": null,
+              "note": null
+            },
+            "annotations": []
+          },
+          {
+            "civilDate": "2026-03-07",
+            "cycleDay": 3,
+            "observation": null,
+            "annotations": []
+          },
+          {
+            "civilDate": "2026-03-08",
+            "cycleDay": 4,
+            "observation": {
+              "civilDate": "2026-03-08",
+              "monitorReading": "High",
+              "bleeding": "None",
+              "userMarkedPeak": null,
+              "intercourse": null,
+              "lhStrip": null,
+              "mucus": null,
+              "temperature": null,
+              "temperatureUnit": null,
+              "note": null
+            },
+            "annotations": []
+          }
+        ]
+      }
+    ],
+    "unassignedObservations": []
+  }
+}

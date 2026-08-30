@@ -6,10 +6,10 @@ instructor-readable chart. It deliberately does **not** compute fertility
 status, fertile windows, day classifications, or conception guidance (ADR 0001,
 ADR 0011).
 
-The repository is being rebuilt. What is on `main` today is the empty **Chart**
-frame on both phones and nothing more: today's **Cycle** laid out as **Cycle
-Day** columns, with an explicit empty state where the Observations will go.
-Nothing is recordable yet. The MVP spec is
+The repository is being rebuilt. What is on `main` today records an
+**Observation** for a **Civil date**, persists it locally, and projects the
+current and previous **Cycles** into the shared **Chart** on both phones. The
+MVP spec is
 [issue #6](https://github.com/JacobStephens2/verelle/issues/6); its tickets are
 sub-issues.
 
@@ -62,7 +62,7 @@ one step.
 ## Layout
 
 ```text
-src/chart/       the pure chart modules - no Evolu, no Vue, no DOM
+src/chart/       the pure Chart projection and Civil date modules - no Evolu, Vue, or DOM
 src/components/  the Vue surface
 scripts/         build guards and browser-smoke harnesses
 docs/adrs/       the decisions; read the ones touching what you are changing
@@ -71,5 +71,5 @@ CONTEXT.md       the domain glossary - every term means what that file says
 
 ## Repository status
 
-Pre-release health-adjacent software with no storage, no sync and no recording
-yet. Do not entrust real data to it.
+Pre-release health-adjacent software with local recording but no pairing,
+durable Owner secret, or production sync yet. Do not entrust real data to it.
