@@ -109,7 +109,7 @@ jobs:
             -derivedDataPath build \
             build CODE_SIGNING_ALLOWED=NO
 
-      - name: Launch on a simulator
+      - name: Record and cold relaunch on a simulator
         working-directory: ios/App
         run: |
           ../../scripts/ios-simulator-smoke.sh \
@@ -119,6 +119,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ios-launch-screenshot
+          name: ios-cold-relaunch-screenshot
           path: ios/App/verelle-launch.png
           if-no-files-found: warn
