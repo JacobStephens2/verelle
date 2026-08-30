@@ -67,6 +67,17 @@ function monitorReadingText(
   return day?.monitorReading ?? "";
 }
 
+function chartDayLabel(day: ChartDay): string {
+  const details = [`Cycle Day ${day.cycleDay}`, day.civilDate];
+  if (day.monitorReading !== null) {
+    details.push(`Monitor reading ${day.monitorReading}`);
+  }
+  if (day.annotations.length > 0) {
+    details.push(`Peak count ${day.annotations.join(", ")}`);
+  }
+  return details.join(", ");
+}
+
 const root = useTemplateRef<HTMLElement>("root");
 
 // A launch breadcrumb, reporting the column count and the frame's laid-out
@@ -137,7 +148,7 @@ onMounted(() => {
                 v-if="day"
                 type="button"
                 class="chart__day"
-                :aria-label="`Cycle Day ${day.cycleDay}, ${day.civilDate}`"
+                :aria-label="chartDayLabel(day)"
                 :data-civil-date="day.civilDate"
                 data-testid="chart-day"
                 @click="emit('selectDate', day.civilDate)"
