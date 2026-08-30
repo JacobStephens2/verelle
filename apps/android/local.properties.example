@@ -1,2 +1,0 @@
-# Point this at the local Android SDK installation. Do not commit local.properties.
-sdk.dir=/Users/you/Library/Android/sdk

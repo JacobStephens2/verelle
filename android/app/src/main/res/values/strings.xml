@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Verelle</string>
+    <string name="title_activity_main">Verelle</string>
+    <string name="package_name">app.verelle</string>
+    <string name="custom_url_scheme">app.verelle</string>
+</resources>
