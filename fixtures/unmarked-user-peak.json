@@ -1,0 +1,48 @@
+{
+  "name": "un-marking a User-marked Peak removes every annotation it produced",
+  "today": "2026-12-07",
+  "observations": [
+    {
+      "civilDate": "2026-12-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-12-03",
+      "monitorReading": null,
+      "bleeding": null,
+      "userMarkedPeak": false,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-12-07",
+    "cycles": [
+      {
+        "startDate": "2026-12-01",
+        "days": [
+          { "civilDate": "2026-12-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-12-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-12-03", "cycleDay": 3, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-12-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-12-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-12-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-12-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}

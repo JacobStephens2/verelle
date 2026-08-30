@@ -1,0 +1,62 @@
+{
+  "name": "moving a User-marked Peak leaves no annotations on its old date",
+  "today": "2026-11-09",
+  "observations": [
+    {
+      "civilDate": "2026-11-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-11-03",
+      "monitorReading": null,
+      "bleeding": null,
+      "userMarkedPeak": false,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-11-05",
+      "monitorReading": null,
+      "bleeding": null,
+      "userMarkedPeak": true,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-11-09",
+    "cycles": [
+      {
+        "startDate": "2026-11-01",
+        "days": [
+          { "civilDate": "2026-11-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-11-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-11-03", "cycleDay": 3, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-11-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-11-05", "cycleDay": 5, "monitorReading": null, "markers": ["user_marked_peak"], "annotations": ["P"] },
+          { "civilDate": "2026-11-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": ["P+1"] },
+          { "civilDate": "2026-11-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": ["P+2"] },
+          { "civilDate": "2026-11-08", "cycleDay": 8, "monitorReading": null, "markers": [], "annotations": ["P+3"] },
+          { "civilDate": "2026-11-09", "cycleDay": 9, "monitorReading": null, "markers": [], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}
