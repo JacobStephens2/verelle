@@ -13,8 +13,12 @@
 // Run with: npm run smoke:record-observation
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import puppeteer from "puppeteer-core";
+
+import {
+  findOwnerMaterialInBrowserStorage,
+  installBrowserSmokeOwner,
+} from "./browser-smoke-owner.mjs";
 
 const PORT = 4194;
 const origin = `http://127.0.0.1:${PORT}`;
@@ -25,6 +29,7 @@ const VIEWPORT = { width: 390, height: 844 };
 // Long enough that a slow CI runner opens SQLite over OPFS, short enough that a
 // permanent spinner is reported as a failure rather than as a hung job.
 const PAINT_TIMEOUT_MS = 20000;
+const RESTORE_TIMEOUT_MS = 60000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -128,7 +133,7 @@ const readTodaysCell = (page, today) =>
     ),
   }));
 
-const waitForTodaysMarkedPeak = (page, today) =>
+const waitForTodaysMarkedPeak = (page, today, timeout = PAINT_TIMEOUT_MS) =>
   page.waitForFunction(
     (date) => {
       const cell = document.querySelector(
@@ -143,7 +148,7 @@ const waitForTodaysMarkedPeak = (page, today) =>
           ?.textContent?.trim() === "P"
       );
     },
-    { timeout: PAINT_TIMEOUT_MS },
+    { timeout },
     today,
   );
 
@@ -155,20 +160,10 @@ try {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
-  const page = await browser.newPage();
+  const recordingContext = await browser.createBrowserContext();
+  const page = await recordingContext.newPage();
   await page.setViewport(VIEWPORT);
-  const browserSmokeOwnerSecrets = {
-    deviceOwner: randomBytes(32).toString("base64"),
-    sharedOwner: randomBytes(32).toString("base64"),
-  };
-  await page.evaluateOnNewDocument((ownerSecrets) => {
-    Object.defineProperty(globalThis, "__VERELLE_BROWSER_SMOKE_OWNER_SECRETS__", {
-      value: ownerSecrets,
-      configurable: false,
-      enumerable: false,
-      writable: false,
-    });
-  }, browserSmokeOwnerSecrets);
+  const recordingOwner = await installBrowserSmokeOwner(page);
 
   const consoleErrors = [];
   page.on("pageerror", (error) => consoleErrors.push(String(error)));
@@ -472,7 +467,35 @@ try {
     ),
     "Enter all 24 words exactly as they were shown.",
   );
-  await page.$eval(
+  // A separate browser context has a separate IndexedDB, OPFS, Cache Storage,
+  // cookies, and Web Storage namespace. Its runtime keystore also starts with
+  // a different Device owner and Shared owner, making this a fresh install
+  // rather than a same-profile reload disguised as one.
+  const recordedOwnerSecrets = recordingOwner.currentOwnerSecrets();
+  const restoreContext = await browser.createBrowserContext();
+  const restorePage = await restoreContext.newPage();
+  await restorePage.setViewport(VIEWPORT);
+  const restoreOwner = await installBrowserSmokeOwner(restorePage, {
+    additionalEncodedOwnerSecrets: [recordedOwnerSecrets.sharedOwner],
+  });
+  restorePage.on("pageerror", (error) =>
+    consoleErrors.push(`fresh install: ${String(error)}`),
+  );
+  restorePage.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(`fresh install: ${message.text()}`);
+    }
+  });
+
+  await restorePage.goto(origin, { waitUntil: "domcontentloaded" });
+  await restorePage.waitForSelector('[data-testid="chart-empty-state"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  await restorePage.click('[data-testid="open-backup"]');
+  await restorePage.waitForSelector('[data-testid="shared-owner-words"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  await restorePage.$eval(
     '[data-testid="restore-phrase"]',
     (element, phrase) => {
       if (!(element instanceof HTMLTextAreaElement)) return;
@@ -482,22 +505,47 @@ try {
     recordedPhrase,
   );
   await Promise.all([
-    page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: PAINT_TIMEOUT_MS }),
-    page.click('[data-testid="restore-chart"]'),
+    restorePage.waitForNavigation({
+      waitUntil: "domcontentloaded",
+      timeout: PAINT_TIMEOUT_MS,
+    }),
+    restorePage.click('[data-testid="restore-chart"]'),
   ]);
-  await waitForTodaysMarkedPeak(page, today);
-  console.log("ok: the offline backup screen shows 24 words and restores the Chart");
-
-  // 10. The Owner secret reaches no web-storage surface (ADR 0013).
-  const webStorage = await page.evaluate(async () => ({
-    localStorage: Object.keys(localStorage),
-    sessionStorage: Object.keys(sessionStorage),
-    indexedDb: (await indexedDB.databases()).map((db) => db.name),
-  }));
-  for (const [surface, keys] of Object.entries(webStorage)) {
-    if (keys.length > 0) fail(`${surface} holds ${JSON.stringify(keys)}; it must hold nothing`);
+  await waitForTodaysMarkedPeak(restorePage, today, RESTORE_TIMEOUT_MS);
+  if (
+    restoreOwner.currentOwnerSecrets().sharedOwner !==
+    recordedOwnerSecrets.sharedOwner
+  ) {
+    throw new Error("The fresh install did not persist the restored Shared owner");
   }
-  console.log("ok: localStorage, sessionStorage and IndexedDB are all empty");
+  console.log("ok: the 24 offline words restored the Chart in a fresh install");
+
+  // 10. Track the runtime secrets at the storage APIs and scan every stored
+  // representation, including Evolu's Worker-owned OPFS files (ADR 0013).
+  const recordingStorageViolations = await findOwnerMaterialInBrowserStorage(page, {
+    encodedOwnerSecrets: Object.values(recordedOwnerSecrets),
+    textMaterials: [recordedPhrase],
+  });
+  const restoreStorageViolations = await findOwnerMaterialInBrowserStorage(
+    restorePage,
+    {
+      encodedOwnerSecrets: [
+        ...Object.values(restoreOwner.initialOwnerSecrets),
+        recordedOwnerSecrets.sharedOwner,
+      ],
+      textMaterials: [recordedPhrase],
+    },
+  );
+  for (const surface of recordingStorageViolations) {
+    fail(`The recording install wrote Owner secret material to ${surface}`);
+  }
+  for (const surface of restoreStorageViolations) {
+    fail(`The fresh install wrote Owner secret material to ${surface}`);
+  }
+  console.log(
+    "ok: no Owner secret material reached Web Storage, IndexedDB, cookies, caches, Storage Buckets, or OPFS",
+  );
+  await restoreContext.close();
 
   // 11. A reload is the browser's cold relaunch: the Observation is still there.
   await page.reload({ waitUntil: "domcontentloaded" });

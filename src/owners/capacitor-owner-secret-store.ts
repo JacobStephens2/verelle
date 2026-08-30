@@ -27,16 +27,23 @@ const encodeSecret = (secret: OwnerSecretValue): string => {
   return globalThis.btoa(binary);
 };
 
+interface BrowserSmokeOwnerStore {
+  readonly loadOrCreate: () => Promise<EncodedOwnerSecrets>;
+  readonly replaceSharedOwner: (options: {
+    readonly sharedOwner: string;
+  }) => Promise<void>;
+}
+
 interface BrowserSmokeGlobal {
-  readonly __VERELLE_BROWSER_SMOKE_OWNER_SECRETS__?: EncodedOwnerSecrets;
+  readonly __VERELLE_BROWSER_SMOKE_OWNER_STORE__?: BrowserSmokeOwnerStore;
 }
 
 /**
  * Browser-only harness for the existing WebView smoke tests.
  *
  * Verelle does not ship as a web app. Native builds never enter this branch;
- * both secrets come from the platform plugin. Deriving these runtime-only
- * values keeps the browser reload smoke meaningful without placing owner
+ * both secrets come from the platform plugin. Injecting runtime-only values
+ * keeps the browser reload smoke meaningful without placing owner
  * material in a web-storage surface or in the repository.
  */
 function createDevelopmentOwnerSecretStore(): OwnerSecretStore {
@@ -45,26 +52,21 @@ function createDevelopmentOwnerSecretStore(): OwnerSecretStore {
   }
 
   const injected = (globalThis as BrowserSmokeGlobal)
-    .__VERELLE_BROWSER_SMOKE_OWNER_SECRETS__;
+    .__VERELLE_BROWSER_SMOKE_OWNER_STORE__;
   if (injected === undefined) {
     throw new Error("The browser smoke owner was not provided");
   }
 
-  let replacement: OwnerSecretValue | undefined;
-  const initial = {
-    deviceOwner: decodeSecret(injected.deviceOwner),
-    sharedOwner: decodeSecret(injected.sharedOwner),
-  };
-
   return {
     loadOrCreate: async () => {
+      const stored = await injected.loadOrCreate();
       return {
-        deviceOwner: initial.deviceOwner,
-        sharedOwner: replacement ?? initial.sharedOwner,
+        deviceOwner: decodeSecret(stored.deviceOwner),
+        sharedOwner: decodeSecret(stored.sharedOwner),
       };
     },
     replaceSharedOwner: async (sharedOwner) => {
-      replacement = sharedOwner;
+      await injected.replaceSharedOwner({ sharedOwner: encodeSecret(sharedOwner) });
     },
   };
 }

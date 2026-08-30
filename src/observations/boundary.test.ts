@@ -56,7 +56,7 @@ describe("the Evolu boundaries", () => {
     // today (issue #9), and that only holds while Evolu is reachable from one
     // module, except for the owner lifecycle that turns keystore bytes into
     // Evolu's AppOwner and SharedOwner. A view that imports it is the first
-    // step to a query or key conversion in a template.
+    // step to a query or owner conversion in a template.
     expect(importers).toEqual([]);
   });
 

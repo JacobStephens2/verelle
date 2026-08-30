@@ -9,8 +9,8 @@
 # for the saved Monitor reading in the Chart, terminates the process, launches
 # it again, and reads that same value back from the Chart and recording screen.
 # It is also the paint check: Capacitor bridge logging is deliberately disabled
-# because debug logging includes plugin payloads, and OwnerSecrets payloads are
-# key material that must never be logged (ADR 0013).
+# because debug logging includes plugin payloads, and OwnerSecrets payloads
+# contain Owner secret material that must never be logged (ADR 0013).
 #
 # The whole boot-install-launch is retried, because the hosted macOS runners
 # fairly often hand back a simulator that never finishes booting - it sits on

@@ -24,19 +24,34 @@ public final class OwnerSecretsPlugin extends Plugin {
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final String KEY_ALIAS = "app.verelle.owner-secrets";
     private static final String PREFERENCES = "verelle_owner_secrets";
-    private static final String DEVICE_OWNER = "deviceOwner";
-    private static final String SHARED_OWNER = "sharedOwner";
     private static final int OWNER_SECRET_BYTES = 32;
     private static final int GCM_TAG_BITS = 128;
+
+    private enum OwnerSecretKey {
+        DEVICE("deviceOwner"),
+        SHARED("sharedOwner");
+
+        private final String storageName;
+
+        OwnerSecretKey(String storageName) {
+            this.storageName = storageName;
+        }
+    }
 
     @PluginMethod
     public void loadOrCreate(PluginCall call) {
         try {
-            byte[] deviceOwner = loadOrCreate(DEVICE_OWNER);
-            byte[] sharedOwner = loadOrCreate(SHARED_OWNER);
+            byte[] deviceOwner = loadOrCreate(OwnerSecretKey.DEVICE);
+            byte[] sharedOwner = loadOrCreate(OwnerSecretKey.SHARED);
             JSObject result = new JSObject();
-            result.put(DEVICE_OWNER, Base64.encodeToString(deviceOwner, Base64.NO_WRAP));
-            result.put(SHARED_OWNER, Base64.encodeToString(sharedOwner, Base64.NO_WRAP));
+            result.put(
+                OwnerSecretKey.DEVICE.storageName,
+                Base64.encodeToString(deviceOwner, Base64.NO_WRAP)
+            );
+            result.put(
+                OwnerSecretKey.SHARED.storageName,
+                Base64.encodeToString(sharedOwner, Base64.NO_WRAP)
+            );
             call.resolve(result);
         } catch (Exception error) {
             call.reject("Owner secrets are unavailable.", "KEYSTORE_ERROR");
@@ -45,7 +60,7 @@ public final class OwnerSecretsPlugin extends Plugin {
 
     @PluginMethod
     public void replaceSharedOwner(PluginCall call) {
-        String encoded = call.getString(SHARED_OWNER);
+        String encoded = call.getString(OwnerSecretKey.SHARED.storageName);
         if (encoded == null) {
             call.reject("The Shared owner is invalid.", "INVALID_OWNER");
             return;
@@ -57,25 +72,25 @@ public final class OwnerSecretsPlugin extends Plugin {
                 call.reject("The Shared owner is invalid.", "INVALID_OWNER");
                 return;
             }
-            save(SHARED_OWNER, secret);
+            save(OwnerSecretKey.SHARED, secret);
             call.resolve();
         } catch (Exception error) {
             call.reject("The Shared owner could not be saved.", "KEYSTORE_ERROR");
         }
     }
 
-    private byte[] loadOrCreate(String name) throws Exception {
+    private byte[] loadOrCreate(OwnerSecretKey key) throws Exception {
         SharedPreferences preferences = preferences();
-        String encrypted = preferences.getString(name, null);
+        String encrypted = preferences.getString(key.storageName, null);
         if (encrypted != null) return decrypt(encrypted);
 
         byte[] secret = new byte[OWNER_SECRET_BYTES];
         new SecureRandom().nextBytes(secret);
-        save(name, secret);
+        save(key, secret);
         return secret;
     }
 
-    private void save(String name, byte[] secret) throws Exception {
+    private void save(OwnerSecretKey key, byte[] secret) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
         byte[] ciphertext = cipher.doFinal(secret);
@@ -86,7 +101,7 @@ public final class OwnerSecretsPlugin extends Plugin {
         record.put(ciphertext);
         boolean saved = preferences()
             .edit()
-            .putString(name, Base64.encodeToString(record.array(), Base64.NO_WRAP))
+            .putString(key.storageName, Base64.encodeToString(record.array(), Base64.NO_WRAP))
             .commit();
         if (!saved) throw new IllegalStateException("Encrypted owner storage failed");
     }
