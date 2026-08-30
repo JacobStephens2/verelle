@@ -106,6 +106,18 @@ const waitForRecordDate = (page, date) =>
     date,
   );
 
+const waitForMonitorReading = (page, date, expectedReading) =>
+  page.waitForFunction(
+    (civilDate, monitorReading) =>
+      document
+        .querySelector(`[data-testid="chart-cell"][data-civil-date="${civilDate}"]`)
+        ?.querySelector('[data-testid="monitor-reading"]')
+        ?.textContent?.trim() === monitorReading,
+    { timeout: PAINT_TIMEOUT_MS },
+    date,
+    expectedReading,
+  );
+
 const readTodaysCell = (page, today) =>
   page.$eval(todaysCellSelector(today), (cell) => ({
     monitorReading:
@@ -177,7 +189,7 @@ try {
   assert.deepEqual(datePicker, { value: today, max: today });
   console.log("ok: a past Civil date is directly reachable from today");
 
-  const pastDate = civilDatePlusDays(today, -2);
+  const pastDate = civilDatePlusDays(today, -3);
   await setRecordDate(page, pastDate);
   await waitForRecordDate(page, pastDate);
   await page.select('[data-testid="lh-strip"]', "Positive");
@@ -187,15 +199,7 @@ try {
   await page.click('[data-testid="monitor-Low"]');
   await page.click('[data-testid="bleeding-Heavy"]');
   await page.click('[data-testid="save"]');
-  await page.waitForFunction(
-    (date) =>
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="monitor-reading"]')
-        ?.textContent?.trim() === "Low",
-    { timeout: PAINT_TIMEOUT_MS },
-    pastDate,
-  );
+  await waitForMonitorReading(page, pastDate, "Low");
   console.log(`ok: recorded the missed day ${pastDate} directly from the date picker`);
 
   await setRecordDate(page, today);
@@ -336,20 +340,12 @@ try {
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await page.click('[data-testid="save"]');
-  await page.waitForFunction(
-    (date) =>
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="monitor-reading"]')
-        ?.textContent?.trim() === "Error",
-    { timeout: PAINT_TIMEOUT_MS },
-    pastDate,
-  );
+  await waitForMonitorReading(page, pastDate, "Error");
   console.log(`ok: editing ${pastDate} updates its existing Chart day`);
 
   // The date between the two recorded days is a real Cycle Day with no
   // Observation. It opens the same complete editor, blank and ready to save.
-  const missedDate = civilDatePlusDays(today, -1);
+  const missedDate = civilDatePlusDays(today, -2);
   await page.click(
     `[data-testid="chart-day"][data-civil-date="${missedDate}"]`,
   );
@@ -382,17 +378,55 @@ try {
     note: "",
   });
   await page.click('[data-testid="monitor-Missed"]');
+  await page.click('[data-testid="bleeding-None"]');
   await page.click('[data-testid="save"]');
-  await page.waitForFunction(
-    (date) =>
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="monitor-reading"]')
-        ?.textContent?.trim() === "Missed",
-    { timeout: PAINT_TIMEOUT_MS },
-    missedDate,
-  );
+  await waitForMonitorReading(page, missedDate, "Missed");
   console.log(`ok: unrecorded ${missedDate} opens blank and records in place`);
+
+  // Filling the remaining day completes the past Cycle. Today's new full-flow
+  // Observation closes it, so the exact paper transcription must become one
+  // Previous row followed by today's Current row.
+  const lastPastDate = civilDatePlusDays(today, -1);
+  await page.click(
+    `[data-testid="chart-day"][data-civil-date="${lastPastDate}"]`,
+  );
+  await waitForRecordDate(page, lastPastDate);
+  await page.click('[data-testid="monitor-Peak"]');
+  await page.click('[data-testid="bleeding-None"]');
+  await page.click('[data-testid="save"]');
+  await waitForMonitorReading(page, lastPastDate, "Peak");
+
+  const chartRows = await page.$$eval('[data-testid="chart-cycle"]', (rows) =>
+    rows.map((row) => ({
+      label: row.querySelector('th[scope="row"]')?.textContent?.trim() ?? "",
+      days: [...row.querySelectorAll('[data-testid="chart-cell"][data-civil-date]')].map(
+        (cell) => ({
+          civilDate: cell.getAttribute("data-civil-date"),
+          monitorReading:
+            cell.querySelector('[data-testid="monitor-reading"]')?.textContent?.trim() ??
+            null,
+          peakAnnotations: [
+            ...cell.querySelectorAll('[data-testid="peak-annotation"]'),
+          ].map((annotation) => annotation.textContent?.trim() ?? ""),
+        }),
+      ),
+    })),
+  );
+  assert.deepEqual(chartRows, [
+    {
+      label: `Previous · ${pastDate}`,
+      days: [
+        { civilDate: pastDate, monitorReading: "Error", peakAnnotations: [] },
+        { civilDate: missedDate, monitorReading: "Missed", peakAnnotations: [] },
+        { civilDate: lastPastDate, monitorReading: "Peak", peakAnnotations: [] },
+      ],
+    },
+    {
+      label: `Current · ${today}`,
+      days: [{ civilDate: today, monitorReading: "High", peakAnnotations: ["P"] }],
+    },
+  ]);
+  console.log(`ok: the completed past Cycle matches its exact transcribed Chart row`);
 
   // 9. The Owner secret reaches no web-storage surface (ADR 0013).
   const webStorage = await page.evaluate(async () => ({
