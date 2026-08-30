@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { civilDateIn, todayCivilDate } from "./civil-date";
+import {
+  civilDateIn,
+  civilDatePlusDays,
+  daysBetweenCivilDates,
+  todayCivilDate,
+} from "./civil-date";
 
 describe("civilDateIn", () => {
   it("formats the civil date as YYYY-MM-DD", () => {
@@ -33,5 +38,31 @@ describe("todayCivilDate", () => {
     const deviceZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     expect(todayCivilDate(now)).toBe(civilDateIn(now, deviceZone));
+  });
+});
+
+describe("civil date arithmetic", () => {
+  it("counts whole days between two civil dates", () => {
+    expect(daysBetweenCivilDates("2026-08-30", "2026-08-30")).toBe(0);
+    expect(daysBetweenCivilDates("2026-08-28", "2026-08-30")).toBe(2);
+    expect(daysBetweenCivilDates("2026-08-30", "2026-08-28")).toBe(-2);
+  });
+
+  it("crosses a month, a year and a leap day without drifting", () => {
+    expect(daysBetweenCivilDates("2026-01-31", "2026-02-01")).toBe(1);
+    expect(daysBetweenCivilDates("2026-12-31", "2027-01-01")).toBe(1);
+    expect(daysBetweenCivilDates("2028-02-28", "2028-03-01")).toBe(2);
+  });
+
+  it("is unaffected by a daylight-saving transition, because civil dates are not instants", () => {
+    // 2026-03-08 is a US spring-forward date; a 23-hour day must still be one
+    // day apart from its neighbours.
+    expect(daysBetweenCivilDates("2026-03-07", "2026-03-09")).toBe(2);
+  });
+
+  it("adds days, returning a civil date", () => {
+    expect(civilDatePlusDays("2026-08-30", 0)).toBe("2026-08-30");
+    expect(civilDatePlusDays("2026-08-30", 2)).toBe("2026-09-01");
+    expect(civilDatePlusDays("2026-01-01", -1)).toBe("2025-12-31");
   });
 });

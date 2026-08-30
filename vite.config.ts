@@ -9,4 +9,14 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
   },
+  worker: {
+    // Evolu's workers are ES modules and import each other; the iife default
+    // cannot express that.
+    format: "es",
+  },
+  optimizeDeps: {
+    // The sqlite-wasm glue must not be pre-bundled - esbuild rewrites the
+    // import.meta.url that the .wasm lookup depends on.
+    exclude: ["@evolu/common", "@evolu/web", "@evolu/sqlite-wasm"],
+  },
 });

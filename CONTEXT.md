@@ -32,6 +32,28 @@ _Avoid_: Period, menses, flow
 **Intercourse**:
 Whether the couple had intercourse on a date. Recorded, never evaluated.
 
+**LH strip**:
+What a urine LH test strip showed on a date: Negative, Positive, or Invalid.
+Transcribed like a monitor reading, and like one it is not a verdict.
+_Avoid_: LH test result, ovulation test
+
+**Mucus**:
+Cervical mucus as the recording partner described it: Dry, Sticky, Creamy or
+Stretchy. Described, never categorised - the Marquette manual's Low, High and
+Peak mucus categories are a reading of the description, and reading it belongs
+to the couple and their instructor.
+_Avoid_: Peak mucus, mucus category, mucus score
+
+**Temperature**:
+A basal body temperature recorded for a date, together with the scale it was
+recorded on. The scale is stored, never inferred from a locale.
+_Avoid_: BBT, temp
+
+**Note**:
+Free text the recording partner attached to a date. Displayed back, never
+parsed.
+_Avoid_: Comment, tag, symptom
+
 ### Peak — the distinction that matters most
 
 **Monitor Peak**:

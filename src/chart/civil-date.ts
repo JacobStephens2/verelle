@@ -29,3 +29,28 @@ export function todayCivilDate(
 ): CivilDate {
   return civilDateIn(now, timeZone);
 }
+
+/**
+ * Midnight UTC on a **Civil date**.
+ *
+ * UTC is used precisely because it has no daylight-saving transitions: a civil
+ * date is a label on a calendar, not an instant, so arithmetic on it must not
+ * inherit any zone's 23- and 25-hour days.
+ */
+function utcMidnight(date: CivilDate): number {
+  return Date.parse(`${date}T00:00:00Z`);
+}
+
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+/** Whole days from `from` to `to`; negative when `to` is the earlier date. */
+export function daysBetweenCivilDates(from: CivilDate, to: CivilDate): number {
+  return Math.round((utcMidnight(to) - utcMidnight(from)) / MILLISECONDS_PER_DAY);
+}
+
+/** The **Civil date** `days` after `date`. Negative `days` counts backwards. */
+export function civilDatePlusDays(date: CivilDate, days: number): CivilDate {
+  return new Date(utcMidnight(date) + days * MILLISECONDS_PER_DAY)
+    .toISOString()
+    .slice(0, 10);
+}
