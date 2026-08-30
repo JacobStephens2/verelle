@@ -1,0 +1,44 @@
+{
+  "name": "a Monitor Peak without a User-marked Peak never produces P",
+  "today": "2026-06-03",
+  "observations": [
+    {
+      "civilDate": "2026-06-01",
+      "monitorReading": "Peak",
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-03",
+      "monitorReading": "High",
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-06-03",
+    "cycles": [
+      {
+        "startDate": "2026-06-01",
+        "days": [
+          { "civilDate": "2026-06-01", "cycleDay": 1, "monitorReading": "Peak", "markers": ["monitor", "bleeding"], "annotations": [] },
+          { "civilDate": "2026-06-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-06-03", "cycleDay": 3, "monitorReading": "High", "markers": ["monitor", "bleeding"], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}

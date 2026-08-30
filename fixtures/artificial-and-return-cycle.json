@@ -1,105 +1,88 @@
 {
-  "name": "artificial postpartum stretch followed by a numbered return-to-cycles chart",
+  "name": "the former artificial-and-return fixture reshaped as two day-row Cycles",
+  "today": "2026-08-06",
   "observations": [
     {
-      "id": "20000000-0000-0000-0000-000000000001",
-      "date": "2026-08-01",
-      "value": {
-        "type": "cycle_start",
-        "cycle_id": "21000000-0000-0000-0000-000000000001",
-        "basis": "artificial_postpartum",
-        "method_cycle_number": 7,
-        "postpartum_cycle_number": null
-      },
-      "recorded_by": "fixture-device",
-      "version": { "physical_ms": 10, "logical": 0, "device_id": "fixture-device" }
+      "civilDate": "2026-08-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
     },
     {
-      "id": "20000000-0000-0000-0000-000000000002",
-      "date": "2026-08-02",
-      "value": {
-        "type": "monitor",
-        "reading": "low",
-        "test_requested": true,
-        "test_time": "06:45:00",
-        "first_morning_urine": true,
-        "error_code": null
-      },
-      "recorded_by": "fixture-device",
-      "version": { "physical_ms": 11, "logical": 0, "device_id": "fixture-device" }
+      "civilDate": "2026-08-02",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
     },
     {
-      "id": "20000000-0000-0000-0000-000000000003",
-      "date": "2026-08-04",
-      "value": {
-        "type": "cycle_start",
-        "cycle_id": "21000000-0000-0000-0000-000000000002",
-        "basis": "return_to_cycles",
-        "method_cycle_number": 8,
-        "postpartum_cycle_number": 1
-      },
-      "recorded_by": "fixture-device",
-      "version": { "physical_ms": 12, "logical": 0, "device_id": "fixture-device" }
+      "civilDate": "2026-08-04",
+      "monitorReading": null,
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
     },
     {
-      "id": "20000000-0000-0000-0000-000000000004",
-      "date": "2026-08-04",
-      "value": { "type": "bleeding", "intensity": "moderate" },
-      "recorded_by": "fixture-device",
-      "version": { "physical_ms": 13, "logical": 0, "device_id": "fixture-device" }
+      "civilDate": "2026-08-05",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": "Invalid",
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
     },
     {
-      "id": "20000000-0000-0000-0000-000000000005",
-      "date": "2026-08-05",
-      "value": {
-        "type": "lh_strip",
-        "brand": "Wondfo",
-        "qualitative": "indeterminate",
-        "tc_ratio": 0.82,
-        "numeric_lh": null,
-        "valid": true,
-        "test_time": "18:30:00"
-      },
-      "recorded_by": "fixture-device",
-      "version": { "physical_ms": 14, "logical": 0, "device_id": "fixture-device" }
-    },
-    {
-      "id": "20000000-0000-0000-0000-000000000006",
-      "date": "2026-08-06",
-      "value": {
-        "type": "mucus",
-        "sensation": "wet",
-        "appearance": "creamy",
-        "category": "high",
-        "baseline_change": true,
-        "confidence": 80
-      },
-      "recorded_by": "fixture-device",
-      "version": { "physical_ms": 15, "logical": 0, "device_id": "fixture-device" }
+      "civilDate": "2026-08-06",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "Creamy",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
     }
   ],
-  "expected": [
-    {
-      "start_date": "2026-08-01",
-      "basis": "artificial_postpartum",
-      "method_cycle_number": 7,
-      "postpartum_cycle_number": null,
-      "days": [
-        { "date": "2026-08-01", "cycle_day": 1, "markers": ["cycle_start"], "annotations": [] },
-        { "date": "2026-08-02", "cycle_day": 2, "markers": ["monitor"], "annotations": [] },
-        { "date": "2026-08-03", "cycle_day": 3, "markers": [], "annotations": [] }
-      ]
-    },
-    {
-      "start_date": "2026-08-04",
-      "basis": "return_to_cycles",
-      "method_cycle_number": 8,
-      "postpartum_cycle_number": 1,
-      "days": [
-        { "date": "2026-08-04", "cycle_day": 1, "markers": ["cycle_start", "bleeding"], "annotations": [] },
-        { "date": "2026-08-05", "cycle_day": 2, "markers": ["lh_strip"], "annotations": [] },
-        { "date": "2026-08-06", "cycle_day": 3, "markers": ["mucus"], "annotations": [] }
-      ]
-    }
-  ]
+  "expected": {
+    "today": "2026-08-06",
+    "cycles": [
+      {
+        "startDate": "2026-08-01",
+        "days": [
+          { "civilDate": "2026-08-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-08-02", "cycleDay": 2, "monitorReading": "Low", "markers": ["monitor", "bleeding"], "annotations": [] },
+          { "civilDate": "2026-08-03", "cycleDay": 3, "monitorReading": null, "markers": [], "annotations": [] }
+        ]
+      },
+      {
+        "startDate": "2026-08-04",
+        "days": [
+          { "civilDate": "2026-08-04", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-08-05", "cycleDay": 2, "monitorReading": null, "markers": ["bleeding", "lh_strip"], "annotations": [] },
+          { "civilDate": "2026-08-06", "cycleDay": 3, "monitorReading": null, "markers": ["bleeding", "mucus"], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
 }
