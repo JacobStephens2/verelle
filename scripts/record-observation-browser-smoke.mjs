@@ -86,6 +86,25 @@ const readTodaysCell = (page, today) =>
     ),
   }));
 
+const waitForTodaysMarkedPeak = (page, today) =>
+  page.waitForFunction(
+    (date) => {
+      const cell = document.querySelector(
+        `[data-testid="chart-cell"][data-civil-date="${date}"]`,
+      );
+      return (
+        cell
+          ?.querySelector('[data-testid="monitor-reading"]')
+          ?.textContent?.trim() === "High" &&
+        cell
+          ?.querySelector('[data-testid="peak-annotation"]')
+          ?.textContent?.trim() === "P"
+      );
+    },
+    { timeout: PAINT_TIMEOUT_MS },
+    today,
+  );
+
 let browser;
 try {
   await waitForServer(server);
@@ -187,19 +206,7 @@ try {
 
   // 7. The recorded Monitor reading and the User-marked Peak are in today's
   //    cell. The monitor's text and the mechanical annotation stay separate.
-  await page.waitForFunction(
-    (date) =>
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="monitor-reading"]')
-        ?.textContent?.trim() === "High" &&
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="peak-annotation"]')
-        ?.textContent?.trim() === "P",
-    { timeout: PAINT_TIMEOUT_MS },
-    today,
-  );
+  await waitForTodaysMarkedPeak(page, today);
   console.log("ok: today's Chart cell shows the recorded Monitor reading and P");
 
   // 8. The Owner secret reaches no web-storage surface (ADR 0013).
@@ -215,19 +222,7 @@ try {
 
   // 9. A reload is the browser's cold relaunch: the Observation is still there.
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(
-    (date) =>
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="monitor-reading"]')
-        ?.textContent?.trim() === "High" &&
-      document
-        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.querySelector('[data-testid="peak-annotation"]')
-        ?.textContent?.trim() === "P",
-    { timeout: PAINT_TIMEOUT_MS },
-    today,
-  );
+  await waitForTodaysMarkedPeak(page, today);
   const stillPressed = await page.$eval(
     '[data-testid="monitor-High"]',
     (el) => el.getAttribute("aria-pressed") === "true",
