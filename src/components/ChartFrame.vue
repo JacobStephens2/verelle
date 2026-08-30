@@ -129,7 +129,21 @@ onMounted(() => {
                    is data the device displayed and nothing more (CONTEXT.md,
                    ADR 0011). A day with no Observation stays blank, so a gap
                    in the record reads as a gap. -->
-              {{ monitorReadingText(day) }}
+              <span
+                v-if="day?.monitorReading"
+                class="chart__monitor-reading"
+                data-testid="monitor-reading"
+              >
+                {{ monitorReadingText(day) }}
+              </span>
+              <span
+                v-for="annotation in day?.annotations ?? []"
+                :key="annotation"
+                class="chart__peak-annotation"
+                data-testid="peak-annotation"
+              >
+                {{ annotation }}
+              </span>
             </td>
           </tr>
         </tbody>
@@ -254,8 +268,20 @@ onMounted(() => {
 }
 
 .chart__cell {
+  padding: 0.25rem;
   height: 3rem;
   font-size: 0.75rem;
+}
+
+.chart__monitor-reading,
+.chart__peak-annotation {
+  display: block;
+}
+
+.chart__peak-annotation {
+  margin-top: 0.125rem;
+  font-weight: 700;
+  color: var(--verelle-ink);
 }
 
 .chart__cell--today {

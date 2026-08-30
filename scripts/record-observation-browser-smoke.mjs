@@ -1,7 +1,7 @@
 // The walking skeleton, checked end to end in a real WebView engine: the app
 // opens on today, the four mandatory fields are settable without scrolling,
-// a save is confirmed, the Monitor reading lands in today's Chart cell, and it
-// is all still there after a reload.
+// a save is confirmed, the Monitor reading and User-marked Peak land in
+// today's Chart cell, and both marking and un-marking survive a reload.
 //
 // The failure class this exists for is the one the Evolu spike found: a silent
 // hang that presents as a permanent spinner with a clean console and surfaces
@@ -74,11 +74,17 @@ const todayInBrowser = (page) =>
     }).format(new Date()),
   );
 
+const todaysCellSelector = (today) =>
+  `[data-testid="chart-cell"][data-civil-date="${today}"]`;
+
 const readTodaysCell = (page, today) =>
-  page.$eval(
-    `[data-testid="chart-cell"][data-civil-date="${today}"]`,
-    (cell) => cell.textContent?.trim() ?? "",
-  );
+  page.$eval(todaysCellSelector(today), (cell) => ({
+    monitorReading:
+      cell.querySelector('[data-testid="monitor-reading"]')?.textContent?.trim() ?? "",
+    peakAnnotations: [...cell.querySelectorAll('[data-testid="peak-annotation"]')].map(
+      (annotation) => annotation.textContent?.trim() ?? "",
+    ),
+  }));
 
 let browser;
 try {
@@ -146,6 +152,7 @@ try {
   // 4. Record the four mandatory fields and save.
   await page.click('[data-testid="monitor-High"]');
   await page.click('[data-testid="bleeding-Heavy"]');
+  await page.click('[data-testid="user-marked-peak"]');
   await page.click('[data-testid="intercourse"]');
   await page.click('[data-testid="save"]');
 
@@ -178,16 +185,22 @@ try {
   assert.ok(confirmation.length > 0, "The save confirmation carried no text");
   console.log(`ok: save confirmed with ${JSON.stringify(confirmation)}, no control disabled`);
 
-  // 7. The recorded Monitor reading is in today's cell on the Chart.
+  // 7. The recorded Monitor reading and the User-marked Peak are in today's
+  //    cell. The monitor's text and the mechanical annotation stay separate.
   await page.waitForFunction(
     (date) =>
       document
         .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.textContent?.trim() === "High",
+        ?.querySelector('[data-testid="monitor-reading"]')
+        ?.textContent?.trim() === "High" &&
+      document
+        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
+        ?.querySelector('[data-testid="peak-annotation"]')
+        ?.textContent?.trim() === "P",
     { timeout: PAINT_TIMEOUT_MS },
     today,
   );
-  console.log("ok: the recorded Monitor reading is in today's cell");
+  console.log("ok: today's Chart cell shows the recorded Monitor reading and P");
 
   // 8. The Owner secret reaches no web-storage surface (ADR 0013).
   const webStorage = await page.evaluate(async () => ({
@@ -206,7 +219,12 @@ try {
     (date) =>
       document
         .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
-        ?.textContent?.trim() === "High",
+        ?.querySelector('[data-testid="monitor-reading"]')
+        ?.textContent?.trim() === "High" &&
+      document
+        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
+        ?.querySelector('[data-testid="peak-annotation"]')
+        ?.textContent?.trim() === "P",
     { timeout: PAINT_TIMEOUT_MS },
     today,
   );
@@ -215,9 +233,33 @@ try {
     (el) => el.getAttribute("aria-pressed") === "true",
   );
   if (!stillPressed) fail("The recording screen did not come back showing what was recorded");
-  console.log(`ok: after a reload, today's cell still reads ${await readTodaysCell(page, today)}`);
+  console.log(
+    `ok: after a reload, today's cell still reads ${JSON.stringify(await readTodaysCell(page, today))}`,
+  );
 
-  // 10. Nothing failed quietly on the way there.
+  // 10. Un-marking the same date removes P and stays removed after a reload.
+  await page.click('[data-testid="user-marked-peak"]');
+  await page.click('[data-testid="save"]');
+  await page.waitForFunction(
+    (date) =>
+      document
+        .querySelector(`[data-testid="chart-cell"][data-civil-date="${date}"]`)
+        ?.querySelector('[data-testid="peak-annotation"]') === null,
+    { timeout: PAINT_TIMEOUT_MS },
+    today,
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector(todaysCellSelector(today), { timeout: PAINT_TIMEOUT_MS });
+  const afterUnmark = await readTodaysCell(page, today);
+  assert.deepEqual(afterUnmark.peakAnnotations, [], "P returned after the date was un-marked");
+  const markStayedCleared = await page.$eval(
+    '[data-testid="user-marked-peak"]',
+    (element) => element instanceof HTMLInputElement && !element.checked,
+  );
+  if (!markStayedCleared) fail("The recording screen did not preserve the un-marked Peak");
+  console.log("ok: un-marking removes P and the cleared mark survives a reload");
+
+  // 11. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     fail(`Console errors during the run: ${JSON.stringify(consoleErrors)}`);
   }

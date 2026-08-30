@@ -1,0 +1,64 @@
+{
+  "name": "a Peak count stops when its Cycle ends",
+  "today": "2026-10-06",
+  "observations": [
+    {
+      "civilDate": "2026-10-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-10-03",
+      "monitorReading": null,
+      "bleeding": "None",
+      "userMarkedPeak": true,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-10-05",
+      "monitorReading": null,
+      "bleeding": "Moderate",
+      "userMarkedPeak": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-10-06",
+    "cycles": [
+      {
+        "startDate": "2026-10-01",
+        "days": [
+          { "civilDate": "2026-10-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-10-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-10-03", "cycleDay": 3, "monitorReading": null, "markers": ["bleeding", "user_marked_peak"], "annotations": ["P"] },
+          { "civilDate": "2026-10-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": ["P+1"] }
+        ]
+      },
+      {
+        "startDate": "2026-10-05",
+        "days": [
+          { "civilDate": "2026-10-05", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-10-06", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] }
+        ]
+      }
+    ],
+    "unassignedDays": []
+  }
+}

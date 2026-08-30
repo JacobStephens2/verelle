@@ -10,8 +10,10 @@ import { civilDatePlusDays, daysBetweenCivilDates } from "./civil-date";
 /** Minimum Cycle Day columns shown before the current Cycle grows past them. */
 export const CYCLE_DAY_COLUMNS = 42;
 
-/** The mechanical labels issue #10 will place on Chart days. */
+/** Mechanical labels counted from a User-marked Peak (ADR 0011). */
 export type PeakAnnotation = "P" | "P+1" | "P+2" | "P+3";
+
+const PEAK_COUNT: readonly PeakAnnotation[] = ["P", "P+1", "P+2", "P+3"];
 
 /** A recorded Observation field that the compact Chart marks on a day. */
 export type ObservationMarker =
@@ -31,7 +33,7 @@ export interface ChartDay {
   readonly monitorReading: MonitorReading | null;
   /** Empty means nobody recorded a field on this date. */
   readonly markers: readonly ObservationMarker[];
-  /** Empty until issue #10 adds the Peak count projection. */
+  /** Mechanical labels anchored only to a User-marked Peak. */
   readonly annotations: readonly PeakAnnotation[];
 }
 
@@ -67,7 +69,7 @@ function markersFor(observation: Observation | undefined): ObservationMarker[] {
   const markers: ObservationMarker[] = [];
   if (observation.monitorReading !== null) markers.push("monitor");
   if (observation.bleeding !== null) markers.push("bleeding");
-  if (observation.userMarkedPeak !== null) markers.push("user_marked_peak");
+  if (observation.userMarkedPeak === true) markers.push("user_marked_peak");
   if (observation.intercourse !== null) markers.push("intercourse");
   if (observation.lhStrip !== null) markers.push("lh_strip");
   if (observation.mucus !== null) markers.push("mucus");
@@ -122,15 +124,26 @@ export function projectChart(
   const cycles = cycleStarts.map((start, index): ChartCycle => {
     const nextStart = cycleStarts[index + 1]?.civilDate;
     const endDate = nextStart === undefined ? today : civilDatePlusDays(nextStart, -1);
+    const userMarkedPeaks = datedObservations.filter(
+      (observation) =>
+        observation.userMarkedPeak === true &&
+        observation.civilDate >= start.civilDate &&
+        observation.civilDate <= endDate,
+    );
     const dayCount = daysBetweenCivilDates(start.civilDate, endDate) + 1;
     const days = Array.from({ length: dayCount }, (_, dayIndex): ChartDay => {
       const civilDate = civilDatePlusDays(start.civilDate, dayIndex);
+      const annotations = userMarkedPeaks.flatMap((peak) => {
+        const count = daysBetweenCivilDates(peak.civilDate, civilDate);
+        const annotation = PEAK_COUNT[count];
+        return annotation === undefined ? [] : [annotation];
+      });
       return {
         civilDate,
         cycleDay: dayIndex + 1,
         monitorReading: observationsByDate.get(civilDate)?.monitorReading ?? null,
         markers: markersFor(observationsByDate.get(civilDate)),
-        annotations: [],
+        annotations,
       };
     });
 
