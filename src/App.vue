@@ -4,6 +4,7 @@ import { computed, nextTick, ref, useTemplateRef } from "vue";
 import type { CivilDate } from "./chart/civil-date";
 import BackupRestore from "./components/BackupRestore.vue";
 import ChartFrame from "./components/ChartFrame.vue";
+import PrivacyAbout from "./components/PrivacyAbout.vue";
 import RecordObservation from "./components/RecordObservation.vue";
 import { todayCivilDate } from "./chart/civil-date";
 import { useObservationStore } from "./observations/store";
@@ -14,7 +15,7 @@ const today = computed(() => todayCivilDate());
 const selectedDate = ref<CivilDate>(today.value);
 const showAllFields = ref(false);
 const editor = useTemplateRef<HTMLElement>("editor");
-const showingBackup = ref(false);
+const overlay = ref<"backup" | "privacy" | null>(null);
 
 const observationStore = useObservationStore();
 const observations = observationStore.observe();
@@ -35,10 +36,14 @@ const openDayDetails = async (date: CivilDate) => {
 </script>
 
 <template>
-  <BackupRestore v-if="showingBackup" @close="showingBackup = false" />
+  <BackupRestore v-if="overlay === 'backup'" @close="overlay = null" />
+  <PrivacyAbout v-else-if="overlay === 'privacy'" @close="overlay = null" />
   <main v-else class="app">
     <nav class="app__utility" aria-label="Chart tools">
-      <button type="button" data-testid="open-backup" @click="showingBackup = true">
+      <button type="button" data-testid="open-privacy" @click="overlay = 'privacy'">
+        Privacy &amp; about
+      </button>
+      <button type="button" data-testid="open-backup" @click="overlay = 'backup'">
         Backup &amp; restore
       </button>
     </nav>
@@ -70,6 +75,8 @@ const openDayDetails = async (date: CivilDate) => {
 .app__utility {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   padding: 0.5rem 1rem 0;
 }
 
