@@ -42,7 +42,8 @@ function readProtocolBody(
   message: Uint8Array,
   expectedMessageType:
     | (typeof MessageType)["Request"]
-    | (typeof MessageType)["Response"],
+    | (typeof MessageType)["Response"]
+    | (typeof MessageType)["Broadcast"],
 ): {
   readonly ownerId: OwnerId;
   readonly buffer: ReturnType<typeof createBuffer>;
@@ -101,7 +102,24 @@ function readSyncResponse(message: Uint8Array): {
   }
 }
 
-/** Matches Relay responses to encrypted requests without inspecting content. */
+function readSyncBroadcast(message: Uint8Array): {
+  readonly ownerId: OwnerId;
+  readonly carriesRemoteChanges: boolean;
+} | null {
+  const body = readProtocolBody(message, MessageType.Broadcast);
+  if (body === null) return null;
+
+  try {
+    return {
+      ownerId: body.ownerId,
+      carriesRemoteChanges: decodeNonNegativeInt(body.buffer) > 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Observes Relay requests, responses, and broadcasts without inspecting content. */
 export function createSyncTransportTracker(
   publish: PublishSyncTransportEvent,
 ): SyncTransportTracker {
@@ -130,20 +148,32 @@ export function createSyncTransportTracker(
       });
     },
     received: (message) => {
-      const response = readSyncResponse(new Uint8Array(message));
+      const bytes = new Uint8Array(message);
+      const broadcast = readSyncBroadcast(bytes);
+      if (broadcast !== null) {
+        observedOwners.add(broadcast.ownerId);
+        if (broadcast.carriesRemoteChanges) {
+          report(broadcast.ownerId, { type: "remote-changes-received" });
+        }
+        return;
+      }
+
+      const response = readSyncResponse(bytes);
       if (response === null) return;
       const requests = requestsByOwner.get(response.ownerId);
       if (requests === undefined) return;
       const carriesChanges = requests.shift();
       if (carriesChanges === undefined) return;
       if (requests.length === 0) requestsByOwner.delete(response.ownerId);
+      if (response.succeeded && response.carriesRemoteChanges) {
+        report(response.ownerId, { type: "remote-changes-received" });
+      }
       report(
         response.ownerId,
         response.succeeded
           ? {
               type: "request-acknowledged",
               carriesChanges,
-              carriesRemoteChanges: response.carriesRemoteChanges,
             }
           : { type: "request-abandoned", carriesChanges },
       );

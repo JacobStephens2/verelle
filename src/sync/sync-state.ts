@@ -10,12 +10,12 @@ export type SyncTransportEvent =
   | {
       readonly type: "request-acknowledged";
       readonly carriesChanges: boolean;
-      readonly carriesRemoteChanges: boolean;
     }
   | {
       readonly type: "request-abandoned";
       readonly carriesChanges: boolean;
     }
+  | { readonly type: "remote-changes-received" }
   | { readonly type: "connection-lost" };
 
 export interface SyncStateMonitor {
@@ -25,8 +25,8 @@ export interface SyncStateMonitor {
   /** Marks a local save pending before any network work begins. */
   readonly markLocalChange: () => void;
 
-  /** Marks query refresh completion after remote changes were applied. */
-  readonly markChartCurrent: () => void;
+  /** Marks one or more remote query refreshes applied to the Chart. */
+  readonly markChartUpdatesApplied: (updateCount: number) => void;
 
   /** Applies one fact observed at the encrypted transport seam. */
   readonly handle: (event: SyncTransportEvent) => void;
@@ -36,16 +36,16 @@ export interface SyncStateMonitor {
 export function createSyncState(): SyncStateMonitor {
   const state = ref<SyncState>("pending");
   let waitingForChangeRequest = false;
-  let inFlightChangeRequests = 0;
-  let waitingForChartUpdate = false;
+  let inFlightRequests = 0;
+  let pendingChartUpdates = 0;
   let relayAcknowledged = false;
 
   const refresh = () => {
     state.value =
       relayAcknowledged &&
       !waitingForChangeRequest &&
-      inFlightChangeRequests === 0 &&
-      !waitingForChartUpdate
+      inFlightRequests === 0 &&
+      pendingChartUpdates === 0
         ? "synced"
         : "pending";
   };
@@ -56,11 +56,16 @@ export function createSyncState(): SyncStateMonitor {
       waitingForChangeRequest = true;
       refresh();
     },
-    markChartCurrent: () => {
-      waitingForChartUpdate = false;
+    markChartUpdatesApplied: (updateCount) => {
+      pendingChartUpdates = Math.max(0, pendingChartUpdates - updateCount);
       refresh();
     },
     handle: (event) => {
+      if (event.type === "remote-changes-received") {
+        pendingChartUpdates += 1;
+        refresh();
+        return;
+      }
       if (event.type === "connection-lost") {
         relayAcknowledged = false;
         refresh();
@@ -68,16 +73,16 @@ export function createSyncState(): SyncStateMonitor {
       }
       if (event.type === "request-sent") {
         state.value = "pending";
+        inFlightRequests += 1;
         if (event.carriesChanges) {
           waitingForChangeRequest = false;
-          inFlightChangeRequests += 1;
         }
         return;
       }
       if (event.type === "request-abandoned") {
         relayAcknowledged = false;
+        if (inFlightRequests > 0) inFlightRequests -= 1;
         if (event.carriesChanges) {
-          if (inFlightChangeRequests > 0) inFlightChangeRequests -= 1;
           waitingForChangeRequest = true;
         }
         refresh();
@@ -85,10 +90,7 @@ export function createSyncState(): SyncStateMonitor {
       }
       if (event.type === "request-acknowledged") {
         relayAcknowledged = true;
-        if (event.carriesChanges && inFlightChangeRequests > 0) {
-          inFlightChangeRequests -= 1;
-        }
-        if (event.carriesRemoteChanges) waitingForChartUpdate = true;
+        if (inFlightRequests > 0) inFlightRequests -= 1;
         refresh();
       }
     },

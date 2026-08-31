@@ -14,7 +14,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("synced");
   });
@@ -25,7 +24,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
 
     sync.markLocalChange();
@@ -33,7 +31,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
 
     expect(sync.observe().value).toBe("pending");
@@ -42,7 +39,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: true,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("synced");
   });
@@ -53,7 +49,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
 
     sync.markLocalChange();
@@ -64,14 +59,12 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: true,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("pending");
 
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: true,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("synced");
   });
@@ -82,7 +75,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
 
     sync.markLocalChange();
@@ -94,7 +86,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: true,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("synced");
   });
@@ -105,7 +96,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("synced");
 
@@ -116,25 +106,77 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
     expect(sync.observe().value).toBe("synced");
   });
 
   it("waits for a response's remote changes to publish onto the Chart", () => {
     const sync = createSyncState();
-    sync.markChartCurrent();
+    sync.markChartUpdatesApplied(1);
     expect(sync.observe().value).toBe("pending");
 
     sync.handle({ type: "request-sent", carriesChanges: false });
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: true,
     });
+    sync.handle({ type: "remote-changes-received" });
     expect(sync.observe().value).toBe("pending");
 
-    sync.markChartCurrent();
+    sync.markChartUpdatesApplied(1);
+    expect(sync.observe().value).toBe("synced");
+  });
+
+  it("waits for a follow-up sync round after publishing remote changes", () => {
+    const sync = createSyncState();
+
+    sync.handle({ type: "request-sent", carriesChanges: false });
+    sync.handle({
+      type: "request-acknowledged",
+      carriesChanges: false,
+    });
+    sync.handle({ type: "remote-changes-received" });
+    sync.handle({ type: "request-sent", carriesChanges: false });
+
+    sync.markChartUpdatesApplied(1);
+    expect(sync.observe().value).toBe("pending");
+
+    sync.handle({
+      type: "request-acknowledged",
+      carriesChanges: false,
+    });
+    expect(sync.observe().value).toBe("synced");
+  });
+
+  it("shows an unsolicited Relay broadcast as pending until it reaches the Chart", () => {
+    const sync = createSyncState();
+    sync.handle({ type: "request-sent", carriesChanges: false });
+    sync.handle({
+      type: "request-acknowledged",
+      carriesChanges: false,
+    });
+
+    sync.handle({ type: "remote-changes-received" });
+    expect(sync.observe().value).toBe("pending");
+
+    sync.markChartUpdatesApplied(1);
+    expect(sync.observe().value).toBe("synced");
+  });
+
+  it("waits for every broadcast to reach the Chart", () => {
+    const sync = createSyncState();
+    sync.handle({ type: "request-sent", carriesChanges: false });
+    sync.handle({
+      type: "request-acknowledged",
+      carriesChanges: false,
+    });
+
+    sync.handle({ type: "remote-changes-received" });
+    sync.handle({ type: "remote-changes-received" });
+    sync.markChartUpdatesApplied(1);
+    expect(sync.observe().value).toBe("pending");
+
+    sync.markChartUpdatesApplied(1);
     expect(sync.observe().value).toBe("synced");
   });
 
@@ -144,7 +186,6 @@ describe("Shared owner sync state", () => {
     sync.handle({
       type: "request-acknowledged",
       carriesChanges: false,
-      carriesRemoteChanges: false,
     });
 
     sync.handle({ type: "request-sent", carriesChanges: false });

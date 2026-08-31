@@ -25,25 +25,45 @@ import type { SyncTransportEvent } from "./sync-state";
 
 const owner = createSharedOwner(testOwnerSecret);
 
-function requestWithMessageCount(messageCount: number): ProtocolMessage {
+type SyncMessageType =
+  | (typeof MessageType)["Request"]
+  | (typeof MessageType)["Response"]
+  | (typeof MessageType)["Broadcast"];
+
+function protocolMessageWithCount(
+  messageType: SyncMessageType,
+  messageCount: number,
+): ProtocolMessage {
   const buffer = createBuffer();
   encodeNonNegativeInt(buffer, protocolVersion);
   buffer.extend(ownerIdToOwnerIdBytes(owner.id));
-  buffer.extend([MessageType.Request, 1]);
-  buffer.extend(owner.writeKey);
-  buffer.extend([SubscriptionFlags.None]);
+  buffer.extend([messageType]);
+  if (messageType === MessageType.Request) {
+    buffer.extend([1]);
+    buffer.extend(owner.writeKey);
+    buffer.extend([SubscriptionFlags.None]);
+  } else if (messageType === MessageType.Response) {
+    buffer.extend([0]);
+  }
   encodeNonNegativeInt(buffer, NonNegativeInt.orThrow(messageCount));
   return buffer.unwrap() as ProtocolMessage;
 }
 
-function responseWithMessageCount(messageCount: number): ArrayBuffer {
-  const buffer = createBuffer();
-  encodeNonNegativeInt(buffer, protocolVersion);
-  buffer.extend(ownerIdToOwnerIdBytes(owner.id));
-  buffer.extend([MessageType.Response, 0]);
-  encodeNonNegativeInt(buffer, NonNegativeInt.orThrow(messageCount));
-  return buffer.unwrap().slice().buffer;
-}
+const requestWithMessageCount = (messageCount: number): ProtocolMessage =>
+  protocolMessageWithCount(MessageType.Request, messageCount);
+
+const receivedMessageWithCount = (
+  messageType:
+    | (typeof MessageType)["Response"]
+    | (typeof MessageType)["Broadcast"],
+  messageCount: number,
+): ArrayBuffer => protocolMessageWithCount(messageType, messageCount).slice().buffer;
+
+const responseWithMessageCount = (messageCount: number): ArrayBuffer =>
+  receivedMessageWithCount(MessageType.Response, messageCount);
+
+const broadcastWithMessageCount = (messageCount: number): ArrayBuffer =>
+  receivedMessageWithCount(MessageType.Broadcast, messageCount);
 
 describe("the encrypted sync transport", () => {
   it("distinguishes a sync probe from a request carrying changes", () => {
@@ -71,7 +91,6 @@ describe("the encrypted sync transport", () => {
       {
         type: "request-acknowledged",
         carriesChanges: true,
-        carriesRemoteChanges: false,
       },
     ]);
   });
@@ -114,11 +133,21 @@ describe("the encrypted sync transport", () => {
     tracker.sent(requestWithMessageCount(0));
     tracker.received(responseWithMessageCount(2));
 
-    expect(events.at(-1)).toEqual({
-      type: "request-acknowledged",
-      carriesChanges: false,
-      carriesRemoteChanges: true,
+    expect(events.slice(-2)).toEqual([
+      { type: "remote-changes-received" },
+      { type: "request-acknowledged", carriesChanges: false },
+    ]);
+  });
+
+  it("reports unsolicited Relay broadcasts carrying remote changes", () => {
+    const events: SyncTransportEvent[] = [];
+    const tracker = createSyncTransportTracker((ownerId, event) => {
+      if (ownerId === owner.id) events.push(event);
     });
+
+    tracker.received(broadcastWithMessageCount(2));
+
+    expect(events).toEqual([{ type: "remote-changes-received" }]);
   });
 
   it("never lets status reporting interrupt the encrypted transport", () => {
@@ -130,7 +159,7 @@ describe("the encrypted sync transport", () => {
     expect(() => tracker.disconnected()).not.toThrow();
   });
 
-  it("marks a remote response pending before Evolu starts applying it", async () => {
+  it("marks remote messages pending before Evolu starts applying them", async () => {
     const order: string[] = [];
     let receive: ((data: string | ArrayBuffer | Blob) => void) | undefined;
     const createWebSocket: CreateWebSocket = (_url, options) => async () => {
@@ -153,6 +182,15 @@ describe("the encrypted sync transport", () => {
     order.length = 0;
     receive?.(responseWithMessageCount(1));
 
-    expect(order).toEqual(["status:request-acknowledged", "evolu"]);
+    expect(order).toEqual([
+      "status:remote-changes-received",
+      "status:request-acknowledged",
+      "evolu",
+    ]);
+
+    order.length = 0;
+    receive?.(broadcastWithMessageCount(1));
+
+    expect(order).toEqual(["status:remote-changes-received", "evolu"]);
   });
 });
