@@ -118,7 +118,38 @@ try {
   assert.equal(filledCells, 0, `${filledCells} cells were filled in an empty chart`);
   console.log(`ok: empty state reads ${JSON.stringify(emptyState)} over ${columns.length} empty cells`);
 
-  // 4. Nothing failed quietly on the way there.
+  // 4. Privacy and about is reachable from the Chart and states both halves of
+  //    ADR 0012: the Relay operator cannot read Chart content, and does learn
+  //    that a given owner synced, when, and roughly how much.
+  await page.click('[data-testid="open-privacy"]');
+  await page.waitForSelector('[data-testid="privacy-screen"]', { timeout: PAINT_TIMEOUT_MS });
+  const privacyCopy = await page.$eval(
+    '[data-testid="privacy-screen"]',
+    (element) => element.textContent ?? "",
+  );
+  assert.ok(
+    privacyCopy.includes("The Relay operator cannot read Chart content."),
+    "Privacy and about omitted the content guarantee",
+  );
+  assert.ok(
+    privacyCopy.includes(
+      "The Relay operator does learn that a given owner synced, when, and roughly how much.",
+    ),
+    "Privacy and about omitted the metadata disclosure",
+  );
+  assert.ok(
+    privacyCopy.includes("If you lose these words, you lose the Chart."),
+    "Privacy and about omitted the Owner-secret loss warning",
+  );
+  assert.ok(privacyCopy.includes("Nobody can restore it."), "Privacy and about omitted irreversibility");
+  assert.match(privacyCopy, /no account/i);
+  assert.match(privacyCopy, /no email/i);
+  assert.match(privacyCopy, /no password/i);
+  await page.click('[data-testid="close-privacy"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Privacy and about is reachable and states what the Relay knows");
+
+  // 5. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     failures.push(`Console errors during launch: ${JSON.stringify(consoleErrors)}`);
   }

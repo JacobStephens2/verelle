@@ -65,4 +65,65 @@ describe("UI copy", () => {
     expect(backupScreen).toContain("If you lose these words, you lose the Chart.");
     expect(backupScreen).toContain("Nobody can restore it.");
   });
+
+  it("reaches Privacy and about from the Chart", async () => {
+    const app = renderedText(
+      "App.vue",
+      await readFile(path.join(REPO_ROOT, "src", "App.vue"), "utf8"),
+    );
+
+    expect(app).toContain('data-testid="open-privacy"');
+  });
+
+  it("states both halves of what the Relay operator knows", async () => {
+    const privacyScreen = renderedText(
+      "PrivacyAbout.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "PrivacyAbout.vue"), "utf8"),
+    );
+
+    // ADR 0012: content is unreadable; metadata is not. Paraphrase either half
+    // and the screen over- or under-claims.
+    expect(privacyScreen).toContain("The Relay operator cannot read Chart content.");
+    expect(privacyScreen).toContain(
+      "The Relay operator does learn that a given owner synced, when, and roughly how much.",
+    );
+  });
+
+  it("does not imply the Relay learns nothing at all", async () => {
+    const files = (await Promise.all(COPY_ROOTS.map(uiCopyFilesUnder))).flat();
+    const overclaims: string[] = [];
+    const forbiddenPhrases = ["learns nothing", "knows nothing", "sees nothing", "zero disclosure"];
+
+    for (const file of files) {
+      const text = renderedText(file, await readFile(file, "utf8")).toLowerCase();
+      for (const phrase of forbiddenPhrases) {
+        if (text.includes(phrase)) {
+          overclaims.push(`${path.relative(REPO_ROOT, file)}: ${phrase}`);
+        }
+      }
+    }
+
+    expect(overclaims).toEqual([]);
+  });
+
+  it("states the irreversible consequence of losing the Owner secret from Privacy and about", async () => {
+    const privacyScreen = renderedText(
+      "PrivacyAbout.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "PrivacyAbout.vue"), "utf8"),
+    );
+
+    expect(privacyScreen).toContain("If you lose these words, you lose the Chart.");
+    expect(privacyScreen).toContain("Nobody can restore it.");
+  });
+
+  it("makes clear no account, email, or password is involved", async () => {
+    const privacyScreen = renderedText(
+      "PrivacyAbout.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "PrivacyAbout.vue"), "utf8"),
+    );
+
+    expect(privacyScreen).toMatch(/no account/i);
+    expect(privacyScreen).toMatch(/no email/i);
+    expect(privacyScreen).toMatch(/no password/i);
+  });
 });
