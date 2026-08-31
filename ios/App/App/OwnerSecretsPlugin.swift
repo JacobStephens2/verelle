@@ -2,22 +2,82 @@ import Capacitor
 import Foundation
 import Security
 
-private enum OwnerSecretKey: String {
+enum OwnerSecretKey: String {
     case deviceOwner
     case sharedOwner
+    case pairingState
 }
 
-private enum OwnerSecretsError: Error {
+enum OwnerSecretsError: Error {
     case keychain(OSStatus)
     case invalidSecret
 }
 
-private struct OwnerSecretsKeychain {
-    private let service = "app.verelle.owner-secrets"
-    private let byteCount = 32
+/// One Keychain item: version byte, 32-byte Shared owner, UTF-8 pairing state.
+struct SharedOwnerRecord: Equatable {
+    static let version: UInt8 = 1
+    static let secretByteCount = 32
+    static let writablePairingStates: Set<String> = ["unpaired", "shared"]
 
-    func loadOrCreate(_ key: OwnerSecretKey) throws -> Data {
-        if let stored = try load(key) {
+    let secret: Data
+    let pairingState: String
+
+    static func canonicalPairingState(_ value: String) -> String {
+        value == "shared" ? "shared" : "unpaired"
+    }
+
+    init(secret: Data, pairingState: String) throws {
+        guard secret.count == Self.secretByteCount else { throw OwnerSecretsError.invalidSecret }
+        self.secret = secret
+        self.pairingState = Self.canonicalPairingState(pairingState)
+    }
+
+    func encode() -> Data {
+        var data = Data([Self.version])
+        data.append(secret)
+        data.append(Data(pairingState.utf8))
+        return data
+    }
+
+    static func decode(_ stored: Data) throws -> SharedOwnerRecord {
+        guard stored.count > 1 + secretByteCount, stored.first == version else {
+            throw OwnerSecretsError.invalidSecret
+        }
+        let secret = stored.subdata(in: 1..<(1 + secretByteCount))
+        let stateData = stored.subdata(in: (1 + secretByteCount)..<stored.count)
+        guard let pairingState = String(data: stateData, encoding: .utf8) else {
+            throw OwnerSecretsError.invalidSecret
+        }
+        return try SharedOwnerRecord(secret: secret, pairingState: pairingState)
+    }
+
+    static func fromStored(
+        _ stored: Data,
+        legacyPairingState: String?
+    ) throws -> (SharedOwnerRecord, migrated: Bool) {
+        if stored.count == secretByteCount {
+            return (
+                try SharedOwnerRecord(
+                    secret: stored,
+                    pairingState: canonicalPairingState(legacyPairingState ?? "")
+                ),
+                true
+            )
+        }
+        return (try decode(stored), false)
+    }
+}
+
+struct OwnerSecretsKeychain {
+    private let service: String
+    private let byteCount = SharedOwnerRecord.secretByteCount
+
+    init(service: String = "app.verelle.owner-secrets") {
+        self.service = service
+    }
+
+    func loadOrCreateDeviceOwner() throws -> Data {
+        if let stored = try load(.deviceOwner) {
             guard stored.count == byteCount else { throw OwnerSecretsError.invalidSecret }
             return stored
         }
@@ -27,13 +87,81 @@ private struct OwnerSecretsKeychain {
             SecRandomCopyBytes(kSecRandomDefault, byteCount, buffer.baseAddress!)
         }
         guard status == errSecSuccess else { throw OwnerSecretsError.keychain(status) }
-        try save(bytes, for: key)
+        try save(bytes, for: .deviceOwner)
         return bytes
     }
 
+    func loadSharedOwnerRecord() throws -> SharedOwnerRecord {
+        if let stored = try load(.sharedOwner) {
+            let legacyState = try loadLegacyPairingState()
+            let (record, migrated) = try SharedOwnerRecord.fromStored(
+                stored,
+                legacyPairingState: legacyState
+            )
+            if migrated || stored != record.encode() {
+                try save(record.encode(), for: .sharedOwner)
+                try delete(.pairingState)
+            }
+            return record
+        }
+
+        var bytes = Data(count: byteCount)
+        let status = bytes.withUnsafeMutableBytes { buffer in
+            SecRandomCopyBytes(kSecRandomDefault, byteCount, buffer.baseAddress!)
+        }
+        guard status == errSecSuccess else { throw OwnerSecretsError.keychain(status) }
+        let record = try SharedOwnerRecord(secret: bytes, pairingState: "unpaired")
+        try save(record.encode(), for: .sharedOwner)
+        return record
+    }
+
     func replaceSharedOwner(_ secret: Data) throws {
+        let currentState = (try? loadSharedOwnerRecord().pairingState) ?? "unpaired"
+        try save(try SharedOwnerRecord(secret: secret, pairingState: currentState).encode(), for: .sharedOwner)
+    }
+
+    func joinSharedOwner(_ secret: Data) throws {
+        try save(try SharedOwnerRecord(secret: secret, pairingState: "shared").encode(), for: .sharedOwner)
+    }
+
+    func setPairingState(_ value: String) throws {
+        guard SharedOwnerRecord.writablePairingStates.contains(value) else {
+            throw OwnerSecretsError.invalidSecret
+        }
+        let current = try loadSharedOwnerRecord()
+        try save(
+            try SharedOwnerRecord(secret: current.secret, pairingState: value).encode(),
+            for: .sharedOwner
+        )
+    }
+
+    func seedBundledSharedOwner(_ secret: Data, rawPairingState: String) throws {
+        guard secret.count == byteCount else { throw OwnerSecretsError.invalidSecret }
+        var data = Data([SharedOwnerRecord.version])
+        data.append(secret)
+        data.append(Data(rawPairingState.utf8))
+        try save(data, for: .sharedOwner)
+    }
+
+    func seedLegacySharedOwner(_ secret: Data, pairingState: String?) throws {
         guard secret.count == byteCount else { throw OwnerSecretsError.invalidSecret }
         try save(secret, for: .sharedOwner)
+        if let pairingState, let data = pairingState.data(using: .utf8) {
+            try save(data, for: .pairingState)
+        } else {
+            try delete(.pairingState)
+        }
+    }
+
+    func deleteAll() throws {
+        try delete(.deviceOwner)
+        try delete(.sharedOwner)
+        try delete(.pairingState)
+    }
+
+    private func loadLegacyPairingState() throws -> String? {
+        guard let stored = try load(.pairingState) else { return nil }
+        return String(data: stored, encoding: .utf8)
     }
 
     private func load(_ key: OwnerSecretKey) throws -> Data? {
@@ -72,6 +200,17 @@ private struct OwnerSecretsKeychain {
         let addStatus = SecItemAdd(add as CFDictionary, nil)
         guard addStatus == errSecSuccess else { throw OwnerSecretsError.keychain(addStatus) }
     }
+
+    private func delete(_ key: OwnerSecretKey) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key.rawValue,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        if status == errSecSuccess || status == errSecItemNotFound { return }
+        throw OwnerSecretsError.keychain(status)
+    }
 }
 
 @objc(OwnerSecretsPlugin)
@@ -81,41 +220,20 @@ final class OwnerSecretsPlugin: CAPPlugin, CAPBridgedPlugin {
     let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "loadOrCreate", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "replaceSharedOwner", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "joinSharedOwner", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setPairingState", returnType: CAPPluginReturnPromise),
     ]
 
     private let keychain = OwnerSecretsKeychain()
 
-    #if DEBUG
-    // INTERIM (#13): the cross-platform acceptance harness hands one runtime-
-    // generated Shared owner to both debug apps. This is not a product Pairing
-    // path, is absent from release builds, and is deleted when #14 lands.
-    private func interimSharedOwner() throws -> Data? {
-        guard
-            let encoded = ProcessInfo.processInfo.environment[
-                "VERELLE_INTERIM_SHARED_OWNER"
-            ]
-        else { return nil }
-        guard
-            let secret = Data(base64Encoded: encoded),
-            secret.count == 32
-        else { throw OwnerSecretsError.invalidSecret }
-        return secret
-    }
-    #endif
-
     @objc func loadOrCreate(_ call: CAPPluginCall) {
         do {
-            let deviceOwner = try keychain.loadOrCreate(.deviceOwner)
-            var sharedOwner = try keychain.loadOrCreate(.sharedOwner)
-            #if DEBUG
-            if let interim = try interimSharedOwner() {
-                try keychain.replaceSharedOwner(interim)
-                sharedOwner = interim
-            }
-            #endif
+            let deviceOwner = try keychain.loadOrCreateDeviceOwner()
+            let sharedOwner = try keychain.loadSharedOwnerRecord()
             call.resolve([
                 "deviceOwner": deviceOwner.base64EncodedString(),
-                "sharedOwner": sharedOwner.base64EncodedString(),
+                "sharedOwner": sharedOwner.secret.base64EncodedString(),
+                "pairingState": sharedOwner.pairingState,
             ])
         } catch {
             call.reject("Owner secrets are unavailable.", "KEYCHAIN_ERROR")
@@ -136,6 +254,40 @@ final class OwnerSecretsPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve()
         } catch {
             call.reject("The Shared owner could not be saved.", "KEYCHAIN_ERROR")
+        }
+    }
+
+    @objc func joinSharedOwner(_ call: CAPPluginCall) {
+        guard
+            let encoded = call.getString("sharedOwner"),
+            let secret = Data(base64Encoded: encoded)
+        else {
+            call.reject("The Shared owner is invalid.", "INVALID_OWNER")
+            return
+        }
+
+        do {
+            try keychain.joinSharedOwner(secret)
+            call.resolve()
+        } catch {
+            call.reject("The Shared owner could not be saved.", "KEYCHAIN_ERROR")
+        }
+    }
+
+    @objc func setPairingState(_ call: CAPPluginCall) {
+        guard
+            let value = call.getString("pairingState"),
+            SharedOwnerRecord.writablePairingStates.contains(value)
+        else {
+            call.reject("Pairing state is invalid.", "INVALID_OWNER")
+            return
+        }
+
+        do {
+            try keychain.setPairingState(value)
+            call.resolve()
+        } catch {
+            call.reject("Pairing state could not be saved.", "KEYCHAIN_ERROR")
         }
     }
 }

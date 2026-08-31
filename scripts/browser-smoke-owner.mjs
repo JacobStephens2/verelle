@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 const createOwnerSecrets = () => ({
   deviceOwner: randomBytes(32).toString("base64"),
   sharedOwner: randomBytes(32).toString("base64"),
+  pairingState: "unpaired",
 });
 
 /** Installs a factory in the page so every storage check uses one scanner. */
@@ -111,9 +112,16 @@ export async function installBrowserSmokeOwner(page, options = {}) {
       ownerSecrets = { ...ownerSecrets, sharedOwner };
     },
   );
+  await page.exposeFunction("__verelleBrowserSmokeJoinSharedOwner", (sharedOwner) => {
+    ownerSecrets = { ...ownerSecrets, sharedOwner, pairingState: "shared" };
+  });
+  await page.exposeFunction("__verelleBrowserSmokeSetPairingState", (pairingState) => {
+    ownerSecrets = { ...ownerSecrets, pairingState };
+  });
 
   const encodedOwnerSecrets = [
-    ...Object.values(ownerSecrets),
+    ownerSecrets.deviceOwner,
+    ownerSecrets.sharedOwner,
     ...(options.additionalEncodedOwnerSecrets ?? []),
   ];
   await page.evaluateOnNewDocument(installOwnerMaterialScanner);
@@ -186,6 +194,10 @@ export async function installBrowserSmokeOwner(page, options = {}) {
         loadOrCreate: () => globalThis.__verelleBrowserSmokeLoadOwners(),
         replaceSharedOwner: ({ sharedOwner }) =>
           globalThis.__verelleBrowserSmokeReplaceSharedOwner(sharedOwner),
+        joinSharedOwner: ({ sharedOwner }) =>
+          globalThis.__verelleBrowserSmokeJoinSharedOwner(sharedOwner),
+        setPairingState: ({ pairingState }) =>
+          globalThis.__verelleBrowserSmokeSetPairingState(pairingState),
       }),
       configurable: false,
       enumerable: false,
@@ -203,6 +215,194 @@ export async function installBrowserSmokeOwner(page, options = {}) {
     initialOwnerSecrets: { ...ownerSecrets },
     currentOwnerSecrets: () => ({ ...ownerSecrets }),
   };
+}
+
+function installInPageRelayTrace() {
+  const stashKey = "__VERELLE_RELAY_TRACE_STASH__";
+  let frames = [];
+  try {
+    frames = JSON.parse(sessionStorage.getItem(stashKey) ?? "[]");
+  } catch {
+    frames = [];
+  }
+  sessionStorage.removeItem(stashKey);
+  Object.defineProperty(globalThis, "__VERELLE_RELAY_TRACE__", {
+    value: frames,
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
+  const stash = () => {
+    const serializable = frames.map((frame) => {
+      const data = frame.data;
+      let encoded = data;
+      if (data instanceof ArrayBuffer) {
+        encoded = { base64: btoa(String.fromCharCode(...new Uint8Array(data))) };
+      } else if (ArrayBuffer.isView(data)) {
+        encoded = {
+          base64: btoa(
+            String.fromCharCode(
+              ...new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+            ),
+          ),
+        };
+      }
+      return { ...frame, data: encoded };
+    });
+    sessionStorage.setItem(stashKey, JSON.stringify(serializable));
+  };
+  addEventListener("pagehide", stash);
+  const OriginalWebSocket = globalThis.WebSocket;
+  if (OriginalWebSocket !== undefined && OriginalWebSocket.__verelleTraced !== true) {
+    globalThis.WebSocket = class extends OriginalWebSocket {
+      constructor(url, protocols) {
+        super(url, protocols);
+        frames.push({ kind: "websocket-open", url: String(url) });
+        this.addEventListener("message", (event) => {
+          frames.push({ kind: "websocket-recv", data: event.data });
+        });
+      }
+      send(data) {
+        frames.push({ kind: "websocket-send", data });
+        return super.send(data);
+      }
+    };
+    globalThis.WebSocket.__verelleTraced = true;
+  }
+  if (globalThis.fetch?.__verelleTraced !== true) {
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    const tracedFetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      frames.push({ kind: "fetch", url, body: init?.body ?? null });
+      return originalFetch(input, init);
+    };
+    tracedFetch.__verelleTraced = true;
+    globalThis.fetch = tracedFetch;
+  }
+}
+
+const ownerMaterialNeedles = (encodedSecrets, textMaterials = []) => {
+  const needles = [];
+  for (const encoded of encodedSecrets) {
+    const unpadded = encoded.replace(/=+$/u, "");
+    const bytes = Buffer.from(encoded, "base64");
+    needles.push(
+      bytes,
+      Buffer.from(encoded),
+      Buffer.from(unpadded),
+      Buffer.from(bytes.toString("hex")),
+    );
+  }
+  for (const text of textMaterials) {
+    if (text) needles.push(Buffer.from(text));
+  }
+  return needles;
+};
+
+const bufferContains = (haystack, needle) => {
+  if (needle.length === 0 || haystack.length < needle.length) return false;
+  return haystack.includes(needle);
+};
+
+const valueToBuffers = (value, buffers = []) => {
+  if (value == null) return buffers;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    buffers.push(Buffer.from(String(value)));
+    return buffers;
+  }
+  if (Buffer.isBuffer(value)) {
+    buffers.push(value);
+    return buffers;
+  }
+  if (value instanceof Uint8Array) {
+    buffers.push(Buffer.from(value));
+    return buffers;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) valueToBuffers(entry, buffers);
+    return buffers;
+  }
+  if (typeof value === "object") {
+    if (typeof value.base64 === "string") {
+      buffers.push(Buffer.from(value.base64, "base64"));
+    }
+    for (const [key, entry] of Object.entries(value)) {
+      buffers.push(Buffer.from(String(key)));
+      valueToBuffers(entry, buffers);
+    }
+  }
+  return buffers;
+};
+
+export function framesContainOwnerMaterial(frames, materials) {
+  const needles = ownerMaterialNeedles(
+    materials.encodedOwnerSecrets,
+    materials.textMaterials ?? [],
+  );
+  for (const frame of frames) {
+    for (const haystack of valueToBuffers(frame)) {
+      if (needles.some((needle) => bufferContains(haystack, needle))) return true;
+    }
+  }
+  return false;
+}
+
+/** Records fetch and WebSocket traffic across reloads so pairing-time leaks are visible. */
+export async function installRelayTrace(page) {
+  const frames = [];
+  const client = await page.createCDPSession();
+  await client.send("Network.enable");
+  client.on("Network.requestWillBeSent", (event) => {
+    frames.push({
+      kind: "fetch",
+      url: event.request.url,
+      body: event.request.postData ?? null,
+    });
+  });
+  client.on("Network.webSocketCreated", (event) => {
+    frames.push({ kind: "websocket-open", url: event.url });
+  });
+  client.on("Network.webSocketFrameSent", (event) => {
+    frames.push({ kind: "websocket-send", data: event.response.payloadData });
+  });
+  client.on("Network.webSocketFrameReceived", (event) => {
+    frames.push({ kind: "websocket-recv", data: event.response.payloadData });
+  });
+
+  await page.evaluateOnNewDocument(installInPageRelayTrace);
+  try {
+    await page.evaluate(installInPageRelayTrace);
+  } catch {
+    // The document may not exist yet; evaluateOnNewDocument covers the first load.
+  }
+
+  return {
+    frames,
+    containsOwnerMaterial: async (materials) => {
+      let inPage = [];
+      try {
+        inPage = await page.evaluate(() => globalThis.__VERELLE_RELAY_TRACE__ ?? []);
+      } catch {
+        inPage = [];
+      }
+      return framesContainOwnerMaterial([...frames, ...inPage], materials);
+    },
+  };
+}
+
+/** True when any captured pairing-time frame contains Owner secret or pairing-code material. */
+export async function relayTraceContainsOwnerMaterial(traceOrPage, materials) {
+  if (typeof traceOrPage.containsOwnerMaterial === "function") {
+    return traceOrPage.containsOwnerMaterial(materials);
+  }
+  return installRelayTrace(traceOrPage).then((trace) =>
+    trace.containsOwnerMaterial(materials),
+  );
 }
 
 /**

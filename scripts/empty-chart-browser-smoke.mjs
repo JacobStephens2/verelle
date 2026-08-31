@@ -118,7 +118,38 @@ try {
   assert.equal(filledCells, 0, `${filledCells} cells were filled in an empty chart`);
   console.log(`ok: empty state reads ${JSON.stringify(emptyState)} over ${columns.length} empty cells`);
 
-  // 4. Privacy and about is reachable from the Chart and states both halves of
+  const pairingState = await page.$eval(
+    '[data-testid="pairing-state"]',
+    (element) => element.textContent?.trim() ?? "",
+  );
+  assert.equal(
+    pairingState,
+    "This Chart is only on this phone",
+    "An unpaired phone did not say the Chart is only on this phone",
+  );
+  console.log("ok: unpaired Chart state is visible");
+
+  // 4. Pairing is reachable from the Chart and still states that the Chart is
+  //    not yet shared.
+  await page.click('[data-testid="open-pairing"]');
+  await page.waitForSelector('[data-testid="pairing-screen"]', { timeout: PAINT_TIMEOUT_MS });
+  const pairingCopy = await page.$eval(
+    '[data-testid="pairing-screen"]',
+    (element) => element.textContent ?? "",
+  );
+  assert.ok(
+    pairingCopy.includes("never reaches the Relay"),
+    "Pairing omitted that the code never reaches the Relay",
+  );
+  assert.ok(
+    pairingCopy.includes("Show a pairing code"),
+    "Pairing omitted the show-code action",
+  );
+  await page.click('[data-testid="close-pairing"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Pairing is reachable from the Chart");
+
+  // 5. Privacy and about is reachable from the Chart and states both halves of
   //    ADR 0012: the Relay operator cannot read Chart content, and does learn
   //    that a given owner synced, when, and roughly how much.
   await page.click('[data-testid="open-privacy"]');
@@ -163,7 +194,7 @@ try {
   await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
   console.log("ok: Privacy and about is reachable and states what the Relay knows");
 
-  // 5. Nothing failed quietly on the way there.
+  // 6. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     failures.push(`Console errors during launch: ${JSON.stringify(consoleErrors)}`);
   }

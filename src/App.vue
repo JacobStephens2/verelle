@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef } from "vue";
+import { computed, nextTick, onMounted, ref, useTemplateRef } from "vue";
 
 import type { CivilDate } from "./chart/civil-date";
 import BackupRestore from "./components/BackupRestore.vue";
 import ChartFrame from "./components/ChartFrame.vue";
+import Pairing from "./components/Pairing.vue";
 import PrivacyAbout from "./components/PrivacyAbout.vue";
 import RecordObservation from "./components/RecordObservation.vue";
 import { todayCivilDate } from "./chart/civil-date";
 import { useObservationStore } from "./observations/store";
+import { useOwnerManager } from "./owners/owner-manager-store";
+import type { PairingState } from "./owners/owner-secret-store";
 
 // The app opens on today. A Chart day or the date picker moves this selection
 // only after that zero-navigation starting point has painted.
@@ -15,11 +18,22 @@ const today = computed(() => todayCivilDate());
 const selectedDate = ref<CivilDate>(today.value);
 const showAllFields = ref(false);
 const editor = useTemplateRef<HTMLElement>("editor");
-const overlay = ref<"backup" | "privacy" | null>(null);
+const overlay = ref<"backup" | "privacy" | "pairing" | null>(null);
+const pairingState = ref<PairingState>("unpaired");
 
 const observationStore = useObservationStore();
+const ownerManager = useOwnerManager();
 const observations = observationStore.observe();
 const syncState = observationStore.observeSyncState();
+
+onMounted(async () => {
+  pairingState.value = (await ownerManager.load()).pairingState;
+});
+
+const closePairing = async () => {
+  overlay.value = null;
+  pairingState.value = (await ownerManager.load()).pairingState;
+};
 
 const showDate = (date: CivilDate, revealAllFields: boolean) => {
   selectedDate.value = date;
@@ -38,10 +52,14 @@ const openDayDetails = async (date: CivilDate) => {
 <template>
   <BackupRestore v-if="overlay === 'backup'" @close="overlay = null" />
   <PrivacyAbout v-else-if="overlay === 'privacy'" @close="overlay = null" />
+  <Pairing v-else-if="overlay === 'pairing'" @close="closePairing" />
   <main v-else class="app">
     <nav class="app__utility" aria-label="Chart tools">
       <button type="button" data-testid="open-privacy" @click="overlay = 'privacy'">
         Privacy &amp; about
+      </button>
+      <button type="button" data-testid="open-pairing" @click="overlay = 'pairing'">
+        Pair phones
       </button>
       <button type="button" data-testid="open-backup" @click="overlay = 'backup'">
         Backup &amp; restore
@@ -60,6 +78,7 @@ const openDayDetails = async (date: CivilDate) => {
       :today="today"
       :observations="observations"
       :sync-state="syncState"
+      :pairing-state="pairingState"
       @select-date="openDayDetails"
     />
   </main>

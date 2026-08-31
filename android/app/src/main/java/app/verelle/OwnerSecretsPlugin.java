@@ -2,7 +2,6 @@ package app.verelle;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ApplicationInfo;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
@@ -25,7 +24,7 @@ public final class OwnerSecretsPlugin extends Plugin {
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final String KEY_ALIAS = "app.verelle.owner-secrets";
     private static final String PREFERENCES = "verelle_owner_secrets";
-    private static final String INTERIM_SHARED_OWNER = "app.verelle.INTERIM_SHARED_OWNER";
+    private static final String PAIRING_STATE = "pairingState";
     private static final int OWNER_SECRET_BYTES = 32;
     private static final int GCM_TAG_BITS = 128;
 
@@ -45,11 +44,6 @@ public final class OwnerSecretsPlugin extends Plugin {
         try {
             byte[] deviceOwner = loadOrCreate(OwnerSecretKey.DEVICE);
             byte[] sharedOwner = loadOrCreate(OwnerSecretKey.SHARED);
-            byte[] interim = interimSharedOwner();
-            if (interim != null) {
-                save(OwnerSecretKey.SHARED, interim);
-                sharedOwner = interim;
-            }
             JSObject result = new JSObject();
             result.put(
                 OwnerSecretKey.DEVICE.storageName,
@@ -59,28 +53,11 @@ public final class OwnerSecretsPlugin extends Plugin {
                 OwnerSecretKey.SHARED.storageName,
                 Base64.encodeToString(sharedOwner, Base64.NO_WRAP)
             );
+            result.put(PAIRING_STATE, pairingState());
             call.resolve(result);
         } catch (Exception error) {
             call.reject("Owner secrets are unavailable.", "KEYSTORE_ERROR");
         }
-    }
-
-    /**
-     * INTERIM (#13): the cross-platform acceptance harness gives both debug
-     * apps one runtime-generated Shared owner. This is not product Pairing,
-     * cannot run in release builds, and is deleted when #14 lands.
-     */
-    private byte[] interimSharedOwner() {
-        boolean debuggable = (getContext().getApplicationInfo().flags
-            & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-        if (!debuggable || getActivity() == null) return null;
-        String encoded = getActivity().getIntent().getStringExtra(INTERIM_SHARED_OWNER);
-        if (encoded == null) return null;
-        byte[] secret = Base64.decode(encoded, Base64.NO_WRAP);
-        if (secret.length != OWNER_SECRET_BYTES) {
-            throw new IllegalArgumentException("The interim Shared owner is invalid");
-        }
-        return secret;
     }
 
     @PluginMethod
@@ -104,6 +81,43 @@ public final class OwnerSecretsPlugin extends Plugin {
         }
     }
 
+    @PluginMethod
+    public void joinSharedOwner(PluginCall call) {
+        String encoded = call.getString(OwnerSecretKey.SHARED.storageName);
+        if (encoded == null) {
+            call.reject("The Shared owner is invalid.", "INVALID_OWNER");
+            return;
+        }
+
+        try {
+            byte[] secret = Base64.decode(encoded, Base64.NO_WRAP);
+            if (secret.length != OWNER_SECRET_BYTES) {
+                call.reject("The Shared owner is invalid.", "INVALID_OWNER");
+                return;
+            }
+            saveJoinedSharedOwner(secret);
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("The Shared owner could not be saved.", "KEYSTORE_ERROR");
+        }
+    }
+
+    @PluginMethod
+    public void setPairingState(PluginCall call) {
+        String value = call.getString(PAIRING_STATE);
+        if (!"unpaired".equals(value) && !"shared".equals(value)) {
+            call.reject("Pairing state is invalid.", "INVALID_OWNER");
+            return;
+        }
+
+        try {
+            savePairingState(value);
+            call.resolve();
+        } catch (Exception error) {
+            call.reject("Pairing state could not be saved.", "KEYSTORE_ERROR");
+        }
+    }
+
     private byte[] loadOrCreate(OwnerSecretKey key) throws Exception {
         SharedPreferences preferences = preferences();
         String encrypted = preferences.getString(key.storageName, null);
@@ -116,6 +130,23 @@ public final class OwnerSecretsPlugin extends Plugin {
     }
 
     private void save(OwnerSecretKey key, byte[] secret) throws Exception {
+        boolean saved = preferences()
+            .edit()
+            .putString(key.storageName, encrypt(secret))
+            .commit();
+        if (!saved) throw new IllegalStateException("Encrypted owner storage failed");
+    }
+
+    private void saveJoinedSharedOwner(byte[] secret) throws Exception {
+        boolean saved = preferences()
+            .edit()
+            .putString(OwnerSecretKey.SHARED.storageName, encrypt(secret))
+            .putString(PAIRING_STATE, "shared")
+            .commit();
+        if (!saved) throw new IllegalStateException("Encrypted owner storage failed");
+    }
+
+    private String encrypt(byte[] secret) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
         byte[] ciphertext = cipher.doFinal(secret);
@@ -124,11 +155,7 @@ public final class OwnerSecretsPlugin extends Plugin {
         record.putInt(iv.length);
         record.put(iv);
         record.put(ciphertext);
-        boolean saved = preferences()
-            .edit()
-            .putString(key.storageName, Base64.encodeToString(record.array(), Base64.NO_WRAP))
-            .commit();
-        if (!saved) throw new IllegalStateException("Encrypted owner storage failed");
+        return Base64.encodeToString(record.array(), Base64.NO_WRAP);
     }
 
     private byte[] decrypt(String encoded) throws Exception {
@@ -177,5 +204,19 @@ public final class OwnerSecretsPlugin extends Plugin {
 
     private SharedPreferences preferences() {
         return getContext().getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+    }
+
+    private String pairingState() {
+        String value = preferences().getString(PAIRING_STATE, "unpaired");
+        if ("shared".equals(value)) return "shared";
+        if (!"unpaired".equals(value)) {
+            savePairingState("unpaired");
+        }
+        return "unpaired";
+    }
+
+    private void savePairingState(String value) {
+        boolean saved = preferences().edit().putString(PAIRING_STATE, value).commit();
+        if (!saved) throw new IllegalStateException("Pairing state storage failed");
     }
 }
