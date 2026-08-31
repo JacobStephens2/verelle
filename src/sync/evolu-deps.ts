@@ -1,4 +1,9 @@
-import { exhaustiveCheck, type ConsoleDep, type ReloadApp } from "@evolu/common";
+import {
+  exhaustiveCheck,
+  type ConsoleDep,
+  type CreateMessageChannel,
+  type ReloadApp,
+} from "@evolu/common";
 import type {
   CreateDbWorker,
   DbWorkerInit,
@@ -22,12 +27,12 @@ export interface SharedWorkerUnsupported {
   readonly type: "SharedWorkerUnsupported";
 }
 
-interface SharedWorkerUnsupportedDep {
-  readonly onSharedWorkerUnsupported: () => void;
-}
-
 interface SyncTransportEventDep {
   readonly onSyncTransportEvent: (message: OwnerSyncTransportEvent) => void;
+}
+
+interface EvoluQueriesRefreshedDep {
+  readonly onEvoluQueriesRefreshed: () => void;
 }
 
 type VerelleSharedWorkerOutput =
@@ -40,13 +45,14 @@ const reloadApp: ReloadApp = (url) => {
 };
 
 /**
- * Evolu's web dependencies with one deliberate addition: the Shared worker
- * reports encrypted request acknowledgements for the Chart sync indicator.
+ * Evolu's web dependencies with two status observations: the Shared worker
+ * reports encrypted Relay acknowledgements, and the page reports when the
+ * resulting query patches have been applied to the Chart.
  */
 export const createVerelleEvoluDeps = (
   deps: Partial<ConsoleDep> &
-    Partial<SharedWorkerUnsupportedDep> &
-    Partial<SyncTransportEventDep> = {},
+    Partial<SyncTransportEventDep> &
+    Partial<EvoluQueriesRefreshedDep> = {},
 ): EvoluDeps => {
   installOneTabSharedWorkerPolyfill();
 
@@ -88,13 +94,9 @@ export const createVerelleEvoluDeps = (
                   deps.onSyncTransportEvent?.(message);
                   break;
                 case "SharedWorkerUnsupported":
-                  if (deps.onSharedWorkerUnsupported) {
-                    deps.onSharedWorkerUnsupported();
-                  } else {
-                    globalThis.alert(
-                      "Verelle is already open. Close this copy and use the first one.",
-                    );
-                  }
+                  globalThis.alert(
+                    "Verelle is already open. Close this copy and use the first one.",
+                  );
                   break;
                 default:
                   exhaustiveCheck(message);
@@ -105,11 +107,46 @@ export const createVerelleEvoluDeps = (
     },
   };
 
+  const createObservedMessageChannel: CreateMessageChannel = <Input, Output>() => {
+    const channel = createMessageChannel<Input, Output>();
+    const nativePort = channel.port1;
+    let onMessage: ((message: Output) => void) | null = null;
+
+    return {
+      [Symbol.dispose]: () => channel[Symbol.dispose](),
+      port1: {
+        postMessage: nativePort.postMessage,
+        native: nativePort.native,
+        [Symbol.dispose]: () => nativePort[Symbol.dispose](),
+        get onMessage() {
+          return onMessage;
+        },
+        set onMessage(listener) {
+          onMessage = listener;
+          nativePort.onMessage = listener
+            ? (message) => {
+                listener(message);
+                if (
+                  typeof message === "object" &&
+                  message !== null &&
+                  "type" in message &&
+                  message.type === "OnPatchesByQuery"
+                ) {
+                  deps.onEvoluQueriesRefreshed?.();
+                }
+              }
+            : null;
+        },
+      },
+      port2: channel.port2,
+    };
+  };
+
   return createCommonEvoluDeps({
     ...deps,
     createDbWorker,
     createBroadcastChannel,
-    createMessageChannel,
+    createMessageChannel: createObservedMessageChannel,
     lockManager: globalThis.navigator.locks,
     reloadApp,
     sharedWorker,

@@ -96,7 +96,7 @@ describe("the two load-bearing Evolu configuration requirements", () => {
     const store = await readFile(EVOLU_STORE, "utf8");
     const deleteAt = store.indexOf("delete (globalThis");
     // The call site, not the comment above it that names the same function.
-    const depsAt = store.indexOf("createRun(createVerelleEvoluDeps(");
+    const depsAt = store.indexOf("createVerelleEvoluDeps({");
 
     expect(deleteAt).toBeGreaterThan(-1);
     expect(depsAt).toBeGreaterThan(-1);

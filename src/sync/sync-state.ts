@@ -10,6 +10,7 @@ export type SyncTransportEvent =
   | {
       readonly type: "request-acknowledged";
       readonly carriesChanges: boolean;
+      readonly carriesRemoteChanges: boolean;
     }
   | {
       readonly type: "request-abandoned";
@@ -24,45 +25,71 @@ export interface SyncStateMonitor {
   /** Marks a local save pending before any network work begins. */
   readonly markLocalChange: () => void;
 
+  /** Marks query refresh completion after remote changes were applied. */
+  readonly markChartCurrent: () => void;
+
   /** Applies one fact observed at the encrypted transport seam. */
   readonly handle: (event: SyncTransportEvent) => void;
 }
 
-/** Reduces Relay request/response facts to the two states shown on the Chart. */
+/** Reduces Relay and query-refresh facts to the two states shown on the Chart. */
 export function createSyncState(): SyncStateMonitor {
   const state = ref<SyncState>("pending");
   let waitingForChangeRequest = false;
   let inFlightChangeRequests = 0;
+  let waitingForChartUpdate = false;
+  let relayAcknowledged = false;
+
+  const refresh = () => {
+    state.value =
+      relayAcknowledged &&
+      !waitingForChangeRequest &&
+      inFlightChangeRequests === 0 &&
+      !waitingForChartUpdate
+        ? "synced"
+        : "pending";
+  };
 
   return {
     observe: () => state,
     markLocalChange: () => {
       waitingForChangeRequest = true;
-      state.value = "pending";
+      refresh();
+    },
+    markChartCurrent: () => {
+      waitingForChartUpdate = false;
+      refresh();
     },
     handle: (event) => {
       if (event.type === "connection-lost") {
-        state.value = "pending";
+        relayAcknowledged = false;
+        refresh();
         return;
       }
-      if (event.type === "request-sent" && event.carriesChanges) {
-        waitingForChangeRequest = false;
-        inFlightChangeRequests += 1;
+      if (event.type === "request-sent") {
+        state.value = "pending";
+        if (event.carriesChanges) {
+          waitingForChangeRequest = false;
+          inFlightChangeRequests += 1;
+        }
         return;
       }
-      if (event.type === "request-abandoned" && event.carriesChanges) {
-        if (inFlightChangeRequests > 0) inFlightChangeRequests -= 1;
-        waitingForChangeRequest = true;
-        state.value = "pending";
+      if (event.type === "request-abandoned") {
+        relayAcknowledged = false;
+        if (event.carriesChanges) {
+          if (inFlightChangeRequests > 0) inFlightChangeRequests -= 1;
+          waitingForChangeRequest = true;
+        }
+        refresh();
         return;
       }
       if (event.type === "request-acknowledged") {
+        relayAcknowledged = true;
         if (event.carriesChanges && inFlightChangeRequests > 0) {
           inFlightChangeRequests -= 1;
         }
-        if (!waitingForChangeRequest && inFlightChangeRequests === 0) {
-          state.value = "synced";
-        }
+        if (event.carriesRemoteChanges) waitingForChartUpdate = true;
+        refresh();
       }
     },
   };

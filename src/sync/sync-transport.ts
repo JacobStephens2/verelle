@@ -38,23 +38,43 @@ type PublishSyncTransportEvent = (
   event: SyncTransportEvent,
 ) => void;
 
-/** Reads only the public Evolu header and encrypted-message count. */
-export function readSyncRequest(message: ProtocolMessage): SyncRequest | null {
+function readProtocolBody(
+  message: Uint8Array,
+  expectedMessageType:
+    | (typeof MessageType)["Request"]
+    | (typeof MessageType)["Response"],
+): {
+  readonly ownerId: OwnerId;
+  readonly buffer: ReturnType<typeof createBuffer>;
+} | null {
   const header = parseProtocolHeader(message);
-  if (!header.ok || header.value.messageType !== MessageType.Request) return null;
+  if (!header.ok || header.value.messageType !== expectedMessageType) return null;
 
   try {
     const buffer = createBuffer(message);
     decodeNonNegativeInt(buffer);
     buffer.shiftN(idBytesTypeValueLength);
     buffer.shift();
+    return { ownerId: header.value.ownerId, buffer };
+  } catch {
+    return null;
+  }
+}
+
+/** Reads only the public Evolu header and encrypted-message count. */
+export function readSyncRequest(message: ProtocolMessage): SyncRequest | null {
+  const body = readProtocolBody(message, MessageType.Request);
+  if (body === null) return null;
+
+  try {
+    const { buffer } = body;
     const hasWriteKey = buffer.shift();
     if (hasWriteKey === 1) buffer.shiftN(ownerWriteKeyLength);
     buffer.shift();
     const messageCount = decodeNonNegativeInt(buffer);
 
     return {
-      ownerId: header.value.ownerId,
+      ownerId: body.ownerId,
       carriesChanges: messageCount > 0,
     };
   } catch {
@@ -65,18 +85,16 @@ export function readSyncRequest(message: ProtocolMessage): SyncRequest | null {
 function readSyncResponse(message: Uint8Array): {
   readonly ownerId: OwnerId;
   readonly succeeded: boolean;
+  readonly carriesRemoteChanges: boolean;
 } | null {
-  const header = parseProtocolHeader(message);
-  if (!header.ok || header.value.messageType !== MessageType.Response) return null;
+  const body = readProtocolBody(message, MessageType.Response);
+  if (body === null) return null;
 
   try {
-    const buffer = createBuffer(message);
-    decodeNonNegativeInt(buffer);
-    buffer.shiftN(idBytesTypeValueLength);
-    buffer.shift();
     return {
-      ownerId: header.value.ownerId,
-      succeeded: buffer.shift() === ProtocolErrorCode.NoError,
+      ownerId: body.ownerId,
+      succeeded: body.buffer.shift() === ProtocolErrorCode.NoError,
+      carriesRemoteChanges: decodeNonNegativeInt(body.buffer) > 0,
     };
   } catch {
     return null;
@@ -119,10 +137,16 @@ export function createSyncTransportTracker(
       const carriesChanges = requests.shift();
       if (carriesChanges === undefined) return;
       if (requests.length === 0) requestsByOwner.delete(response.ownerId);
-      report(response.ownerId, {
-        type: response.succeeded ? "request-acknowledged" : "request-abandoned",
-        carriesChanges,
-      });
+      report(
+        response.ownerId,
+        response.succeeded
+          ? {
+              type: "request-acknowledged",
+              carriesChanges,
+              carriesRemoteChanges: response.carriesRemoteChanges,
+            }
+          : { type: "request-abandoned", carriesChanges },
+      );
     },
     disconnected: () => {
       for (const [ownerId, requests] of requestsByOwner) {

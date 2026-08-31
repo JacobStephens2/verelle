@@ -165,6 +165,7 @@ async function boot(
   ownerManager: OwnerManager,
   onSharedOwner: (sharedOwner: SharedOwner) => void,
   onSyncTransportEvent: (message: OwnerSyncTransportEvent) => void,
+  onQueriesRefreshed: () => void,
 ): Promise<{ readonly evolu: Evolu<typeof Schema>; readonly sharedOwner: SharedOwner }> {
   // Must run before createEvoluDeps(). iOS 26's WKWebView exposes SharedWorker,
   // but under capacitor://localhost it fails SILENTLY: no error surfaces and
@@ -184,7 +185,12 @@ async function boot(
 
   const { deviceOwner, sharedOwner } = await ownerManager.load();
   onSharedOwner(sharedOwner);
-  const run = createRun(createVerelleEvoluDeps({ onSyncTransportEvent }));
+  const run = createRun(
+    createVerelleEvoluDeps({
+      onSyncTransportEvent,
+      onEvoluQueriesRefreshed: onQueriesRefreshed,
+    }),
+  );
   const result = await run(
     createEvolu(Schema, {
       appName: AppName.orThrow("Verelle"),
@@ -235,6 +241,7 @@ export function createEvoluObservationStore(ownerManager: OwnerManager): Observa
     (message) => {
       if (message.ownerId === sharedOwnerId) syncState.handle(message.event);
     },
+    syncState.markChartCurrent,
   );
   // A boot failure belongs to the save that needed the database, where the
   // caller can react to it, not to a bare unhandled rejection at launch.

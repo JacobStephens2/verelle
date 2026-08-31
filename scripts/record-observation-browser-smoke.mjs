@@ -553,7 +553,11 @@ try {
   await page.setOfflineMode(true);
   await page.click('[data-testid="monitor-Low"]');
   await page.click('[data-testid="save"]');
+  // The first local commit is still crossing the Worker boundary. A newer tap
+  // must remain edited after that save resolves so a second Save persists it.
+  await page.click('[data-testid="bleeding-Moderate"]');
   await waitForMonitorReading(page, pastDate, "Low");
+  await page.click('[data-testid="save"]');
   await waitForSyncState(page, "Pending changes");
   assert.equal(
     await page.$$eval(
@@ -581,6 +585,9 @@ try {
       sharedPage.waitForFunction(
         () =>
           document.querySelector('[data-testid="monitor-Low"]')?.getAttribute(
+            "aria-pressed",
+          ) === "true" &&
+          document.querySelector('[data-testid="bleeding-Moderate"]')?.getAttribute(
             "aria-pressed",
           ) === "true" &&
           document.querySelector('[data-testid="note"]')?.value ===

@@ -117,7 +117,7 @@ ANDROID_HOME="$android_sdk" JAVA_HOME="$java_home" \
 # Start Android's assertion first so it stays subscribed while iOS publishes.
 # The test verifies the interim owner before waiting for the remote Observation.
 "$adb" -s "$android_serial" shell am instrument -w -r \
-  -e class app.verelle.ExampleInstrumentedTest#receivesObservationRecordedOnIos \
+  -e class app.verelle.ChartInstrumentedTest#receivesObservationRecordedOnIos \
   -e sharedOwner "$shared_owner" \
   -e expectedWords "$expected_words" \
   app.verelle.test/androidx.test.runner.AndroidJUnitRunner \
