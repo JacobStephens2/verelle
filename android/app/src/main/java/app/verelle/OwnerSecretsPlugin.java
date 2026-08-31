@@ -2,6 +2,7 @@ package app.verelle;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
@@ -24,6 +25,7 @@ public final class OwnerSecretsPlugin extends Plugin {
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
     private static final String KEY_ALIAS = "app.verelle.owner-secrets";
     private static final String PREFERENCES = "verelle_owner_secrets";
+    private static final String INTERIM_SHARED_OWNER = "app.verelle.INTERIM_SHARED_OWNER";
     private static final int OWNER_SECRET_BYTES = 32;
     private static final int GCM_TAG_BITS = 128;
 
@@ -43,6 +45,11 @@ public final class OwnerSecretsPlugin extends Plugin {
         try {
             byte[] deviceOwner = loadOrCreate(OwnerSecretKey.DEVICE);
             byte[] sharedOwner = loadOrCreate(OwnerSecretKey.SHARED);
+            byte[] interim = interimSharedOwner();
+            if (interim != null) {
+                save(OwnerSecretKey.SHARED, interim);
+                sharedOwner = interim;
+            }
             JSObject result = new JSObject();
             result.put(
                 OwnerSecretKey.DEVICE.storageName,
@@ -56,6 +63,24 @@ public final class OwnerSecretsPlugin extends Plugin {
         } catch (Exception error) {
             call.reject("Owner secrets are unavailable.", "KEYSTORE_ERROR");
         }
+    }
+
+    /**
+     * INTERIM (#13): the cross-platform acceptance harness gives both debug
+     * apps one runtime-generated Shared owner. This is not product Pairing,
+     * cannot run in release builds, and is deleted when #14 lands.
+     */
+    private byte[] interimSharedOwner() {
+        boolean debuggable = (getContext().getApplicationInfo().flags
+            & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        if (!debuggable || getActivity() == null) return null;
+        String encoded = getActivity().getIntent().getStringExtra(INTERIM_SHARED_OWNER);
+        if (encoded == null) return null;
+        byte[] secret = Base64.decode(encoded, Base64.NO_WRAP);
+        if (secret.length != OWNER_SECRET_BYTES) {
+            throw new IllegalArgumentException("The interim Shared owner is invalid");
+        }
+        return secret;
     }
 
     @PluginMethod

@@ -15,7 +15,8 @@
     "verify:no-server-url": "node scripts/verify-no-server-url.mjs",
     "native:assets": "npm run build && cap sync && npm run verify:no-server-url",
     "smoke:empty-chart": "node scripts/empty-chart-browser-smoke.mjs",
-    "smoke:record-observation": "node scripts/record-observation-browser-smoke.mjs"
+    "smoke:record-observation": "node scripts/record-observation-browser-smoke.mjs",
+    "smoke:cross-platform": "scripts/cross-platform-sync-smoke.sh"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.0",

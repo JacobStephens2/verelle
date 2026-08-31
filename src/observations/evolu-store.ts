@@ -1,6 +1,6 @@
 /**
- * The Evolu-backed {@link ObservationStore}. **The only module in the app that
- * imports Evolu.**
+ * The Evolu-backed {@link ObservationStore}. The only app boundary that uses
+ * Evolu, together with its private transport adapter under `src/sync`.
  *
  * Everything above it - the Chart frame, the recording screen, every view -
  * sees Observations and nothing else, which is what keeps the Chart projection
@@ -26,11 +26,13 @@ import {
   type MutationValues,
   type SharedOwner,
 } from "@evolu/common";
-import { createEvoluDeps } from "@evolu/web";
 import { ref } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
 import type { OwnerManager } from "../owners/owner-manager";
+import { createVerelleEvoluDeps } from "../sync/evolu-deps";
+import { createSyncState } from "../sync/sync-state";
+import type { OwnerSyncTransportEvent } from "../sync/sync-transport";
 import type { Observation, ObservationUpdate } from "./observation";
 import { unrecordedObservation } from "./observation";
 import type { ObservationStore } from "./store";
@@ -161,6 +163,9 @@ function toColumns(update: ObservationUpdate): ObservationColumns {
 async function boot(
   observations: ReturnType<typeof ref<readonly Observation[]>>,
   ownerManager: OwnerManager,
+  onSharedOwner: (sharedOwner: SharedOwner) => void,
+  onSyncTransportEvent: (message: OwnerSyncTransportEvent) => void,
+  onRemoteQueriesRefreshed: (updateCount: number) => void,
 ): Promise<{ readonly evolu: Evolu<typeof Schema>; readonly sharedOwner: SharedOwner }> {
   // Must run before createEvoluDeps(). iOS 26's WKWebView exposes SharedWorker,
   // but under capacitor://localhost it fails SILENTLY: no error surfaces and
@@ -179,7 +184,13 @@ async function boot(
   delete (globalThis as { SharedWorker?: unknown }).SharedWorker;
 
   const { deviceOwner, sharedOwner } = await ownerManager.load();
-  const run = createRun(createEvoluDeps());
+  onSharedOwner(sharedOwner);
+  const run = createRun(
+    createVerelleEvoluDeps({
+      onSyncTransportEvent,
+      onRemoteEvoluQueriesRefreshed: onRemoteQueriesRefreshed,
+    }),
+  );
   const result = await run(
     createEvolu(Schema, {
       appName: AppName.orThrow("Verelle"),
@@ -219,13 +230,26 @@ async function boot(
  */
 export function createEvoluObservationStore(ownerManager: OwnerManager): ObservationStore {
   const observations = ref<readonly Observation[]>([]);
-  const ready = boot(observations, ownerManager);
+  const syncState = createSyncState();
+  let sharedOwnerId: SharedOwner["id"] | null = null;
+  const ready = boot(
+    observations,
+    ownerManager,
+    (sharedOwner) => {
+      sharedOwnerId = sharedOwner.id;
+    },
+    (message) => {
+      if (message.ownerId === sharedOwnerId) syncState.handle(message.event);
+    },
+    syncState.markChartUpdatesApplied,
+  );
   // A boot failure belongs to the save that needed the database, where the
   // caller can react to it, not to a bare unhandled rejection at launch.
   void ready.catch(() => undefined);
 
   return {
     upsert: async (civilDate: CivilDate, update: ObservationUpdate) => {
+      syncState.markLocalChange();
       const { evolu, sharedOwner } = await ready;
       await new Promise<void>((resolve) => {
         evolu.upsert(
@@ -243,5 +267,6 @@ export function createEvoluObservationStore(ownerManager: OwnerManager): Observa
       });
     },
     observe: () => observations,
+    observeSyncState: syncState.observe,
   };
 }

@@ -22,6 +22,7 @@ import {
   updateOf,
 } from "../observations/observation";
 import { useObservationStore } from "../observations/store";
+import { createRecordingEdits } from "./recording-edits";
 
 const props = defineProps<{
   date: CivilDate;
@@ -71,13 +72,14 @@ const moreFieldsVisible = computed(() => props.showAllFields === true || showMor
  * both what a save writes (see `updateOf`) and what an incoming write from the
  * other phone may move.
  */
-const edited = ref(new Set<keyof ObservationFields>());
+const recordingEdits = createRecordingEdits<keyof ObservationFields>();
+const edited = ref<ReadonlySet<keyof ObservationFields>>(new Set());
 
 const edit = (field: keyof ObservationFields) => {
-  const next = new Set(edited.value).add(field);
   // The scale is part of the reading, and one control sets both.
-  if (field === "temperature") next.add("temperatureUnit");
-  edited.value = next;
+  edited.value = recordingEdits.mark(
+    field === "temperature" ? [field, "temperatureUnit"] : [field],
+  );
 };
 
 const load = (observation: Observation, preserveEdited: boolean) => {
@@ -101,7 +103,7 @@ const load = (observation: Observation, preserveEdited: boolean) => {
 watch(
   () => props.date,
   (date) => {
-    edited.value = new Set();
+    edited.value = recordingEdits.reset();
     load(recorded.value ?? unrecordedObservation(date), false);
   },
   { immediate: true },
@@ -131,7 +133,8 @@ const confirm = (date: CivilDate) => {
 
 const save = async () => {
   const date = props.date;
-  const fields = edited.value;
+  const saving = recordingEdits.snapshot();
+  const { fields } = saving;
 
   // A half-typed or unparseable temperature is no temperature. The store
   // validates before it writes, and a throw there would lose the whole save
@@ -164,7 +167,7 @@ const save = async () => {
   }
 
   await store.upsert(date, update);
-  edited.value = new Set();
+  edited.value = recordingEdits.settle(saving);
   confirm(date);
 };
 </script>

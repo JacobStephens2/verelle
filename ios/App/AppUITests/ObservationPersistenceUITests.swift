@@ -58,4 +58,62 @@ final class ObservationPersistenceUITests: XCTestCase {
             )
         }
     }
+
+    func testPublishesObservationForAndroid() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let sharedOwner = environment["VERELLE_INTERIM_SHARED_OWNER"] else {
+            throw XCTSkip("Run through scripts/cross-platform-sync-smoke.sh")
+        }
+        guard let expectedWords = environment[
+            "VERELLE_INTERIM_SHARED_OWNER_WORDS"
+        ] else {
+            throw XCTSkip("Run through scripts/cross-platform-sync-smoke.sh")
+        }
+
+        let app = XCUIApplication()
+        app.launchEnvironment["VERELLE_INTERIM_SHARED_OWNER"] = sharedOwner
+        app.launch()
+
+        app.buttons["Backup & restore"].tap()
+        for word in expectedWords.split(separator: ",") {
+            XCTAssertTrue(
+                app.staticTexts[String(word)].waitForExistence(timeout: saveTimeout),
+                "iOS did not install the interim Shared owner"
+            )
+        }
+        app.buttons["Back to Chart"].tap()
+
+        let errorReading = app.switches["Error"]
+        XCTAssertTrue(
+            errorReading.waitForExistence(timeout: launchTimeout),
+            "The iOS recording screen never became interactive"
+        )
+        if errorReading.value as? String == "1" {
+            app.switches["Low"].tap()
+        }
+        errorReading.tap()
+
+        let noBleeding = app.switches["None"]
+        if noBleeding.value as? String == "1" {
+            app.switches["Spotting"].tap()
+        }
+        noBleeding.tap()
+        app.buttons["Save"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Saved '")).firstMatch
+                .waitForExistence(timeout: saveTimeout),
+            "The iOS Observation did not finish its local commit"
+        )
+        XCTAssertTrue(
+            app.buttons.matching(
+                NSPredicate(format: "label CONTAINS 'Monitor reading Error'")
+            ).firstMatch.waitForExistence(timeout: launchTimeout),
+            "The iOS Observation never appeared on the Chart"
+        )
+        XCTAssertTrue(
+            app.staticTexts["Synced"].waitForExistence(timeout: launchTimeout),
+            "iOS never received the Relay acknowledgement"
+        )
+    }
 }

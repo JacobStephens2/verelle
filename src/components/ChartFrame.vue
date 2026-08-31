@@ -3,13 +3,15 @@ import { computed, onMounted, useTemplateRef } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
-import type { ChartDay } from "../chart/projection";
+import type { ChartDay, UnassignedChartDay } from "../chart/projection";
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
 import type { MonitorReading, Observation } from "../observations/observation";
+import type { SyncState } from "../sync/sync-state";
 
 const props = defineProps<{
   today?: CivilDate;
   observations?: readonly Observation[];
+  syncState?: SyncState;
 }>();
 
 const emit = defineEmits<{
@@ -78,6 +80,14 @@ function chartDayLabel(day: ChartDay): string {
   return details.join(", ");
 }
 
+function unassignedChartDayLabel(day: UnassignedChartDay): string {
+  const details = [day.civilDate];
+  if (day.monitorReading !== null) {
+    details.push(`Monitor reading ${day.monitorReading}`);
+  }
+  return details.join(", ");
+}
+
 const root = useTemplateRef<HTMLElement>("root");
 
 // A launch breadcrumb, reporting the column count and the frame's laid-out
@@ -102,7 +112,18 @@ onMounted(() => {
   <section ref="root" class="chart" data-testid="chart-frame" aria-label="Chart">
     <header class="chart__header">
       <h1 class="chart__title">Chart</h1>
-      <p class="chart__today" data-testid="chart-today">{{ chart.today }}</p>
+      <div class="chart__status">
+        <p
+          class="chart__sync-state"
+          :class="{ 'chart__sync-state--pending': syncState === 'pending' }"
+          role="status"
+          aria-live="polite"
+          data-testid="sync-state"
+        >
+          {{ syncState === "pending" ? "Pending changes" : "Synced" }}
+        </p>
+        <p class="chart__today" data-testid="chart-today">{{ chart.today }}</p>
+      </div>
     </header>
 
     <div class="chart__scroller">
@@ -193,6 +214,7 @@ onMounted(() => {
           :key="day.civilDate"
           type="button"
           class="chart__unassigned-day"
+          :aria-label="unassignedChartDayLabel(day)"
           :data-civil-date="day.civilDate"
           data-testid="chart-cell"
           @click="emit('selectDate', day.civilDate)"
@@ -240,6 +262,23 @@ onMounted(() => {
   margin: 0;
   color: var(--verelle-ink-muted);
   font-variant-numeric: tabular-nums;
+}
+
+.chart__status {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.chart__sync-state {
+  margin: 0;
+  color: var(--verelle-ink-muted);
+  font-size: 0.8125rem;
+}
+
+.chart__sync-state--pending {
+  font-weight: 600;
+  color: var(--verelle-ink);
 }
 
 /* The frame is 42 cycle day columns wide; it scrolls sideways rather than

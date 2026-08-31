@@ -16,6 +16,7 @@ import type { ObservationStore } from "./store";
 export function createMemoryObservationStore(): ObservationStore {
   const rows = new Map<CivilDate, Observation>();
   const observations = ref<readonly Observation[]>(snapshot());
+  const syncState = ref<"synced">("synced");
 
   function snapshot(): readonly Observation[] {
     return [...rows.values()].sort((a, b) => a.civilDate.localeCompare(b.civilDate));
@@ -29,5 +30,6 @@ export function createMemoryObservationStore(): ObservationStore {
       return Promise.resolve();
     },
     observe: () => observations,
+    observeSyncState: () => syncState,
   };
 }

@@ -9,6 +9,7 @@
 import { inject, type InjectionKey, type Ref } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
+import type { SyncState } from "../sync/sync-state";
 import type { Observation, ObservationUpdate } from "./observation";
 
 export interface ObservationStore {
@@ -25,6 +26,9 @@ export interface ObservationStore {
 
   /** Every Observation, by ascending **Civil date**, kept up to date in place. */
   observe: () => Readonly<Ref<readonly Observation[]>>;
+
+  /** Whether this Chart has completed its latest Relay sync. */
+  observeSyncState: () => Readonly<Ref<SyncState>>;
 }
 
 /**
