@@ -8,7 +8,7 @@ import type {
 } from "./owner-secret-store";
 
 const asPairingState = (value: string | undefined): PairingState =>
-  value === "shared" ? "shared" : "unpaired";
+  value === "shared" || value === "pending" ? value : "unpaired";
 
 interface EncodedOwnerSecrets {
   readonly deviceOwner: string;
@@ -20,7 +20,7 @@ interface OwnerSecretsPlugin {
   loadOrCreate: () => Promise<EncodedOwnerSecrets>;
   replaceSharedOwner: (options: { readonly sharedOwner: string }) => Promise<void>;
   joinSharedOwner: (options: { readonly sharedOwner: string }) => Promise<void>;
-  markShared: () => Promise<void>;
+  setPairingState: (options: { readonly pairingState: PairingState }) => Promise<void>;
 }
 
 const ownerSecretsPlugin = registerPlugin<OwnerSecretsPlugin>("OwnerSecrets");
@@ -45,7 +45,9 @@ interface BrowserSmokeOwnerStore {
   readonly joinSharedOwner: (options: {
     readonly sharedOwner: string;
   }) => Promise<void>;
-  readonly markShared: () => Promise<void>;
+  readonly setPairingState: (options: {
+    readonly pairingState: PairingState;
+  }) => Promise<void>;
 }
 
 interface BrowserSmokeGlobal {
@@ -86,8 +88,8 @@ function createDevelopmentOwnerSecretStore(): OwnerSecretStore {
     joinSharedOwner: async (sharedOwner) => {
       await injected.joinSharedOwner({ sharedOwner: encodeSecret(sharedOwner) });
     },
-    markShared: async () => {
-      await injected.markShared();
+    setPairingState: async (pairingState) => {
+      await injected.setPairingState({ pairingState });
     },
   };
 }
@@ -115,6 +117,7 @@ export function createCapacitorOwnerSecretStore(): OwnerSecretStore {
         sharedOwner: encodeSecret(sharedOwner),
       });
     },
-    markShared: () => ownerSecretsPlugin.markShared(),
+    setPairingState: (pairingState) =>
+      ownerSecretsPlugin.setPairingState({ pairingState }),
   };
 }

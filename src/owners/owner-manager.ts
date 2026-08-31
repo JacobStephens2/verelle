@@ -32,10 +32,17 @@ export type JoinSharedOwnerResult = RestoreSharedOwnerResult;
 export interface OwnerManager {
   load: () => Promise<LoadedOwners>;
   restoreSharedOwner: (phrase: string) => Promise<RestoreSharedOwnerResult>;
-  /** Returns the pairing code for this phone's Shared owner without changing pairing state. */
+  /**
+   * Returns the pairing code for this phone's Shared owner. Showing the code
+   * is pending, not shared, until the couple attests that both phones match.
+   */
   shareChart: () => Promise<string>;
-  /** Records that the other phone has joined this Chart. */
-  markShared: () => Promise<void>;
+  /** Leaves a pending pairing unpaired. A confirmed shared Chart is unchanged. */
+  abandonPairing: () => Promise<void>;
+  /**
+   * Records the in-person attestation that both phones display the same Chart.
+   */
+  confirmShared: () => Promise<void>;
   /** Joins the Chart named by a pairing code, or fails without changing this phone. */
   joinSharedOwner: (code: string) => Promise<JoinSharedOwnerResult>;
 }
@@ -71,12 +78,22 @@ export function createOwnerManager(secretStore: OwnerSecretStore): OwnerManager 
       return { ok: true };
     },
     shareChart: async () => {
-      await owners;
+      const current = await owners;
+      if (current.pairingState !== "shared") {
+        await secretStore.setPairingState("pending");
+        owners = Promise.resolve({ ...current, pairingState: "pending" });
+      }
       return pairingCodeFromSharedOwner(rawSharedOwner);
     },
-    markShared: async () => {
+    abandonPairing: async () => {
       const current = await owners;
-      await secretStore.markShared();
+      if (current.pairingState !== "pending") return;
+      await secretStore.setPairingState("unpaired");
+      owners = Promise.resolve({ ...current, pairingState: "unpaired" });
+    },
+    confirmShared: async () => {
+      const current = await owners;
+      await secretStore.setPairingState("shared");
       owners = Promise.resolve({ ...current, pairingState: "shared" });
     },
     joinSharedOwner: async (code) => {

@@ -116,7 +116,13 @@ onMounted(() => {
       <div class="chart__heading">
         <h1 class="chart__title">Chart</h1>
         <p class="chart__pairing-state" data-testid="pairing-state">
-          {{ pairingState === "shared" ? "Shared Chart" : "This Chart is only on this phone" }}
+          {{
+            pairingState === "shared"
+              ? "Shared Chart"
+              : pairingState === "pending"
+                ? "Pairing in progress. This Chart is not yet shared."
+                : "This Chart is only on this phone"
+          }}
         </p>
       </div>
       <div class="chart__status">

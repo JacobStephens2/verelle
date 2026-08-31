@@ -13,6 +13,9 @@
 // Run with: npm run smoke:record-observation
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import puppeteer from "puppeteer-core";
 
 import {
@@ -559,17 +562,33 @@ try {
 
   await page.click('[data-testid="close-backup"]');
   await waitForPairingState(page, "This Chart is only on this phone");
+  const phoneARelay = await installRelayTrace(page);
   await page.click('[data-testid="open-pairing"]');
   await page.click('[data-testid="show-pairing-code"]');
   await page.waitForSelector('[data-testid="pairing-code"]', {
     timeout: PAINT_TIMEOUT_MS,
   });
-  const pairingCode = await page.$eval(
+  const pairingCodeDisplay = await page.$eval(
     '[data-testid="pairing-code"]',
-    (element) => (element.textContent ?? "").replace(/\s+/gu, ""),
+    (element) => (element.textContent ?? "").replace(/\s+/gu, " ").trim(),
   );
+  const pairingCode = pairingCodeDisplay.replace(/\s+/gu, "");
   assert.equal(pairingCode.length, 58, "Phone A did not display a pairing code");
   console.log("ok: Phone A displayed a pairing code");
+
+  await page.click('[data-testid="close-pairing"]');
+  await waitForPairingState(page, "This Chart is only on this phone");
+  console.log("ok: abandoning a shown pairing code left Phone A unpaired");
+
+  await page.click('[data-testid="open-pairing"]');
+  await page.click('[data-testid="show-pairing-code"]');
+  await page.waitForSelector('[data-testid="pairing-qr"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  const qrPath = path.join(await mkdtemp(path.join(tmpdir(), "verelle-qr-")), "pairing-qr.png");
+  const qr = await page.$('[data-testid="pairing-qr"]');
+  assert.ok(qr, "Phone A did not render a pairing QR");
+  await qr.screenshot({ path: qrPath });
 
   const pairContext = await browser.createBrowserContext();
   const pairPage = await pairContext.newPage();
@@ -577,7 +596,7 @@ try {
   const pairOwner = await installBrowserSmokeOwner(pairPage, {
     additionalEncodedOwnerSecrets: [recordedOwnerSecrets.sharedOwner],
   });
-  await installRelayTrace(pairPage);
+  const phoneBRelay = await installRelayTrace(pairPage);
   pairPage.on("pageerror", (error) =>
     consoleErrors.push(`paired install: ${String(error)}`),
   );
@@ -610,6 +629,46 @@ try {
   });
   console.log("ok: a failed pairing left Phone B unpaired on its own Chart");
 
+  const photoContext = await browser.createBrowserContext();
+  const photoPage = await photoContext.newPage();
+  await photoPage.setViewport(VIEWPORT);
+  const photoOwner = await installBrowserSmokeOwner(photoPage, {
+    additionalEncodedOwnerSecrets: [recordedOwnerSecrets.sharedOwner],
+  });
+  const phoneCRelay = await installRelayTrace(photoPage);
+  photoPage.on("pageerror", (error) =>
+    consoleErrors.push(`photo join: ${String(error)}`),
+  );
+  photoPage.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(`photo join: ${message.text()}`);
+    }
+  });
+  await photoPage.goto(origin, { waitUntil: "domcontentloaded" });
+  await photoPage.waitForSelector('[data-testid="chart-empty-state"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  await photoPage.click('[data-testid="open-pairing"]');
+  await photoPage.click('[data-testid="join-chart"]');
+  await photoPage.waitForSelector('[data-testid="pairing-photo"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  const photoInput = await photoPage.$('[data-testid="pairing-photo"]');
+  assert.ok(photoInput, "Phone C did not expose a pairing photo input");
+  await Promise.all([
+    photoPage.waitForNavigation({
+      waitUntil: "domcontentloaded",
+      timeout: PAINT_TIMEOUT_MS,
+    }),
+    photoInput.uploadFile(qrPath),
+  ]);
+  await waitForTodaysMarkedPeak(photoPage, today, RESTORE_TIMEOUT_MS);
+  await waitForPairingState(photoPage, "Shared Chart");
+  if (photoOwner.currentOwnerSecrets().sharedOwner !== recordedOwnerSecrets.sharedOwner) {
+    throw new Error("Phone C did not persist the Shared owner from the pairing QR photo");
+  }
+  console.log("ok: Phone C joined by photographing Phone A's pairing QR");
+
   await pairPage.click('[data-testid="open-pairing"]');
   await pairPage.click('[data-testid="join-chart"]');
   await pairPage.$eval(
@@ -633,25 +692,32 @@ try {
   if (pairOwner.currentOwnerSecrets().sharedOwner !== recordedOwnerSecrets.sharedOwner) {
     throw new Error("Phone B did not persist the joined Shared owner");
   }
-  const pairingLeakedToRelay = await relayTraceContainsOwnerMaterial(pairPage, {
+  const pairingMaterials = {
     encodedOwnerSecrets: [
       recordedOwnerSecrets.deviceOwner,
       recordedOwnerSecrets.sharedOwner,
       pairOwner.initialOwnerSecrets.deviceOwner,
       pairOwner.initialOwnerSecrets.sharedOwner,
+      photoOwner.initialOwnerSecrets.deviceOwner,
+      photoOwner.initialOwnerSecrets.sharedOwner,
     ],
-    textMaterials: [recordedPhrase, pairingCode],
-  });
+    textMaterials: [recordedPhrase, pairingCode, pairingCodeDisplay],
+  };
+  const pairingLeakedToRelay =
+    (await relayTraceContainsOwnerMaterial(phoneARelay, pairingMaterials)) ||
+    (await relayTraceContainsOwnerMaterial(phoneBRelay, pairingMaterials)) ||
+    (await relayTraceContainsOwnerMaterial(phoneCRelay, pairingMaterials));
   if (pairingLeakedToRelay) {
     fail("Pairing sent Shared owner or pairing-code material to the Relay");
   }
   console.log(
-    "ok: Phone B joined by typing the pairing code; the Shared owner never reached the Relay",
+    "ok: Phone B joined by typing the pairing code; pairing-time traffic on both phones stayed free of Shared owner material",
   );
 
   await page.click('[data-testid="confirm-pairing"]');
   await waitForPairingState(page, "Shared Chart");
-  console.log("ok: Phone A marked the Chart shared after the other phone joined");
+  console.log("ok: Phone A attested that both phones show the same Chart");
+  await photoContext.close();
 
   // The two live installs now hold the same Shared owner. Take the recording
   // phone offline, change one field, and change a different field on the

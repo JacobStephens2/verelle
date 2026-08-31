@@ -4,7 +4,10 @@ import { renderSVG } from "uqr";
 import { computed, onUnmounted, ref, watch } from "vue";
 
 import { useOwnerManager } from "../owners/owner-manager-store";
-import { formatPairingCodeForDisplay } from "../owners/pairing-code";
+import {
+  formatPairingCodeForDisplay,
+  INVALID_PAIRING_CODE_MESSAGE,
+} from "../owners/pairing-code";
 
 const emit = defineEmits<{ close: [] }>();
 const ownerManager = useOwnerManager();
@@ -90,18 +93,33 @@ watch(mode, async (next) => {
     try {
       compactCode.value = await ownerManager.shareChart();
     } catch {
-      error.value = "This phone could not mark the Chart as shared. Try again.";
+      error.value = "This phone could not show a pairing code. Try again.";
     }
   }
 });
 
+const close = async () => {
+  stopCamera();
+  error.value = "";
+  if (mode.value === "show") {
+    try {
+      await ownerManager.abandonPairing();
+    } catch {
+      error.value = "This phone could not leave pairing. Try again.";
+      return;
+    }
+  }
+  emit("close");
+};
+
 const confirmShared = async () => {
+  if (compactCode.value === "") return;
   error.value = "";
   try {
-    await ownerManager.markShared();
+    await ownerManager.confirmShared();
     emit("close");
   } catch {
-    error.value = "This phone could not mark the Chart as shared. Try again.";
+    error.value = "This phone could not record that both phones show the same Chart. Try again.";
   }
 };
 
@@ -125,12 +143,46 @@ const join = async () => {
     scanPairingCode();
   }
 };
+
+const joinFromPhoto = async (event: Event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || input.files === null || input.files.length === 0) {
+    return;
+  }
+  const file = input.files[0];
+  if (file === undefined) return;
+  error.value = "";
+  try {
+    const image = await createImageBitmap(file);
+    const canvasEl = canvas.value ?? document.createElement("canvas");
+    canvasEl.width = image.width;
+    canvasEl.height = image.height;
+    const context = canvasEl.getContext("2d", { willReadFrequently: true });
+    if (context === null) {
+      error.value = INVALID_PAIRING_CODE_MESSAGE;
+      return;
+    }
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvasEl.width, canvasEl.height);
+    const detected = jsQR(pixels.data, pixels.width, pixels.height);
+    if (!detected?.data) {
+      error.value = INVALID_PAIRING_CODE_MESSAGE;
+      return;
+    }
+    codeInput.value = detected.data;
+    await join();
+  } catch {
+    error.value = INVALID_PAIRING_CODE_MESSAGE;
+  } finally {
+    input.value = "";
+  }
+};
 </script>
 
 <template>
   <main class="pairing" data-testid="pairing-screen">
     <header class="pairing__header">
-      <button type="button" class="pairing__back" data-testid="close-pairing" @click="emit('close')">
+      <button type="button" class="pairing__back" data-testid="close-pairing" @click="close">
         Back to Chart
       </button>
       <h1>Pair phones</h1>
@@ -153,7 +205,11 @@ const join = async () => {
 
     <section v-else-if="mode === 'show'" class="pairing__section">
       <h2>Show this code to the other phone</h2>
-      <p>The other phone scans this code or types it. Keep both phones together until it joins.</p>
+      <p>
+        The other phone scans this code, takes a photo of it, or types it. This
+        Chart is not yet shared. Confirm only when both phones display the same
+        Chart. Backing out leaves this phone unpaired.
+      </p>
       <div
         v-if="qrSvg"
         class="pairing__qr"
@@ -171,9 +227,10 @@ const join = async () => {
         type="button"
         class="pairing__join"
         data-testid="confirm-pairing"
+        :disabled="compactCode === ''"
         @click="confirmShared"
       >
-        The other phone has joined
+        Both phones show the same Chart
       </button>
       <p v-if="error" class="pairing__error" role="alert" data-testid="pairing-error">
         {{ error }}
@@ -193,6 +250,16 @@ const join = async () => {
       >
         Scan with camera
       </button>
+      <label class="pairing__photo">
+        <span>Take a photo of the pairing code</span>
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          data-testid="pairing-photo"
+          @change="joinFromPhoto"
+        />
+      </label>
       <video
         ref="video"
         class="pairing__camera"
@@ -330,6 +397,7 @@ const join = async () => {
   font-weight: 700;
 }
 
+.pairing__photo,
 .pairing__code-field {
   display: flex;
   flex-direction: column;
@@ -338,6 +406,11 @@ const join = async () => {
   color: var(--verelle-ink-muted);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+.pairing__photo input {
+  font: inherit;
+  font-weight: 400;
 }
 
 .pairing__code-field textarea {

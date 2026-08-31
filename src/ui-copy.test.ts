@@ -78,6 +78,21 @@ describe("UI copy", () => {
 
     expect(chart).toContain("This Chart is only on this phone");
     expect(chart).toContain("Shared Chart");
+    expect(chart).toContain("Pairing in progress. This Chart is not yet shared.");
     expect(pairing).toContain("never reaches the Relay");
+    expect(pairing).toContain("Both phones show the same Chart");
+    expect(pairing).toContain("Take a photo of the pairing code");
+    expect(pairing).toContain("Backing out leaves this phone unpaired.");
+  });
+
+  it("does not claim that showing a pairing code marked the Chart shared", async () => {
+    const pairing = await readFile(
+      path.join(REPO_ROOT, "src", "components", "Pairing.vue"),
+      "utf8",
+    );
+    expect(pairing).toContain("This phone could not show a pairing code. Try again.");
+    expect(pairing).not.toMatch(
+      /could not mark the Chart as shared/,
+    );
   });
 });
