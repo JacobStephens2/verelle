@@ -576,9 +576,22 @@ try {
   assert.equal(pairingCode.length, 58, "Phone A did not display a pairing code");
   console.log("ok: Phone A displayed a pairing code");
 
-  await page.click('[data-testid="close-pairing"]');
+  assert.equal(
+    recordingOwner.currentOwnerSecrets().pairingState,
+    "unpaired",
+    "Showing a pairing code persisted pairing state",
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="record-observation"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
   await waitForPairingState(page, "This Chart is only on this phone");
-  console.log("ok: abandoning a shown pairing code left Phone A unpaired");
+  assert.equal(
+    recordingOwner.currentOwnerSecrets().pairingState,
+    "unpaired",
+    "Reloading after showing a pairing code left Phone A in a pairing state",
+  );
+  console.log("ok: showing a pairing code and reloading left Phone A unpaired");
 
   await page.click('[data-testid="open-pairing"]');
   await page.click('[data-testid="show-pairing-code"]');

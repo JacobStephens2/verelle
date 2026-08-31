@@ -105,7 +105,7 @@ public final class OwnerSecretsPlugin extends Plugin {
     @PluginMethod
     public void setPairingState(PluginCall call) {
         String value = call.getString(PAIRING_STATE);
-        if (!"unpaired".equals(value) && !"pending".equals(value) && !"shared".equals(value)) {
+        if (!"unpaired".equals(value) && !"shared".equals(value)) {
             call.reject("Pairing state is invalid.", "INVALID_OWNER");
             return;
         }
@@ -208,7 +208,10 @@ public final class OwnerSecretsPlugin extends Plugin {
 
     private String pairingState() {
         String value = preferences().getString(PAIRING_STATE, "unpaired");
-        if ("shared".equals(value) || "pending".equals(value)) return value;
+        if ("shared".equals(value)) return "shared";
+        if (!"unpaired".equals(value)) {
+            savePairingState("unpaired");
+        }
         return "unpaired";
     }
 

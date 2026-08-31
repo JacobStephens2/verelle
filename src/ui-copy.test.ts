@@ -78,8 +78,9 @@ describe("UI copy", () => {
 
     expect(chart).toContain("This Chart is only on this phone");
     expect(chart).toContain("Shared Chart");
-    expect(chart).toContain("Pairing in progress. This Chart is not yet shared.");
+    expect(chart).not.toContain("Pairing in progress");
     expect(pairing).toContain("never reaches the Relay");
+    expect(pairing).toContain("This Chart is not yet shared.");
     expect(pairing).toContain("Both phones show the same Chart");
     expect(pairing).toContain("Take a photo of the pairing code");
     expect(pairing).toContain("Backing out leaves this phone unpaired.");

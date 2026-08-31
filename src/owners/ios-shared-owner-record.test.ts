@@ -32,20 +32,25 @@ const encodeRecord = (secret: Uint8Array, pairingState: string): Uint8Array => {
   return encoded;
 };
 
+const asPairingState = (value: string | null | undefined): string =>
+  value === "shared" ? "shared" : "unpaired";
+
 const fromStored = (
   stored: Uint8Array,
   legacyPairingState: string | null,
 ): { secret: Uint8Array; pairingState: string; migrated: boolean } => {
   if (stored.length === SECRET_BYTES) {
-    const state =
-      legacyPairingState === "shared" || legacyPairingState === "pending"
-        ? legacyPairingState
-        : "unpaired";
-    return { secret: stored, pairingState: state, migrated: true };
+    return {
+      secret: stored,
+      pairingState: asPairingState(legacyPairingState),
+      migrated: true,
+    };
   }
   expect(stored[0]).toBe(VERSION);
   const secret = stored.slice(1, 1 + SECRET_BYTES);
-  const pairingState = new TextDecoder().decode(stored.slice(1 + SECRET_BYTES));
+  const pairingState = asPairingState(
+    new TextDecoder().decode(stored.slice(1 + SECRET_BYTES)),
+  );
   return { secret, pairingState, migrated: false };
 };
 
@@ -68,6 +73,19 @@ describe("the iOS bundled Shared owner record", () => {
       migrated: true,
     });
     expect(fromStored(secret, null)).toEqual({
+      secret,
+      pairingState: "unpaired",
+      migrated: true,
+    });
+  });
+
+  it("fail-closes a leftover pending pairing state to unpaired", () => {
+    expect(fromStored(encodeRecord(secret, "pending"), null)).toEqual({
+      secret,
+      pairingState: "unpaired",
+      migrated: false,
+    });
+    expect(fromStored(secret, "pending")).toEqual({
       secret,
       pairingState: "unpaired",
       migrated: true,

@@ -17,18 +17,19 @@ enum OwnerSecretsError: Error {
 struct SharedOwnerRecord: Equatable {
     static let version: UInt8 = 1
     static let secretByteCount = 32
-    static let validPairingStates: Set<String> = ["unpaired", "pending", "shared"]
+    static let writablePairingStates: Set<String> = ["unpaired", "shared"]
 
     let secret: Data
     let pairingState: String
 
+    static func canonicalPairingState(_ value: String) -> String {
+        value == "shared" ? "shared" : "unpaired"
+    }
+
     init(secret: Data, pairingState: String) throws {
         guard secret.count == Self.secretByteCount else { throw OwnerSecretsError.invalidSecret }
-        guard Self.validPairingStates.contains(pairingState) else {
-            throw OwnerSecretsError.invalidSecret
-        }
         self.secret = secret
-        self.pairingState = pairingState
+        self.pairingState = Self.canonicalPairingState(pairingState)
     }
 
     func encode() -> Data {
@@ -55,10 +56,13 @@ struct SharedOwnerRecord: Equatable {
         legacyPairingState: String?
     ) throws -> (SharedOwnerRecord, migrated: Bool) {
         if stored.count == secretByteCount {
-            let state = validPairingStates.contains(legacyPairingState ?? "")
-                ? legacyPairingState!
-                : "unpaired"
-            return (try SharedOwnerRecord(secret: stored, pairingState: state), true)
+            return (
+                try SharedOwnerRecord(
+                    secret: stored,
+                    pairingState: canonicalPairingState(legacyPairingState ?? "")
+                ),
+                true
+            )
         }
         return (try decode(stored), false)
     }
@@ -94,7 +98,7 @@ struct OwnerSecretsKeychain {
                 stored,
                 legacyPairingState: legacyState
             )
-            if migrated {
+            if migrated || stored != record.encode() {
                 try save(record.encode(), for: .sharedOwner)
                 try delete(.pairingState)
             }
@@ -121,11 +125,22 @@ struct OwnerSecretsKeychain {
     }
 
     func setPairingState(_ value: String) throws {
+        guard SharedOwnerRecord.writablePairingStates.contains(value) else {
+            throw OwnerSecretsError.invalidSecret
+        }
         let current = try loadSharedOwnerRecord()
         try save(
             try SharedOwnerRecord(secret: current.secret, pairingState: value).encode(),
             for: .sharedOwner
         )
+    }
+
+    func seedBundledSharedOwner(_ secret: Data, rawPairingState: String) throws {
+        guard secret.count == byteCount else { throw OwnerSecretsError.invalidSecret }
+        var data = Data([SharedOwnerRecord.version])
+        data.append(secret)
+        data.append(Data(rawPairingState.utf8))
+        try save(data, for: .sharedOwner)
     }
 
     func seedLegacySharedOwner(_ secret: Data, pairingState: String?) throws {
@@ -262,7 +277,7 @@ final class OwnerSecretsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setPairingState(_ call: CAPPluginCall) {
         guard
             let value = call.getString("pairingState"),
-            SharedOwnerRecord.validPairingStates.contains(value)
+            SharedOwnerRecord.writablePairingStates.contains(value)
         else {
             call.reject("Pairing state is invalid.", "INVALID_OWNER")
             return

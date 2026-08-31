@@ -10,7 +10,7 @@ import {
 } from "@evolu/common";
 
 import { pairingCodeFromSharedOwner, parsePairingCode } from "./pairing-code";
-import type { OwnerSecretStore, PairingState } from "./owner-secret-store";
+import { asPairingState, type OwnerSecretStore, type PairingState } from "./owner-secret-store";
 
 export interface LoadedOwners {
   /** Evolu's AppOwner: the Device owner that never leaves this phone. */
@@ -34,11 +34,10 @@ export interface OwnerManager {
   restoreSharedOwner: (phrase: string) => Promise<RestoreSharedOwnerResult>;
   /**
    * Returns the pairing code for this phone's Shared owner. Showing the code
-   * is pending, not shared, until the couple attests that both phones match.
+   * does not persist pairing state; the Chart stays unpaired until the couple
+   * attests that both phones match, or the other phone joins.
    */
-  shareChart: () => Promise<string>;
-  /** Leaves a pending pairing unpaired. A confirmed shared Chart is unchanged. */
-  abandonPairing: () => Promise<void>;
+  showPairingCode: () => Promise<string>;
   /**
    * Records the in-person attestation that both phones display the same Chart.
    */
@@ -59,7 +58,7 @@ export function createOwnerManager(secretStore: OwnerSecretStore): OwnerManager 
       deviceOwner: createAppOwner(secrets.deviceOwner),
       sharedOwner: createSharedOwner(secrets.sharedOwner),
       sharedOwnerMnemonic: ownerSecretToMnemonic(secrets.sharedOwner),
-      pairingState: secrets.pairingState,
+      pairingState: asPairingState(secrets.pairingState),
     };
   });
 
@@ -77,19 +76,9 @@ export function createOwnerManager(secretStore: OwnerSecretStore): OwnerManager 
       await secretStore.replaceSharedOwner(mnemonicToOwnerSecret(normalized));
       return { ok: true };
     },
-    shareChart: async () => {
-      const current = await owners;
-      if (current.pairingState !== "shared") {
-        await secretStore.setPairingState("pending");
-        owners = Promise.resolve({ ...current, pairingState: "pending" });
-      }
+    showPairingCode: async () => {
+      await owners;
       return pairingCodeFromSharedOwner(rawSharedOwner);
-    },
-    abandonPairing: async () => {
-      const current = await owners;
-      if (current.pairingState !== "pending") return;
-      await secretStore.setPairingState("unpaired");
-      owners = Promise.resolve({ ...current, pairingState: "unpaired" });
     },
     confirmShared: async () => {
       const current = await owners;

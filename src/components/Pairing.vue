@@ -91,24 +91,16 @@ watch(mode, async (next) => {
   if (next !== "join") stopCamera();
   if (next === "show") {
     try {
-      compactCode.value = await ownerManager.shareChart();
+      compactCode.value = await ownerManager.showPairingCode();
     } catch {
       error.value = "This phone could not show a pairing code. Try again.";
     }
   }
 });
 
-const close = async () => {
+const close = () => {
   stopCamera();
   error.value = "";
-  if (mode.value === "show") {
-    try {
-      await ownerManager.abandonPairing();
-    } catch {
-      error.value = "This phone could not leave pairing. Try again.";
-      return;
-    }
-  }
   emit("close");
 };
 
@@ -206,9 +198,9 @@ const joinFromPhoto = async (event: Event) => {
     <section v-else-if="mode === 'show'" class="pairing__section">
       <h2>Show this code to the other phone</h2>
       <p>
-        The other phone scans this code, takes a photo of it, or types it. This
-        Chart is not yet shared. Confirm only when both phones display the same
-        Chart. Backing out leaves this phone unpaired.
+        The other phone scans this code, takes a photo of it, or types it.
+        This Chart is not yet shared. Confirm only when both phones display the
+        same Chart. Backing out leaves this phone unpaired.
       </p>
       <div
         v-if="qrSvg"

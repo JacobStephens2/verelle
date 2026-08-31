@@ -1,19 +1,17 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { OwnerSecret, type OwnerSecret as OwnerSecretValue } from "@evolu/common";
 
-import type {
-  OwnerSecretStore,
-  OwnerSecrets,
-  PairingState,
+import {
+  asPairingState,
+  type OwnerSecretStore,
+  type OwnerSecrets,
+  type PairingState,
 } from "./owner-secret-store";
-
-const asPairingState = (value: string | undefined): PairingState =>
-  value === "shared" || value === "pending" ? value : "unpaired";
 
 interface EncodedOwnerSecrets {
   readonly deviceOwner: string;
   readonly sharedOwner: string;
-  readonly pairingState: PairingState;
+  readonly pairingState: string;
 }
 
 interface OwnerSecretsPlugin {

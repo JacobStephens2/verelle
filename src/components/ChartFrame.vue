@@ -119,9 +119,7 @@ onMounted(() => {
           {{
             pairingState === "shared"
               ? "Shared Chart"
-              : pairingState === "pending"
-                ? "Pairing in progress. This Chart is not yet shared."
-                : "This Chart is only on this phone"
+              : "This Chart is only on this phone"
           }}
         </p>
       </div>

@@ -8,10 +8,11 @@ import { describe, expect, it } from "vitest";
 
 import { createOwnerManager } from "./owner-manager";
 import { pairingCodeFromSharedOwner } from "./pairing-code";
-import type {
-  OwnerSecretStore,
-  OwnerSecrets,
-  PairingState,
+import {
+  asPairingState,
+  type OwnerSecretStore,
+  type OwnerSecrets,
+  type PairingState,
 } from "./owner-secret-store";
 
 const newOwnerSecret = (): OwnerSecret =>
@@ -105,12 +106,13 @@ describe("owner lifecycle", () => {
     expect(guestBefore.pairingState).toBe("unpaired");
     expect(guestBefore.sharedOwner.id).not.toBe(hostBefore.sharedOwner.id);
 
-    const code = await host.shareChart();
+    const code = await host.showPairingCode();
     expect(code).toBe(pairingCodeFromSharedOwner(hostStore.sharedOwner()));
-    expect((await host.load()).pairingState).toBe("pending");
+    expect((await host.load()).pairingState).toBe("unpaired");
+    expect(hostStore.pairingState()).toBe("unpaired");
 
     expect(await guest.joinSharedOwner(code)).toEqual({ ok: true });
-    expect((await host.load()).pairingState).toBe("pending");
+    expect((await host.load()).pairingState).toBe("unpaired");
     await host.confirmShared();
     expect((await host.load()).pairingState).toBe("shared");
 
@@ -120,42 +122,43 @@ describe("owner lifecycle", () => {
     expect(guestAfter.pairingState).toBe("shared");
   });
 
-  it("treats showing a pairing code as pending, not as a shared Chart", async () => {
+  it("does not persist pairing state when showing a pairing code, including across a remount", async () => {
     const hostStore = new RestartableOwnerSecretStore();
     const host = createOwnerManager(hostStore);
 
-    await host.shareChart();
-    expect((await host.load()).pairingState).toBe("pending");
-    expect(hostStore.pairingState()).toBe("pending");
-  });
-
-  it("leaves the Chart unpaired when a pending pairing is abandoned", async () => {
-    const hostStore = new RestartableOwnerSecretStore();
-    const host = createOwnerManager(hostStore);
-
-    await host.shareChart();
-    await host.abandonPairing();
+    const code = await host.showPairingCode();
+    expect(code).toBe(pairingCodeFromSharedOwner(hostStore.sharedOwner()));
     expect((await host.load()).pairingState).toBe("unpaired");
+    expect(hostStore.pairingState()).toBe("unpaired");
+
+    const remounted = createOwnerManager(hostStore);
+    expect((await remounted.load()).pairingState).toBe("unpaired");
     expect(hostStore.pairingState()).toBe("unpaired");
   });
 
-  it("does not unpair a Chart that was already confirmed as shared", async () => {
-    const hostStore = new RestartableOwnerSecretStore();
-    const host = createOwnerManager(hostStore);
+  it("treats a leftover pending pairing state as unpaired", async () => {
+    expect(asPairingState("pending")).toBe("unpaired");
+    expect(asPairingState("shared")).toBe("shared");
+    expect(asPairingState("unpaired")).toBe("unpaired");
+    expect(asPairingState(undefined)).toBe("unpaired");
 
-    await host.shareChart();
-    await host.confirmShared();
-    await host.abandonPairing();
-    expect((await host.load()).pairingState).toBe("shared");
+    const leftover = new RestartableOwnerSecretStore({
+      deviceOwner: newOwnerSecret(),
+      sharedOwner: newOwnerSecret(),
+      pairingState: "pending" as PairingState,
+    });
+    expect((await createOwnerManager(leftover).load()).pairingState).toBe("unpaired");
   });
 
   it("records the attestation that both phones display the same Chart", async () => {
     const hostStore = new RestartableOwnerSecretStore();
     const host = createOwnerManager(hostStore);
 
-    await host.shareChart();
+    await host.showPairingCode();
+    expect(hostStore.pairingState()).toBe("unpaired");
     await host.confirmShared();
     expect((await host.load()).pairingState).toBe("shared");
+    expect(hostStore.pairingState()).toBe("shared");
   });
 
   it("rejects an invalid pairing code without joining this phone to another Chart", async () => {

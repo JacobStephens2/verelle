@@ -45,11 +45,25 @@ final class OwnerSecretsKeychainTests: XCTestCase {
         XCTAssertEqual(migrated.pairingState, "unpaired")
     }
 
-    func testRecordRoundTripKeepsPendingDistinctFromShared() throws {
+    func testLoadFailClosesBundledPendingPairingStateToUnpaired() throws {
         let secret = Data((0..<32).map { UInt8($0) })
-        let pending = try SharedOwnerRecord(secret: secret, pairingState: "pending")
-        let decoded = try SharedOwnerRecord.decode(pending.encode())
-        XCTAssertEqual(decoded, pending)
-        XCTAssertNotEqual(decoded.pairingState, "shared")
+        try keychain.seedBundledSharedOwner(secret, rawPairingState: "pending")
+
+        let loaded = try keychain.loadSharedOwnerRecord()
+        XCTAssertEqual(loaded.secret, secret)
+        XCTAssertEqual(loaded.pairingState, "unpaired")
+
+        let rewritten = try keychain.loadSharedOwnerRecord()
+        XCTAssertEqual(rewritten.pairingState, "unpaired")
+        XCTAssertNotEqual(rewritten.pairingState, "shared")
+    }
+
+    func testLoadFailClosesLegacyPendingPairingStateToUnpaired() throws {
+        let secret = Data((0..<32).map { UInt8($0) })
+        try keychain.seedLegacySharedOwner(secret, pairingState: "pending")
+
+        let migrated = try keychain.loadSharedOwnerRecord()
+        XCTAssertEqual(migrated.secret, secret)
+        XCTAssertEqual(migrated.pairingState, "unpaired")
     }
 }

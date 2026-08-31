@@ -1,10 +1,14 @@
 import type { OwnerSecret } from "@evolu/common";
 
 /**
- * Whether this phone's Chart is unpaired, waiting on an in-person
- * confirmation, or confirmed as shared with a second phone.
+ * Whether this phone's Chart is only on this phone, or confirmed as shared
+ * with a second phone. Showing a pairing code does not persist a third state.
  */
-export type PairingState = "unpaired" | "pending" | "shared";
+export type PairingState = "unpaired" | "shared";
+
+/** Leftover `pending` values from the prior branch tip fail closed to unpaired. */
+export const asPairingState = (value: string | undefined): PairingState =>
+  value === "shared" ? "shared" : "unpaired";
 
 /** The two secrets the native keystore preserves for one installation. */
 export interface OwnerSecrets {
@@ -33,8 +37,8 @@ export interface OwnerSecretStore {
   joinSharedOwner: (sharedOwner: OwnerSecret) => Promise<void>;
 
   /**
-   * Persists pairing state without changing the Shared owner. Showing a code
-   * is pending; backing out is unpaired; a human attestation is shared.
+   * Persists pairing state without changing the Shared owner. The host's
+   * in-person attestation writes `shared`. Showing a code does not call this.
    */
   setPairingState: (pairingState: PairingState) => Promise<void>;
 }
