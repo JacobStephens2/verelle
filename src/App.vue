@@ -16,7 +16,9 @@ const showAllFields = ref(false);
 const editor = useTemplateRef<HTMLElement>("editor");
 const showingBackup = ref(false);
 
-const observations = useObservationStore().observe();
+const observationStore = useObservationStore();
+const observations = observationStore.observe();
+const syncState = observationStore.observeSyncState();
 
 const showDate = (date: CivilDate, revealAllFields: boolean) => {
   selectedDate.value = date;
@@ -52,6 +54,7 @@ const openDayDetails = async (date: CivilDate) => {
     <ChartFrame
       :today="today"
       :observations="observations"
+      :sync-state="syncState"
       @select-date="openDayDetails"
     />
   </main>

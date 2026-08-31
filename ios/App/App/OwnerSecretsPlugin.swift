@@ -85,10 +85,34 @@ final class OwnerSecretsPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let keychain = OwnerSecretsKeychain()
 
+    #if DEBUG
+    // INTERIM (#13): the cross-platform acceptance harness hands one runtime-
+    // generated Shared owner to both debug apps. This is not a product Pairing
+    // path, is absent from release builds, and is deleted when #14 lands.
+    private func interimSharedOwner() throws -> Data? {
+        guard
+            let encoded = ProcessInfo.processInfo.environment[
+                "VERELLE_INTERIM_SHARED_OWNER"
+            ]
+        else { return nil }
+        guard
+            let secret = Data(base64Encoded: encoded),
+            secret.count == 32
+        else { throw OwnerSecretsError.invalidSecret }
+        return secret
+    }
+    #endif
+
     @objc func loadOrCreate(_ call: CAPPluginCall) {
         do {
             let deviceOwner = try keychain.loadOrCreate(.deviceOwner)
-            let sharedOwner = try keychain.loadOrCreate(.sharedOwner)
+            var sharedOwner = try keychain.loadOrCreate(.sharedOwner)
+            #if DEBUG
+            if let interim = try interimSharedOwner() {
+                try keychain.replaceSharedOwner(interim)
+                sharedOwner = interim
+            }
+            #endif
             call.resolve([
                 "deviceOwner": deviceOwner.base64EncodedString(),
                 "sharedOwner": sharedOwner.base64EncodedString(),

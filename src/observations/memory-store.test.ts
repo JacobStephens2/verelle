@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { createMemoryObservationStore } from "./memory-store";
 
 describe("an observation store", () => {
+  it("exposes whether its Observations have synced", () => {
+    expect(createMemoryObservationStore().observeSyncState().value).toBe("synced");
+  });
+
   it("observes an empty record before anything is saved", () => {
     expect(createMemoryObservationStore().observe().value).toEqual([]);
   });

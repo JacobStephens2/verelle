@@ -124,6 +124,15 @@ const waitForMonitorReading = (page, date, expectedReading) =>
     expectedReading,
   );
 
+const waitForSyncState = (page, expectedState, timeout = PAINT_TIMEOUT_MS) =>
+  page.waitForFunction(
+    (state) =>
+      document.querySelector('[data-testid="sync-state"]')?.textContent?.trim() ===
+      state,
+    { timeout },
+    expectedState,
+  );
+
 const readTodaysCell = (page, today) =>
   page.$eval(todaysCellSelector(today), (cell) => ({
     monitorReading:
@@ -177,6 +186,8 @@ try {
   await page.waitForSelector('[data-testid="record-observation"]', {
     timeout: PAINT_TIMEOUT_MS,
   });
+  await waitForSyncState(page, "Synced");
+  console.log("ok: the Chart reports its initial sync completion");
   const today = await todayInBrowser(page);
   assert.equal(
     await page.$eval(recordDateSelector, (input) =>
@@ -467,6 +478,11 @@ try {
     ),
     "Enter all 24 words exactly as they were shown.",
   );
+  // INTERIM SYNC HARNESS (#13): pasting the recorded Shared owner into the
+  // second install is only how cross-device sync is verified before Pairing
+  // exists. It is deliberately exercised through Restore, never presented as
+  // a pairing feature. Issue #14 replaces this test setup with in-person Pairing.
+  //
   // A separate browser context has a separate IndexedDB, OPFS, Cache Storage,
   // cookies, and Web Storage namespace. Its runtime keystore also starts with
   // a different Device owner and Shared owner, making this a fresh install
@@ -519,6 +535,63 @@ try {
     throw new Error("The fresh install did not persist the restored Shared owner");
   }
   console.log("ok: the 24 offline words restored the Chart in a fresh install");
+
+  // The two live installs now hold the same Shared owner. Take the recording
+  // phone offline, change one field, and change a different field on the
+  // restored phone. Neither save waits for the network and both columns must
+  // survive when the first phone reconnects.
+  await page.click('[data-testid="close-backup"]');
+  await waitForSyncState(page, "Synced", RESTORE_TIMEOUT_MS);
+  await waitForSyncState(restorePage, "Synced", RESTORE_TIMEOUT_MS);
+  await page.click(`[data-testid="chart-day"][data-civil-date="${pastDate}"]`);
+  await restorePage.click(
+    `[data-testid="chart-day"][data-civil-date="${pastDate}"]`,
+  );
+  await waitForRecordDate(page, pastDate);
+  await waitForRecordDate(restorePage, pastDate);
+
+  await page.setOfflineMode(true);
+  await page.click('[data-testid="monitor-Low"]');
+  await page.click('[data-testid="save"]');
+  await waitForMonitorReading(page, pastDate, "Low");
+  await waitForSyncState(page, "Pending changes");
+  assert.equal(
+    await page.$$eval(
+      "button[disabled], input[disabled], select[disabled], textarea[disabled]",
+      (elements) => elements.length,
+    ),
+    0,
+    "The offline pending save disabled recording controls",
+  );
+
+  await restorePage.$eval('[data-testid="note"]', (element) => {
+    if (!(element instanceof HTMLTextAreaElement)) return;
+    element.value = "Added by the other phone";
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await restorePage.click('[data-testid="save"]');
+  await restorePage.waitForSelector('[data-testid="save-confirmation"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+
+  await page.setOfflineMode(false);
+  await waitForSyncState(page, "Synced", RESTORE_TIMEOUT_MS);
+  await Promise.all(
+    [page, restorePage].map((sharedPage) =>
+      sharedPage.waitForFunction(
+        () =>
+          document.querySelector('[data-testid="monitor-Low"]')?.getAttribute(
+            "aria-pressed",
+          ) === "true" &&
+          document.querySelector('[data-testid="note"]')?.value ===
+            "Added by the other phone",
+        { timeout: RESTORE_TIMEOUT_MS },
+      ),
+    ),
+  );
+  console.log(
+    "ok: two live phones converged after offline, different-field edits without blocking controls",
+  );
 
   // 10. Track the runtime secrets at the storage APIs and scan every stored
   // representation, including Evolu's Worker-owned OPFS files (ADR 0013).

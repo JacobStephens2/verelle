@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const SRC = path.join(REPO_ROOT, "src");
 const EVOLU_STORE = path.join(SRC, "observations", "evolu-store.ts");
+const SYNC_ADAPTER = path.join(SRC, "sync");
 const POLYFILLS = path.join(SRC, "evolu-polyfills.ts");
 const IOS_OWNER_PLUGIN = path.join(
   REPO_ROOT,
@@ -48,15 +49,16 @@ describe("the Evolu boundaries", () => {
     const importers: string[] = [];
     for (const file of await filesUnder(SRC)) {
       if (file === EVOLU_STORE || file === POLYFILLS) continue;
+      if (file.startsWith(SYNC_ADAPTER + path.sep)) continue;
       if (file.startsWith(path.join(SRC, "owners") + path.sep)) continue;
       if (/@evolu\//.test(await readFile(file, "utf8"))) importers.push(relative(file));
     }
 
     // The Chart projection has to stay a pure function of Observations plus
     // today (issue #9), and that only holds while Evolu is reachable from one
-    // module, except for the owner lifecycle that turns keystore bytes into
-    // Evolu's AppOwner and SharedOwner. A view that imports it is the first
-    // step to a query or owner conversion in a template.
+    // adapter boundary, except for the owner lifecycle that turns keystore
+    // bytes into Evolu's AppOwner and SharedOwner. A view that imports it is
+    // the first step to a query or owner conversion in a template.
     expect(importers).toEqual([]);
   });
 
@@ -94,7 +96,7 @@ describe("the two load-bearing Evolu configuration requirements", () => {
     const store = await readFile(EVOLU_STORE, "utf8");
     const deleteAt = store.indexOf("delete (globalThis");
     // The call site, not the comment above it that names the same function.
-    const depsAt = store.indexOf("createRun(createEvoluDeps())");
+    const depsAt = store.indexOf("createRun(createVerelleEvoluDeps(");
 
     expect(deleteAt).toBeGreaterThan(-1);
     expect(depsAt).toBeGreaterThan(-1);
