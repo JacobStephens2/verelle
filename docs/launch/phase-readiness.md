@@ -1,5 +1,12 @@
 # Phase 1–8 readiness ledger
 
+> **Historical — superseded by the MVP restart.**
+>
+> This ledger reports the retired Rust/Axum, account, web, billing, and watch
+> implementation archived by ADR 0009. Its phase states and remaining gates are
+> not the status of the current Capacitor/Vue/Evolu app. See
+> `docs/plans/mvp-restart.md` and issue #6 for current status.
+
 Status date: 2026-07-20. This ledger distinguishes implemented software from acceptance evidence. A phase is not “complete” merely because its code compiles.
 
 ## Current outcome

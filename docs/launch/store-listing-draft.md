@@ -1,5 +1,12 @@
 # Verelle store listing draft
 
+> **Historical — not current product copy.**
+>
+> This draft describes retired account, web, export, and subscription features
+> archived by ADR 0009. It is not accurate for the current MVP and must not be
+> used for a store submission. Future listing copy must be written from the
+> shipped build after handover validation.
+
 ## Name and subtitle
 
 **Verelle**
