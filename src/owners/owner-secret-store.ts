@@ -1,9 +1,13 @@
 import type { OwnerSecret } from "@evolu/common";
 
+/** Whether this phone's Chart has been paired with a second phone. */
+export type PairingState = "unpaired" | "shared";
+
 /** The two secrets the native keystore preserves for one installation. */
 export interface OwnerSecrets {
   readonly deviceOwner: OwnerSecret;
   readonly sharedOwner: OwnerSecret;
+  readonly pairingState: PairingState;
 }
 
 /**
@@ -18,4 +22,13 @@ export interface OwnerSecretStore {
 
   /** Atomically replaces only the Shared owner during a restore. */
   replaceSharedOwner: (sharedOwner: OwnerSecret) => Promise<void>;
+
+  /**
+   * Replaces this phone's Shared owner and marks the Chart shared together.
+   * Invalid codes never reach this method; a failed write must not reload.
+   */
+  joinSharedOwner: (sharedOwner: OwnerSecret) => Promise<void>;
+
+  /** Records that this phone is on a shared Chart after showing a pairing code. */
+  markShared: () => Promise<void>;
 }

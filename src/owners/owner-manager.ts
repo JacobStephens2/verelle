@@ -5,10 +5,12 @@ import {
   mnemonicToOwnerSecret,
   ownerSecretToMnemonic,
   type AppOwner,
+  type OwnerSecret,
   type SharedOwner,
 } from "@evolu/common";
 
-import type { OwnerSecretStore } from "./owner-secret-store";
+import { pairingCodeFromSharedOwner, parsePairingCode } from "./pairing-code";
+import type { OwnerSecretStore, PairingState } from "./owner-secret-store";
 
 export interface LoadedOwners {
   /** Evolu's AppOwner: the Device owner that never leaves this phone. */
@@ -17,15 +19,25 @@ export interface LoadedOwners {
   readonly sharedOwner: SharedOwner;
   /** The only owner material the backup screen may reveal. */
   readonly sharedOwnerMnemonic: Mnemonic;
+  /** Whether this phone is on a shared Chart. */
+  readonly pairingState: PairingState;
 }
 
 export type RestoreSharedOwnerResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly message: string };
 
+export type JoinSharedOwnerResult = RestoreSharedOwnerResult;
+
 export interface OwnerManager {
   load: () => Promise<LoadedOwners>;
   restoreSharedOwner: (phrase: string) => Promise<RestoreSharedOwnerResult>;
+  /** Returns the pairing code for this phone's Shared owner without changing pairing state. */
+  shareChart: () => Promise<string>;
+  /** Records that the other phone has joined this Chart. */
+  markShared: () => Promise<void>;
+  /** Joins the Chart named by a pairing code, or fails without changing this phone. */
+  joinSharedOwner: (code: string) => Promise<JoinSharedOwnerResult>;
 }
 
 const normalizePhrase = (phrase: string): string =>
@@ -33,11 +45,16 @@ const normalizePhrase = (phrase: string): string =>
 
 /** Creates Evolu owners from material held by an {@link OwnerSecretStore}. */
 export function createOwnerManager(secretStore: OwnerSecretStore): OwnerManager {
-  const owners = secretStore.loadOrCreate().then(({ deviceOwner, sharedOwner }) => ({
-    deviceOwner: createAppOwner(deviceOwner),
-    sharedOwner: createSharedOwner(sharedOwner),
-    sharedOwnerMnemonic: ownerSecretToMnemonic(sharedOwner),
-  }));
+  let rawSharedOwner!: OwnerSecret;
+  let owners = secretStore.loadOrCreate().then((secrets) => {
+    rawSharedOwner = secrets.sharedOwner;
+    return {
+      deviceOwner: createAppOwner(secrets.deviceOwner),
+      sharedOwner: createSharedOwner(secrets.sharedOwner),
+      sharedOwnerMnemonic: ownerSecretToMnemonic(secrets.sharedOwner),
+      pairingState: secrets.pairingState,
+    };
+  });
 
   return {
     load: () => owners,
@@ -51,6 +68,22 @@ export function createOwnerManager(secretStore: OwnerSecretStore): OwnerManager 
       }
 
       await secretStore.replaceSharedOwner(mnemonicToOwnerSecret(normalized));
+      return { ok: true };
+    },
+    shareChart: async () => {
+      await owners;
+      return pairingCodeFromSharedOwner(rawSharedOwner);
+    },
+    markShared: async () => {
+      const current = await owners;
+      await secretStore.markShared();
+      owners = Promise.resolve({ ...current, pairingState: "shared" });
+    },
+    joinSharedOwner: async (code) => {
+      const parsed = parsePairingCode(code);
+      if (!parsed.ok) return parsed;
+
+      await secretStore.joinSharedOwner(parsed.sharedOwner);
       return { ok: true };
     },
   };

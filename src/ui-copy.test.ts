@@ -65,4 +65,19 @@ describe("UI copy", () => {
     expect(backupScreen).toContain("If you lose these words, you lose the Chart.");
     expect(backupScreen).toContain("Nobody can restore it.");
   });
+
+  it("states whether this phone is on a shared Chart", async () => {
+    const chart = renderedText(
+      "ChartFrame.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "ChartFrame.vue"), "utf8"),
+    );
+    const pairing = renderedText(
+      "Pairing.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "Pairing.vue"), "utf8"),
+    );
+
+    expect(chart).toContain("This Chart is only on this phone");
+    expect(chart).toContain("Shared Chart");
+    expect(pairing).toContain("never reaches the Relay");
+  });
 });

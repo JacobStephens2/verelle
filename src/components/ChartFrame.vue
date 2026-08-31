@@ -6,12 +6,14 @@ import { todayCivilDate } from "../chart/civil-date";
 import type { ChartDay, UnassignedChartDay } from "../chart/projection";
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
 import type { MonitorReading, Observation } from "../observations/observation";
+import type { PairingState } from "../owners/owner-secret-store";
 import type { SyncState } from "../sync/sync-state";
 
 const props = defineProps<{
   today?: CivilDate;
   observations?: readonly Observation[];
   syncState?: SyncState;
+  pairingState?: PairingState;
 }>();
 
 const emit = defineEmits<{
@@ -111,7 +113,12 @@ onMounted(() => {
 <template>
   <section ref="root" class="chart" data-testid="chart-frame" aria-label="Chart">
     <header class="chart__header">
-      <h1 class="chart__title">Chart</h1>
+      <div class="chart__heading">
+        <h1 class="chart__title">Chart</h1>
+        <p class="chart__pairing-state" data-testid="pairing-state">
+          {{ pairingState === "shared" ? "Shared Chart" : "This Chart is only on this phone" }}
+        </p>
+      </div>
       <div class="chart__status">
         <p
           class="chart__sync-state"
@@ -251,11 +258,22 @@ onMounted(() => {
   gap: 1rem;
 }
 
+.chart__heading {
+  display: grid;
+  gap: 0.15rem;
+}
+
 .chart__title {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+.chart__pairing-state {
+  margin: 0;
+  color: var(--verelle-ink-muted);
+  font-size: 0.8125rem;
 }
 
 .chart__today {

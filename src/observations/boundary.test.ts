@@ -196,3 +196,21 @@ describe("the Owner secret", () => {
     expect(offences).toEqual([]);
   });
 });
+
+describe("Pairing", () => {
+  it("carries the Shared owner without the Relay, logs, or the interim secret path", async () => {
+    const pairingCode = await readFile(path.join(SRC, "owners", "pairing-code.ts"), "utf8");
+    const ownerManager = await readFile(path.join(SRC, "owners", "owner-manager.ts"), "utf8");
+    const [ios, android] = await Promise.all([
+      readFile(IOS_OWNER_PLUGIN, "utf8"),
+      readFile(ANDROID_OWNER_PLUGIN, "utf8"),
+    ]);
+
+    expect(pairingCode).not.toMatch(/from ["']@evolu\/web["']/);
+    expect(pairingCode).not.toMatch(/WebSocket|free\.evoluhq|sync-transport/);
+    expect(ownerManager).not.toMatch(/from ["']\.\.\/sync/);
+    expect(ownerManager).not.toMatch(/WebSocket|free\.evoluhq/);
+    expect(ios).not.toMatch(/INTERIM_SHARED_OWNER/);
+    expect(android).not.toMatch(/INTERIM_SHARED_OWNER/);
+  });
+});

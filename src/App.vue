@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef } from "vue";
+import { computed, nextTick, onMounted, ref, useTemplateRef } from "vue";
 
 import type { CivilDate } from "./chart/civil-date";
 import BackupRestore from "./components/BackupRestore.vue";
 import ChartFrame from "./components/ChartFrame.vue";
+import Pairing from "./components/Pairing.vue";
 import RecordObservation from "./components/RecordObservation.vue";
 import { todayCivilDate } from "./chart/civil-date";
 import { useObservationStore } from "./observations/store";
+import { useOwnerManager } from "./owners/owner-manager-store";
+import type { PairingState } from "./owners/owner-secret-store";
 
 // The app opens on today. A Chart day or the date picker moves this selection
 // only after that zero-navigation starting point has painted.
@@ -15,10 +18,22 @@ const selectedDate = ref<CivilDate>(today.value);
 const showAllFields = ref(false);
 const editor = useTemplateRef<HTMLElement>("editor");
 const showingBackup = ref(false);
+const showingPairing = ref(false);
+const pairingState = ref<PairingState>("unpaired");
 
 const observationStore = useObservationStore();
+const ownerManager = useOwnerManager();
 const observations = observationStore.observe();
 const syncState = observationStore.observeSyncState();
+
+onMounted(async () => {
+  pairingState.value = (await ownerManager.load()).pairingState;
+});
+
+const closePairing = async () => {
+  showingPairing.value = false;
+  pairingState.value = (await ownerManager.load()).pairingState;
+};
 
 const showDate = (date: CivilDate, revealAllFields: boolean) => {
   selectedDate.value = date;
@@ -36,8 +51,12 @@ const openDayDetails = async (date: CivilDate) => {
 
 <template>
   <BackupRestore v-if="showingBackup" @close="showingBackup = false" />
+  <Pairing v-else-if="showingPairing" @close="closePairing" />
   <main v-else class="app">
     <nav class="app__utility" aria-label="Chart tools">
+      <button type="button" data-testid="open-pairing" @click="showingPairing = true">
+        Pair phones
+      </button>
       <button type="button" data-testid="open-backup" @click="showingBackup = true">
         Backup &amp; restore
       </button>
@@ -55,6 +74,7 @@ const openDayDetails = async (date: CivilDate) => {
       :today="today"
       :observations="observations"
       :sync-state="syncState"
+      :pairing-state="pairingState"
       @select-date="openDayDetails"
     />
   </main>
@@ -70,6 +90,7 @@ const openDayDetails = async (date: CivilDate) => {
 .app__utility {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
   padding: 0.5rem 1rem 0;
 }
 

@@ -1,16 +1,26 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import { OwnerSecret, type OwnerSecret as OwnerSecretValue } from "@evolu/common";
 
-import type { OwnerSecretStore, OwnerSecrets } from "./owner-secret-store";
+import type {
+  OwnerSecretStore,
+  OwnerSecrets,
+  PairingState,
+} from "./owner-secret-store";
+
+const asPairingState = (value: string | undefined): PairingState =>
+  value === "shared" ? "shared" : "unpaired";
 
 interface EncodedOwnerSecrets {
   readonly deviceOwner: string;
   readonly sharedOwner: string;
+  readonly pairingState: PairingState;
 }
 
 interface OwnerSecretsPlugin {
   loadOrCreate: () => Promise<EncodedOwnerSecrets>;
   replaceSharedOwner: (options: { readonly sharedOwner: string }) => Promise<void>;
+  joinSharedOwner: (options: { readonly sharedOwner: string }) => Promise<void>;
+  markShared: () => Promise<void>;
 }
 
 const ownerSecretsPlugin = registerPlugin<OwnerSecretsPlugin>("OwnerSecrets");
@@ -32,6 +42,10 @@ interface BrowserSmokeOwnerStore {
   readonly replaceSharedOwner: (options: {
     readonly sharedOwner: string;
   }) => Promise<void>;
+  readonly joinSharedOwner: (options: {
+    readonly sharedOwner: string;
+  }) => Promise<void>;
+  readonly markShared: () => Promise<void>;
 }
 
 interface BrowserSmokeGlobal {
@@ -63,10 +77,17 @@ function createDevelopmentOwnerSecretStore(): OwnerSecretStore {
       return {
         deviceOwner: decodeSecret(stored.deviceOwner),
         sharedOwner: decodeSecret(stored.sharedOwner),
+        pairingState: asPairingState(stored.pairingState),
       };
     },
     replaceSharedOwner: async (sharedOwner) => {
       await injected.replaceSharedOwner({ sharedOwner: encodeSecret(sharedOwner) });
+    },
+    joinSharedOwner: async (sharedOwner) => {
+      await injected.joinSharedOwner({ sharedOwner: encodeSecret(sharedOwner) });
+    },
+    markShared: async () => {
+      await injected.markShared();
     },
   };
 }
@@ -81,6 +102,7 @@ export function createCapacitorOwnerSecretStore(): OwnerSecretStore {
       return {
         deviceOwner: decodeSecret(stored.deviceOwner),
         sharedOwner: decodeSecret(stored.sharedOwner),
+        pairingState: asPairingState(stored.pairingState),
       };
     },
     replaceSharedOwner: async (sharedOwner) => {
@@ -88,5 +110,11 @@ export function createCapacitorOwnerSecretStore(): OwnerSecretStore {
         sharedOwner: encodeSecret(sharedOwner),
       });
     },
+    joinSharedOwner: async (sharedOwner) => {
+      await ownerSecretsPlugin.joinSharedOwner({
+        sharedOwner: encodeSecret(sharedOwner),
+      });
+    },
+    markShared: () => ownerSecretsPlugin.markShared(),
   };
 }

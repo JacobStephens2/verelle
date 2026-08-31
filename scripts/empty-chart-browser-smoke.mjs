@@ -118,6 +118,17 @@ try {
   assert.equal(filledCells, 0, `${filledCells} cells were filled in an empty chart`);
   console.log(`ok: empty state reads ${JSON.stringify(emptyState)} over ${columns.length} empty cells`);
 
+  const pairingState = await page.$eval(
+    '[data-testid="pairing-state"]',
+    (element) => element.textContent?.trim() ?? "",
+  );
+  assert.equal(
+    pairingState,
+    "This Chart is only on this phone",
+    "An unpaired phone did not say the Chart is only on this phone",
+  );
+  console.log("ok: unpaired Chart state is visible");
+
   // 4. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     failures.push(`Console errors during launch: ${JSON.stringify(consoleErrors)}`);

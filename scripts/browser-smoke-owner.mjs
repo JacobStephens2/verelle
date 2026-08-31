@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 const createOwnerSecrets = () => ({
   deviceOwner: randomBytes(32).toString("base64"),
   sharedOwner: randomBytes(32).toString("base64"),
+  pairingState: "unpaired",
 });
 
 /** Installs a factory in the page so every storage check uses one scanner. */
@@ -111,9 +112,16 @@ export async function installBrowserSmokeOwner(page, options = {}) {
       ownerSecrets = { ...ownerSecrets, sharedOwner };
     },
   );
+  await page.exposeFunction("__verelleBrowserSmokeJoinSharedOwner", (sharedOwner) => {
+    ownerSecrets = { ...ownerSecrets, sharedOwner, pairingState: "shared" };
+  });
+  await page.exposeFunction("__verelleBrowserSmokeMarkShared", () => {
+    ownerSecrets = { ...ownerSecrets, pairingState: "shared" };
+  });
 
   const encodedOwnerSecrets = [
-    ...Object.values(ownerSecrets),
+    ownerSecrets.deviceOwner,
+    ownerSecrets.sharedOwner,
     ...(options.additionalEncodedOwnerSecrets ?? []),
   ];
   await page.evaluateOnNewDocument(installOwnerMaterialScanner);
@@ -186,6 +194,9 @@ export async function installBrowserSmokeOwner(page, options = {}) {
         loadOrCreate: () => globalThis.__verelleBrowserSmokeLoadOwners(),
         replaceSharedOwner: ({ sharedOwner }) =>
           globalThis.__verelleBrowserSmokeReplaceSharedOwner(sharedOwner),
+        joinSharedOwner: ({ sharedOwner }) =>
+          globalThis.__verelleBrowserSmokeJoinSharedOwner(sharedOwner),
+        markShared: () => globalThis.__verelleBrowserSmokeMarkShared(),
       }),
       configurable: false,
       enumerable: false,
@@ -203,6 +214,65 @@ export async function installBrowserSmokeOwner(page, options = {}) {
     initialOwnerSecrets: { ...ownerSecrets },
     currentOwnerSecrets: () => ({ ...ownerSecrets }),
   };
+}
+
+/** Records Relay WebSocket and fetch traffic so pairing can prove the secret never left the phone. */
+export async function installRelayTrace(page) {
+  await page.evaluateOnNewDocument(() => {
+    const frames = [];
+    Object.defineProperty(globalThis, "__VERELLE_RELAY_TRACE__", {
+      value: frames,
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    });
+    const OriginalWebSocket = globalThis.WebSocket;
+    if (OriginalWebSocket !== undefined) {
+      globalThis.WebSocket = class extends OriginalWebSocket {
+        constructor(url, protocols) {
+          super(url, protocols);
+          frames.push({ kind: "websocket-open", url: String(url) });
+          this.addEventListener("message", (event) => {
+            frames.push({ kind: "websocket-recv", data: event.data });
+          });
+        }
+        send(data) {
+          frames.push({ kind: "websocket-send", data });
+          return super.send(data);
+        }
+      };
+    }
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      frames.push({ kind: "fetch", url, body: init?.body ?? null });
+      return originalFetch(input, init);
+    };
+  });
+}
+
+/** True when any captured Relay frame contains Owner secret or pairing-code material. */
+export async function relayTraceContainsOwnerMaterial(page, materials) {
+  return page.evaluate(
+    async (encoded, text) => {
+      const scanner = globalThis.__VERELLE_BROWSER_SMOKE_CREATE_OWNER_SCANNER__(
+        encoded,
+        text,
+      );
+      const frames = globalThis.__VERELLE_RELAY_TRACE__ ?? [];
+      for (const frame of frames) {
+        if (await scanner.containsOwnerMaterial(frame)) return true;
+      }
+      return false;
+    },
+    materials.encodedOwnerSecrets,
+    materials.textMaterials ?? [],
+  );
 }
 
 /**

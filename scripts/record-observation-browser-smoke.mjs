@@ -18,6 +18,8 @@ import puppeteer from "puppeteer-core";
 import {
   findOwnerMaterialInBrowserStorage,
   installBrowserSmokeOwner,
+  installRelayTrace,
+  relayTraceContainsOwnerMaterial,
 } from "./browser-smoke-owner.mjs";
 
 const PORT = 4194;
@@ -128,6 +130,15 @@ const waitForSyncState = (page, expectedState, timeout = PAINT_TIMEOUT_MS) =>
   page.waitForFunction(
     (state) =>
       document.querySelector('[data-testid="sync-state"]')?.textContent?.trim() ===
+      state,
+    { timeout },
+    expectedState,
+  );
+
+const waitForPairingState = (page, expectedState, timeout = PAINT_TIMEOUT_MS) =>
+  page.waitForFunction(
+    (state) =>
+      document.querySelector('[data-testid="pairing-state"]')?.textContent?.trim() ===
       state,
     { timeout },
     expectedState,
@@ -478,11 +489,6 @@ try {
     ),
     "Enter all 24 words exactly as they were shown.",
   );
-  // INTERIM SYNC HARNESS (#13): pasting the recorded Shared owner into the
-  // second install is only how cross-device sync is verified before Pairing
-  // exists. It is deliberately exercised through Restore, never presented as
-  // a pairing feature. Issue #14 replaces this test setup with in-person Pairing.
-  //
   // A separate browser context has a separate IndexedDB, OPFS, Cache Storage,
   // cookies, and Web Storage namespace. Its runtime keystore also starts with
   // a different Device owner and Shared owner, making this a fresh install
@@ -534,21 +540,131 @@ try {
   ) {
     throw new Error("The fresh install did not persist the restored Shared owner");
   }
+  const restoreStorageViolations = await findOwnerMaterialInBrowserStorage(
+    restorePage,
+    {
+      encodedOwnerSecrets: [
+        restoreOwner.initialOwnerSecrets.deviceOwner,
+        restoreOwner.initialOwnerSecrets.sharedOwner,
+        recordedOwnerSecrets.sharedOwner,
+      ],
+      textMaterials: [recordedPhrase],
+    },
+  );
+  for (const surface of restoreStorageViolations) {
+    fail(`The restored install wrote Owner secret material to ${surface}`);
+  }
+  await restoreContext.close();
   console.log("ok: the 24 offline words restored the Chart in a fresh install");
+
+  await page.click('[data-testid="close-backup"]');
+  await waitForPairingState(page, "This Chart is only on this phone");
+  await page.click('[data-testid="open-pairing"]');
+  await page.click('[data-testid="show-pairing-code"]');
+  await page.waitForSelector('[data-testid="pairing-code"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  const pairingCode = await page.$eval(
+    '[data-testid="pairing-code"]',
+    (element) => (element.textContent ?? "").replace(/\s+/gu, ""),
+  );
+  assert.equal(pairingCode.length, 58, "Phone A did not display a pairing code");
+  console.log("ok: Phone A displayed a pairing code");
+
+  const pairContext = await browser.createBrowserContext();
+  const pairPage = await pairContext.newPage();
+  await pairPage.setViewport(VIEWPORT);
+  const pairOwner = await installBrowserSmokeOwner(pairPage, {
+    additionalEncodedOwnerSecrets: [recordedOwnerSecrets.sharedOwner],
+  });
+  await installRelayTrace(pairPage);
+  pairPage.on("pageerror", (error) =>
+    consoleErrors.push(`paired install: ${String(error)}`),
+  );
+  pairPage.on("console", (message) => {
+    if (message.type() === "error") {
+      consoleErrors.push(`paired install: ${message.text()}`);
+    }
+  });
+
+  await pairPage.goto(origin, { waitUntil: "domcontentloaded" });
+  await pairPage.waitForSelector('[data-testid="chart-empty-state"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  await waitForPairingState(pairPage, "This Chart is only on this phone");
+  await pairPage.click('[data-testid="open-pairing"]');
+  await pairPage.click('[data-testid="join-chart"]');
+  await pairPage.type('[data-testid="pairing-code-input"]', "not a pairing code");
+  await pairPage.click('[data-testid="submit-pairing-code"]');
+  assert.equal(
+    await pairPage.$eval(
+      '[data-testid="pairing-error"]',
+      (element) => element.textContent?.trim() ?? "",
+    ),
+    "That pairing code is not valid. This phone is still on its own Chart.",
+  );
+  await pairPage.click('[data-testid="close-pairing"]');
+  await waitForPairingState(pairPage, "This Chart is only on this phone");
+  await pairPage.waitForSelector('[data-testid="chart-empty-state"]', {
+    timeout: PAINT_TIMEOUT_MS,
+  });
+  console.log("ok: a failed pairing left Phone B unpaired on its own Chart");
+
+  await pairPage.click('[data-testid="open-pairing"]');
+  await pairPage.click('[data-testid="join-chart"]');
+  await pairPage.$eval(
+    '[data-testid="pairing-code-input"]',
+    (element, code) => {
+      if (!(element instanceof HTMLTextAreaElement)) return;
+      element.value = code;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    },
+    pairingCode,
+  );
+  await Promise.all([
+    pairPage.waitForNavigation({
+      waitUntil: "domcontentloaded",
+      timeout: PAINT_TIMEOUT_MS,
+    }),
+    pairPage.click('[data-testid="submit-pairing-code"]'),
+  ]);
+  await waitForTodaysMarkedPeak(pairPage, today, RESTORE_TIMEOUT_MS);
+  await waitForPairingState(pairPage, "Shared Chart");
+  if (pairOwner.currentOwnerSecrets().sharedOwner !== recordedOwnerSecrets.sharedOwner) {
+    throw new Error("Phone B did not persist the joined Shared owner");
+  }
+  const pairingLeakedToRelay = await relayTraceContainsOwnerMaterial(pairPage, {
+    encodedOwnerSecrets: [
+      recordedOwnerSecrets.deviceOwner,
+      recordedOwnerSecrets.sharedOwner,
+      pairOwner.initialOwnerSecrets.deviceOwner,
+      pairOwner.initialOwnerSecrets.sharedOwner,
+    ],
+    textMaterials: [recordedPhrase, pairingCode],
+  });
+  if (pairingLeakedToRelay) {
+    fail("Pairing sent Shared owner or pairing-code material to the Relay");
+  }
+  console.log(
+    "ok: Phone B joined by typing the pairing code; the Shared owner never reached the Relay",
+  );
+
+  await page.click('[data-testid="confirm-pairing"]');
+  await waitForPairingState(page, "Shared Chart");
+  console.log("ok: Phone A marked the Chart shared after the other phone joined");
 
   // The two live installs now hold the same Shared owner. Take the recording
   // phone offline, change one field, and change a different field on the
-  // restored phone. Neither save waits for the network and both columns must
+  // paired phone. Neither save waits for the network and both columns must
   // survive when the first phone reconnects.
-  await page.click('[data-testid="close-backup"]');
   await waitForSyncState(page, "Synced", RESTORE_TIMEOUT_MS);
-  await waitForSyncState(restorePage, "Synced", RESTORE_TIMEOUT_MS);
+  await waitForSyncState(pairPage, "Synced", RESTORE_TIMEOUT_MS);
   await page.click(`[data-testid="chart-day"][data-civil-date="${pastDate}"]`);
-  await restorePage.click(
+  await pairPage.click(
     `[data-testid="chart-day"][data-civil-date="${pastDate}"]`,
   );
   await waitForRecordDate(page, pastDate);
-  await waitForRecordDate(restorePage, pastDate);
+  await waitForRecordDate(pairPage, pastDate);
 
   await page.setOfflineMode(true);
   await page.click('[data-testid="monitor-Low"]');
@@ -568,20 +684,20 @@ try {
     "The offline pending save disabled recording controls",
   );
 
-  await restorePage.$eval('[data-testid="note"]', (element) => {
+  await pairPage.$eval('[data-testid="note"]', (element) => {
     if (!(element instanceof HTMLTextAreaElement)) return;
     element.value = "Added by the other phone";
     element.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await restorePage.click('[data-testid="save"]');
-  await restorePage.waitForSelector('[data-testid="save-confirmation"]', {
+  await pairPage.click('[data-testid="save"]');
+  await pairPage.waitForSelector('[data-testid="save-confirmation"]', {
     timeout: PAINT_TIMEOUT_MS,
   });
 
   await page.setOfflineMode(false);
   await waitForSyncState(page, "Synced", RESTORE_TIMEOUT_MS);
   await Promise.all(
-    [page, restorePage].map((sharedPage) =>
+    [page, pairPage].map((sharedPage) =>
       sharedPage.waitForFunction(
         () =>
           document.querySelector('[data-testid="monitor-Low"]')?.getAttribute(
@@ -603,29 +719,30 @@ try {
   // 10. Track the runtime secrets at the storage APIs and scan every stored
   // representation, including Evolu's Worker-owned OPFS files (ADR 0013).
   const recordingStorageViolations = await findOwnerMaterialInBrowserStorage(page, {
-    encodedOwnerSecrets: Object.values(recordedOwnerSecrets),
-    textMaterials: [recordedPhrase],
+    encodedOwnerSecrets: [
+      recordedOwnerSecrets.deviceOwner,
+      recordedOwnerSecrets.sharedOwner,
+    ],
+    textMaterials: [recordedPhrase, pairingCode],
   });
-  const restoreStorageViolations = await findOwnerMaterialInBrowserStorage(
-    restorePage,
-    {
-      encodedOwnerSecrets: [
-        ...Object.values(restoreOwner.initialOwnerSecrets),
-        recordedOwnerSecrets.sharedOwner,
-      ],
-      textMaterials: [recordedPhrase],
-    },
-  );
+  const pairStorageViolations = await findOwnerMaterialInBrowserStorage(pairPage, {
+    encodedOwnerSecrets: [
+      pairOwner.initialOwnerSecrets.deviceOwner,
+      pairOwner.initialOwnerSecrets.sharedOwner,
+      recordedOwnerSecrets.sharedOwner,
+    ],
+    textMaterials: [recordedPhrase, pairingCode],
+  });
   for (const surface of recordingStorageViolations) {
     fail(`The recording install wrote Owner secret material to ${surface}`);
   }
-  for (const surface of restoreStorageViolations) {
-    fail(`The fresh install wrote Owner secret material to ${surface}`);
+  for (const surface of pairStorageViolations) {
+    fail(`The paired install wrote Owner secret material to ${surface}`);
   }
   console.log(
     "ok: no Owner secret material reached Web Storage, IndexedDB, cookies, caches, Storage Buckets, or OPFS",
   );
-  await restoreContext.close();
+  await pairContext.close();
 
   // 11. A reload is the browser's cold relaunch: the Observation is still there.
   await page.reload({ waitUntil: "domcontentloaded" });
