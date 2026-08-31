@@ -23,8 +23,8 @@ const emit = defineEmits<{ close: [] }>();
     <section aria-labelledby="identity-title" class="privacy__section">
       <h2 id="identity-title">No account, no email, no password</h2>
       <p data-testid="no-account">
-        There is no account, no email, and no password. Using Verelle does not mean
-        handing your identity to anybody.
+        There is no account, no email, and no password.
+        Verelle does not ask for a name or contact information.
       </p>
     </section>
 
@@ -44,8 +44,7 @@ const emit = defineEmits<{ close: [] }>();
     <section aria-labelledby="loss-title" class="privacy__section">
       <h2 id="loss-title">Losing the Owner secret</h2>
       <p>
-        The Owner secret is the 24 Shared owner words you write down in Backup
-        &amp; restore.
+        The 24 Shared owner words you write down in Backup &amp; restore are an offline record of the Shared owner secret.
       </p>
       <p class="privacy__warning" data-testid="owner-loss-warning">
         If you lose these words, you lose the Chart. Nobody can restore it.

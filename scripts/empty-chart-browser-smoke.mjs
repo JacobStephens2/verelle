@@ -138,6 +138,12 @@ try {
     "Privacy and about omitted the metadata disclosure",
   );
   assert.ok(
+    privacyCopy.includes(
+      "The 24 Shared owner words you write down in Backup & restore are an offline record of the Shared owner secret.",
+    ),
+    "Privacy and about equated the Owner secret with the 24 Shared owner words",
+  );
+  assert.ok(
     privacyCopy.includes("If you lose these words, you lose the Chart."),
     "Privacy and about omitted the Owner-secret loss warning",
   );
@@ -145,6 +151,14 @@ try {
   assert.match(privacyCopy, /no account/i);
   assert.match(privacyCopy, /no email/i);
   assert.match(privacyCopy, /no password/i);
+  assert.ok(
+    privacyCopy.includes("Verelle does not ask for a name or contact information."),
+    "Privacy and about omitted the narrower no-contact fact",
+  );
+  assert.ok(
+    !/handing your identity/i.test(privacyCopy),
+    "Privacy and about overclaimed anonymity",
+  );
   await page.click('[data-testid="close-privacy"]');
   await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
   console.log("ok: Privacy and about is reachable and states what the Relay knows");

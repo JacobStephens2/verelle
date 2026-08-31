@@ -112,6 +112,10 @@ describe("UI copy", () => {
       await readFile(path.join(REPO_ROOT, "src", "components", "PrivacyAbout.vue"), "utf8"),
     );
 
+    expect(privacyScreen).toContain(
+      "The 24 Shared owner words you write down in Backup &amp; restore are an offline record of the Shared owner secret.",
+    );
+    expect(privacyScreen).not.toContain("The Owner secret is the 24 Shared owner words");
     expect(privacyScreen).toContain("If you lose these words, you lose the Chart.");
     expect(privacyScreen).toContain("Nobody can restore it.");
   });
@@ -125,5 +129,7 @@ describe("UI copy", () => {
     expect(privacyScreen).toMatch(/no account/i);
     expect(privacyScreen).toMatch(/no email/i);
     expect(privacyScreen).toMatch(/no password/i);
+    expect(privacyScreen).toContain("Verelle does not ask for a name or contact information.");
+    expect(privacyScreen).not.toMatch(/handing your identity/i);
   });
 });
