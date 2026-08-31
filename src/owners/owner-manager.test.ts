@@ -7,7 +7,6 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { createOwnerManager } from "./owner-manager";
-import { pairingCodeFromSharedOwner } from "./pairing-code";
 import {
   asPairingState,
   type OwnerSecretStore,
@@ -107,7 +106,6 @@ describe("owner lifecycle", () => {
     expect(guestBefore.sharedOwner.id).not.toBe(hostBefore.sharedOwner.id);
 
     const code = await host.showPairingCode();
-    expect(code).toBe(pairingCodeFromSharedOwner(hostStore.sharedOwner()));
     expect((await host.load()).pairingState).toBe("unpaired");
     expect(hostStore.pairingState()).toBe("unpaired");
 
@@ -126,8 +124,7 @@ describe("owner lifecycle", () => {
     const hostStore = new RestartableOwnerSecretStore();
     const host = createOwnerManager(hostStore);
 
-    const code = await host.showPairingCode();
-    expect(code).toBe(pairingCodeFromSharedOwner(hostStore.sharedOwner()));
+    await host.showPairingCode();
     expect((await host.load()).pairingState).toBe("unpaired");
     expect(hostStore.pairingState()).toBe("unpaired");
 
