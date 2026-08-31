@@ -5,6 +5,7 @@ import type { CivilDate } from "./chart/civil-date";
 import BackupRestore from "./components/BackupRestore.vue";
 import ChartFrame from "./components/ChartFrame.vue";
 import Pairing from "./components/Pairing.vue";
+import PrivacyAbout from "./components/PrivacyAbout.vue";
 import RecordObservation from "./components/RecordObservation.vue";
 import { todayCivilDate } from "./chart/civil-date";
 import { useObservationStore } from "./observations/store";
@@ -17,8 +18,7 @@ const today = computed(() => todayCivilDate());
 const selectedDate = ref<CivilDate>(today.value);
 const showAllFields = ref(false);
 const editor = useTemplateRef<HTMLElement>("editor");
-const showingBackup = ref(false);
-const showingPairing = ref(false);
+const overlay = ref<"backup" | "privacy" | "pairing" | null>(null);
 const pairingState = ref<PairingState>("unpaired");
 
 const observationStore = useObservationStore();
@@ -31,7 +31,7 @@ onMounted(async () => {
 });
 
 const closePairing = async () => {
-  showingPairing.value = false;
+  overlay.value = null;
   pairingState.value = (await ownerManager.load()).pairingState;
 };
 
@@ -50,14 +50,18 @@ const openDayDetails = async (date: CivilDate) => {
 </script>
 
 <template>
-  <BackupRestore v-if="showingBackup" @close="showingBackup = false" />
-  <Pairing v-else-if="showingPairing" @close="closePairing" />
+  <BackupRestore v-if="overlay === 'backup'" @close="overlay = null" />
+  <PrivacyAbout v-else-if="overlay === 'privacy'" @close="overlay = null" />
+  <Pairing v-else-if="overlay === 'pairing'" @close="closePairing" />
   <main v-else class="app">
     <nav class="app__utility" aria-label="Chart tools">
-      <button type="button" data-testid="open-pairing" @click="showingPairing = true">
+      <button type="button" data-testid="open-privacy" @click="overlay = 'privacy'">
+        Privacy &amp; about
+      </button>
+      <button type="button" data-testid="open-pairing" @click="overlay = 'pairing'">
         Pair phones
       </button>
-      <button type="button" data-testid="open-backup" @click="showingBackup = true">
+      <button type="button" data-testid="open-backup" @click="overlay = 'backup'">
         Backup &amp; restore
       </button>
     </nav>
@@ -90,6 +94,7 @@ const openDayDetails = async (date: CivilDate) => {
 .app__utility {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.5rem 1rem 0;
 }

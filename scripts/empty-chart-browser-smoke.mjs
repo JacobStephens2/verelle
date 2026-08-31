@@ -129,7 +129,72 @@ try {
   );
   console.log("ok: unpaired Chart state is visible");
 
-  // 4. Nothing failed quietly on the way there.
+  // 4. Pairing is reachable from the Chart and still states that the Chart is
+  //    not yet shared.
+  await page.click('[data-testid="open-pairing"]');
+  await page.waitForSelector('[data-testid="pairing-screen"]', { timeout: PAINT_TIMEOUT_MS });
+  const pairingCopy = await page.$eval(
+    '[data-testid="pairing-screen"]',
+    (element) => element.textContent ?? "",
+  );
+  assert.ok(
+    pairingCopy.includes("never reaches the Relay"),
+    "Pairing omitted that the code never reaches the Relay",
+  );
+  assert.ok(
+    pairingCopy.includes("Show a pairing code"),
+    "Pairing omitted the show-code action",
+  );
+  await page.click('[data-testid="close-pairing"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Pairing is reachable from the Chart");
+
+  // 5. Privacy and about is reachable from the Chart and states both halves of
+  //    ADR 0012: the Relay operator cannot read Chart content, and does learn
+  //    that a given owner synced, when, and roughly how much.
+  await page.click('[data-testid="open-privacy"]');
+  await page.waitForSelector('[data-testid="privacy-screen"]', { timeout: PAINT_TIMEOUT_MS });
+  const privacyCopy = await page.$eval(
+    '[data-testid="privacy-screen"]',
+    (element) => element.textContent ?? "",
+  );
+  assert.ok(
+    privacyCopy.includes("The Relay operator cannot read Chart content."),
+    "Privacy and about omitted the content guarantee",
+  );
+  assert.ok(
+    privacyCopy.includes(
+      "The Relay operator does learn that a given owner synced, when, and roughly how much.",
+    ),
+    "Privacy and about omitted the metadata disclosure",
+  );
+  assert.ok(
+    privacyCopy.includes(
+      "The 24 Shared owner words you write down in Backup & restore are an offline record of the Shared owner secret.",
+    ),
+    "Privacy and about equated the Owner secret with the 24 Shared owner words",
+  );
+  assert.ok(
+    privacyCopy.includes("If you lose these words, you lose the Chart."),
+    "Privacy and about omitted the Owner-secret loss warning",
+  );
+  assert.ok(privacyCopy.includes("Nobody can restore it."), "Privacy and about omitted irreversibility");
+  assert.match(privacyCopy, /no account/i);
+  assert.match(privacyCopy, /no email/i);
+  assert.match(privacyCopy, /no password/i);
+  assert.ok(
+    privacyCopy.includes("Verelle does not ask for a name or contact information."),
+    "Privacy and about omitted the narrower no-contact fact",
+  );
+  assert.ok(
+    !/handing your identity/i.test(privacyCopy),
+    "Privacy and about overclaimed anonymity",
+  );
+  await page.click('[data-testid="close-privacy"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Privacy and about is reachable and states what the Relay knows");
+
+  // 6. Nothing failed quietly on the way there.
   if (consoleErrors.length > 0) {
     failures.push(`Console errors during launch: ${JSON.stringify(consoleErrors)}`);
   }
