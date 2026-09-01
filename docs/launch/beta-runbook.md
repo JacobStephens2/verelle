@@ -1,5 +1,11 @@
 # Closed-beta runbook
 
+> **Historical — not an active beta plan.**
+>
+> This runbook belongs to the retired Rust/Axum account, billing, and public
+> launch plan archived by ADR 0009. It is not valid for the current MVP and must
+> not be used to start a beta. See `docs/plans/mvp-restart.md` for current work.
+
 Do not begin until every Phase 7 launch criterion except beta metrics is green.
 
 Target 10–20 consenting couples using synthetic data for onboarding, then their own data only after the privacy/legal gates close. Run for at least two full weeks on the release candidate.

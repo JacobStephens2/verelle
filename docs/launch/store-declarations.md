@@ -1,5 +1,12 @@
 # Store declaration worksheet
 
+> **Historical — not valid for submission.**
+>
+> These answers describe the retired account, Stripe, export, deletion, and
+> watch surfaces archived by ADR 0009. They do not describe the current MVP and
+> must not be copied into a store console. A future submission requires a new
+> worksheet derived from the shipped build and current policy.
+
 Status: prepared answers; verify in the live consoles at submission because question wording changes. Answers must remain consistent with the published privacy policy.
 
 ## Apple privacy nutrition label

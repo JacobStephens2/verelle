@@ -1,5 +1,12 @@
 # Plan: Verelle household sync integration
 
+> **Historical — superseded by the MVP restart. Do not build from this file.**
+>
+> This plan describes the retired Rust/Axum account and relay implementation.
+> ADR 0009 archived that implementation at `v1-archive`. The current product
+> uses Capacitor, Vue, and Evolu; see `docs/plans/mvp-restart.md` and issue #6.
+> The material below is retained only as a record of the earlier design.
+
 ## 1. Summary
 
 Connect the Android and web local-first clients to the existing blind relay through a
