@@ -64,4 +64,40 @@ export function displayCivilDate(date: CivilDate): string {
   }).format(new Date(utcMidnight(date)));
 }
 
+/**
+ * Calculate age in completed years from `birthDate` to `onDate`.
+ */
+export function ageOnCivilDate(birthDate: CivilDate, onDate: CivilDate): number {
+  const bParts = birthDate.split("-").map(Number);
+  const tParts = onDate.split("-").map(Number);
+  const bYear = bParts[0];
+  const bMonth = bParts[1];
+  const bDay = bParts[2];
+  const tYear = tParts[0];
+  const tMonth = tParts[1];
+  const tDay = tParts[2];
+  if (
+    bYear === undefined ||
+    bMonth === undefined ||
+    bDay === undefined ||
+    tYear === undefined ||
+    tMonth === undefined ||
+    tDay === undefined ||
+    Number.isNaN(bYear) ||
+    Number.isNaN(bMonth) ||
+    Number.isNaN(bDay) ||
+    Number.isNaN(tYear) ||
+    Number.isNaN(tMonth) ||
+    Number.isNaN(tDay)
+  ) {
+    return 0;
+  }
+  let age = tYear - bYear;
+  if (tMonth < bMonth || (tMonth === bMonth && tDay < bDay)) {
+    age--;
+  }
+  return age;
+}
+
+
 

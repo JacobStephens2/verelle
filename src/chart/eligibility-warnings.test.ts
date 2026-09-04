@@ -4,6 +4,22 @@ import type { Profile } from "../observations/profile";
 import { defaultProfile } from "../observations/profile";
 import { evaluateEligibilityWarnings } from "./eligibility-warnings";
 
+function makeCycle(startDate: string, length: number) {
+  return {
+    startDate,
+    days: Array.from({ length }, (_, i) => ({
+      civilDate: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      cycleDay: i + 1,
+      monitorReading: null,
+      markers: [],
+      annotations: [],
+      dayStatus: null,
+    })),
+    mucusPeak: null,
+    fertileWindow: null,
+  };
+}
+
 describe("evaluateEligibilityWarnings", () => {
   const today = "2026-06-15";
 
@@ -63,22 +79,6 @@ describe("evaluateEligibilityWarnings", () => {
   });
 
   describe("Cycle length outside 22–42 days", () => {
-    function makeCycle(startDate: string, length: number) {
-      return {
-        startDate,
-        days: Array.from({ length }, (_, i) => ({
-          civilDate: `2026-01-${String(i + 1).padStart(2, "0")}`,
-          cycleDay: i + 1,
-          monitorReading: null,
-          markers: [],
-          annotations: [],
-          dayStatus: null,
-        })),
-        mucusPeak: null,
-        fertileWindow: null,
-      };
-    }
-
     it("produces no warning when completed cycle length is within 22–42 days (e.g. 28)", () => {
       const cycle1 = makeCycle("2026-01-01", 28);
       const cycle2 = makeCycle("2026-01-29", 5); // in-progress
@@ -123,22 +123,6 @@ describe("evaluateEligibilityWarnings", () => {
   });
 
   describe("Two or more out-of-range Cycles", () => {
-    function makeCycle(startDate: string, length: number) {
-      return {
-        startDate,
-        days: Array.from({ length }, (_, i) => ({
-          civilDate: `2026-01-${String(i + 1).padStart(2, "0")}`,
-          cycleDay: i + 1,
-          monitorReading: null,
-          markers: [],
-          annotations: [],
-          dayStatus: null,
-        })),
-        mucusPeak: null,
-        fertileWindow: null,
-      };
-    }
-
     it("produces two_or_more_out_of_range_cycles warning when two cycles are out of range", () => {
       const cycle1 = makeCycle("2026-01-01", 20); // out of range (<22)
       const cycle2 = makeCycle("2026-01-21", 21); // out of range (<22)
@@ -159,22 +143,6 @@ describe("evaluateEligibilityWarnings", () => {
   });
 
   describe("Variation over 10 days", () => {
-    function makeCycle(startDate: string, length: number) {
-      return {
-        startDate,
-        days: Array.from({ length }, (_, i) => ({
-          civilDate: `2026-01-${String(i + 1).padStart(2, "0")}`,
-          cycleDay: i + 1,
-          monitorReading: null,
-          markers: [],
-          annotations: [],
-          dayStatus: null,
-        })),
-        mucusPeak: null,
-        fertileWindow: null,
-      };
-    }
-
     it("produces no warning when variation is exactly 10 days (e.g. 25 and 35)", () => {
       const cycle1 = makeCycle("2026-01-01", 25);
       const cycle2 = makeCycle("2026-01-26", 35);

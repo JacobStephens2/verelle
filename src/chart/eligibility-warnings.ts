@@ -11,6 +11,9 @@
 import type { Profile } from "../observations/profile";
 import type { ChartCycle } from "./projection";
 import type { CivilDate } from "./civil-date";
+import { ageOnCivilDate } from "./civil-date";
+
+export { ageOnCivilDate };
 
 export type EligibilityCircumstance =
   | "age_outside_range"
@@ -38,41 +41,6 @@ export const MARQUETTE_INSTRUCTOR_ROUTE: InstructorRoute = {
   label: "Find a Marquette instructor",
   url: "https://www.marquettemethod.com/",
 };
-
-/**
- * Calculate age in completed years from `birthDate` to `onDate`.
- */
-export function ageOnCivilDate(birthDate: CivilDate, onDate: CivilDate): number {
-  const bParts = birthDate.split("-").map(Number);
-  const tParts = onDate.split("-").map(Number);
-  const bYear = bParts[0];
-  const bMonth = bParts[1];
-  const bDay = bParts[2];
-  const tYear = tParts[0];
-  const tMonth = tParts[1];
-  const tDay = tParts[2];
-  if (
-    bYear === undefined ||
-    bMonth === undefined ||
-    bDay === undefined ||
-    tYear === undefined ||
-    tMonth === undefined ||
-    tDay === undefined ||
-    Number.isNaN(bYear) ||
-    Number.isNaN(bMonth) ||
-    Number.isNaN(bDay) ||
-    Number.isNaN(tYear) ||
-    Number.isNaN(tMonth) ||
-    Number.isNaN(tDay)
-  ) {
-    return 0;
-  }
-  let age = tYear - bYear;
-  if (tMonth < bMonth || (tMonth === bMonth && tDay < bDay)) {
-    age--;
-  }
-  return age;
-}
 
 export function evaluateEligibilityWarnings(
   cycles: readonly ChartCycle[],
@@ -125,7 +93,7 @@ export function evaluateEligibilityWarnings(
       instructionLimit:
         "The Marquette regular-cycle manual publishes instructions for cycles between 22 and 42 days.",
       conservativeGuidance:
-        "Published method instructions advise consulting an instructor for cycles outside 22–42 days; continue charting and treat days before the confirmed post-Peak infertile phase as fertile.",
+        "Published method instructions advise consulting an instructor for cycles outside 22–42 days; continue charting and treat days before confirmed post-Peak infertility as fertile.",
       instructorRoute: MARQUETTE_INSTRUCTOR_ROUTE,
     });
   } else if (outOfRangeLengths.length >= 2) {
@@ -135,7 +103,7 @@ export function evaluateEligibilityWarnings(
       instructionLimit:
         "The Marquette regular-cycle manual states that experiencing two or more cycles outside 22–42 days requires professional teacher advice.",
       conservativeGuidance:
-        "Published method instructions advise consulting an instructor for individualized guidance when multiple cycles fall outside 22–42 days; continue charting and treat days before confirmed post-Peak infertility as fertile.",
+        "Published method instructions advise consulting an instructor for individualized instructions when multiple cycles fall outside 22–42 days; continue charting and treat days before confirmed post-Peak infertility as fertile.",
       instructorRoute: MARQUETTE_INSTRUCTOR_ROUTE,
     });
   }

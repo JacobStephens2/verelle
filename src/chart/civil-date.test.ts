@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ageOnCivilDate,
   civilDateIn,
   civilDatePlusDays,
   daysBetweenCivilDates,
@@ -72,4 +73,22 @@ describe("civil date arithmetic", () => {
     expect(displayCivilDate("2026-01-01")).toBe("Jan 1");
   });
 });
+
+describe("ageOnCivilDate", () => {
+  it("calculates completed years before and after birthday in a calendar year", () => {
+    expect(ageOnCivilDate("2000-06-15", "2026-06-14")).toBe(25);
+    expect(ageOnCivilDate("2000-06-15", "2026-06-15")).toBe(26);
+    expect(ageOnCivilDate("2000-06-15", "2026-06-16")).toBe(26);
+  });
+
+  it("handles leap day birthdays", () => {
+    expect(ageOnCivilDate("2000-02-29", "2026-02-28")).toBe(25);
+    expect(ageOnCivilDate("2000-02-29", "2026-03-01")).toBe(26);
+  });
+
+  it("returns 0 for malformed dates", () => {
+    expect(ageOnCivilDate("invalid", "2026-06-15")).toBe(0);
+  });
+});
+
 
