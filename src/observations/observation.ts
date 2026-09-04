@@ -27,12 +27,42 @@ export const LH_STRIP_VALUES = ["Negative", "Positive", "Invalid"] as const;
 export type LhStrip = (typeof LH_STRIP_VALUES)[number];
 
 /**
- * Cervical mucus as observed. Described, never categorised: the Marquette
- * manual's Low/High/Peak mucus categories are a reading of the description,
- * and reading it is the couple's and their instructor's job.
+ * Cervical mucus as observed.
+ *
+ * Described using the Marquette manual's vocabulary, with each description
+ * carrying the Mucus category it belongs to (`CONTEXT.md`).
  */
 export const MUCUS_OBSERVATIONS = ["Dry", "Sticky", "Creamy", "Stretchy"] as const;
 export type Mucus = (typeof MUCUS_OBSERVATIONS)[number];
+
+/**
+ * Low, High, or Peak: which band of fertility a mucus description falls in
+ * under the Marquette manual (`CONTEXT.md`).
+ */
+export const MUCUS_CATEGORIES = ["Low", "High", "Peak"] as const;
+export type MucusCategory = (typeof MUCUS_CATEGORIES)[number];
+
+/**
+ * Map a recorded mucus description to its Marquette Mucus category.
+ */
+export function mucusCategory(mucus: Mucus | string | null): MucusCategory | null {
+  if (mucus === null) return null;
+  switch (mucus) {
+    case "Dry":
+    case "Sticky":
+    case "dry or scant":
+    case "thick and sticky":
+      return "Low";
+    case "Creamy":
+    case "cloudy and slightly stretchy":
+      return "High";
+    case "Stretchy":
+    case "clear and stretchy like egg white":
+      return "Peak";
+    default:
+      return null;
+  }
+}
 
 /** The scale a temperature was recorded on. Stored, so it is never guessed. */
 export const TEMPERATURE_UNITS = ["C", "F"] as const;
@@ -58,11 +88,11 @@ export interface Observation {
   readonly monitorReading: MonitorReading | null;
   readonly bleeding: Bleeding | null;
   /**
-   * An explicit act by the recording partner declaring this date her Peak day.
-   * The only thing that may ever render a `P`; a **Monitor Peak** may not
-   * (`CONTEXT.md`).
+   * An explicit act by the recording partner naming a date as her Peak when the
+   * monitor missed it. Recorded as an override, so a boundary it moves is visibly
+   * hers rather than the device's (`CONTEXT.md`).
    */
-  readonly userMarkedPeak: boolean | null;
+  readonly peakOverride: boolean | null;
   readonly intercourse: boolean | null;
   readonly lhStrip: LhStrip | null;
   readonly mucus: Mucus | null;
@@ -91,7 +121,7 @@ export function unrecordedObservation(civilDate: CivilDate): Observation {
     civilDate,
     monitorReading: null,
     bleeding: null,
-    userMarkedPeak: null,
+    peakOverride: null,
     intercourse: null,
     lhStrip: null,
     mucus: null,

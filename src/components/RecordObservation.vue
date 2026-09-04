@@ -52,7 +52,7 @@ const selectDate = (event: Event) => {
 
 const monitorReading = ref<MonitorReading | null>(null);
 const bleeding = ref<Bleeding | null>(null);
-const userMarkedPeak = ref(false);
+const peakOverride = ref(false);
 const intercourse = ref(false);
 const lhStrip = ref<LhStrip | null>(null);
 const mucus = ref<Mucus | null>(null);
@@ -87,7 +87,7 @@ const load = (observation: Observation, preserveEdited: boolean) => {
     !preserveEdited || !edited.value.has(field);
   if (settled("monitorReading")) monitorReading.value = observation.monitorReading;
   if (settled("bleeding")) bleeding.value = observation.bleeding;
-  if (settled("userMarkedPeak")) userMarkedPeak.value = observation.userMarkedPeak ?? false;
+  if (settled("peakOverride")) peakOverride.value = observation.peakOverride ?? false;
   if (settled("intercourse")) intercourse.value = observation.intercourse ?? false;
   if (settled("lhStrip")) lhStrip.value = observation.lhStrip;
   if (settled("mucus")) mucus.value = observation.mucus;
@@ -147,7 +147,7 @@ const save = async () => {
     {
       monitorReading: monitorReading.value,
       bleeding: bleeding.value,
-      userMarkedPeak: userMarkedPeak.value,
+      peakOverride: peakOverride.value,
       intercourse: intercourse.value,
       lhStrip: lhStrip.value,
       mucus: mucus.value,
@@ -206,12 +206,12 @@ const save = async () => {
     <div class="record__toggles">
       <label class="record__toggle">
         <input
-          v-model="userMarkedPeak"
+          v-model="peakOverride"
           type="checkbox"
-          data-testid="user-marked-peak"
-          @change="edit('userMarkedPeak')"
+          data-testid="peak-override"
+          @change="edit('peakOverride')"
         />
-        <span>Mark my Peak</span>
+        <span>Peak override</span>
       </label>
       <label class="record__toggle">
         <input

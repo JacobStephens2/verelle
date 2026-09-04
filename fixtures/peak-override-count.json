@@ -1,12 +1,12 @@
 {
-  "name": "a User-marked Peak produces P through P+3 and then stops",
+  "name": "a Peak override produces P through P+3 and then stops",
   "today": "2026-09-07",
   "observations": [
     {
       "civilDate": "2026-09-01",
       "monitorReading": null,
       "bleeding": "Heavy",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -18,7 +18,7 @@
       "civilDate": "2026-09-03",
       "monitorReading": null,
       "bleeding": null,
-      "userMarkedPeak": true,
+      "peakOverride": true,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -35,12 +35,13 @@
         "days": [
           { "civilDate": "2026-09-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
           { "civilDate": "2026-09-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-09-03", "cycleDay": 3, "monitorReading": null, "markers": ["user_marked_peak"], "annotations": ["P"] },
+          { "civilDate": "2026-09-03", "cycleDay": 3, "monitorReading": null, "markers": ["peak_override"], "annotations": ["P"] },
           { "civilDate": "2026-09-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": ["P+1"] },
           { "civilDate": "2026-09-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": ["P+2"] },
           { "civilDate": "2026-09-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": ["P+3"] },
           { "civilDate": "2026-09-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [] }
-        ]
+        ],
+        "mucusPeak": null
       }
     ],
     "unassignedDays": []

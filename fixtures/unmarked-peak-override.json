@@ -1,12 +1,12 @@
 {
-  "name": "un-marking a User-marked Peak removes every annotation it produced",
+  "name": "un-marking a Peak override removes every annotation it produced",
   "today": "2026-12-07",
   "observations": [
     {
       "civilDate": "2026-12-01",
       "monitorReading": null,
       "bleeding": "Heavy",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -18,7 +18,7 @@
       "civilDate": "2026-12-03",
       "monitorReading": null,
       "bleeding": null,
-      "userMarkedPeak": false,
+      "peakOverride": false,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -40,7 +40,8 @@
           { "civilDate": "2026-12-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": [] },
           { "civilDate": "2026-12-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": [] },
           { "civilDate": "2026-12-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [] }
-        ]
+        ],
+        "mucusPeak": null
       }
     ],
     "unassignedDays": []

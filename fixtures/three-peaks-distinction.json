@@ -1,0 +1,157 @@
+{
+  "name": "the distinction between Monitor Peak, Mucus Peak, and Peak override",
+  "today": "2026-06-17",
+  "observations": [
+    {
+      "civilDate": "2026-06-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-03",
+      "monitorReading": "Peak",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-04",
+      "monitorReading": "Peak",
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-05",
+      "monitorReading": null,
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "Stretchy",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-06",
+      "monitorReading": null,
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "Sticky",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-10",
+      "monitorReading": null,
+      "bleeding": "Moderate",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-12",
+      "monitorReading": "Peak",
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-13",
+      "monitorReading": null,
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "Stretchy",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-14",
+      "monitorReading": null,
+      "bleeding": null,
+      "peakOverride": true,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-06-17",
+    "cycles": [
+      {
+        "startDate": "2026-06-01",
+        "days": [
+          { "civilDate": "2026-06-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-06-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-06-03", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor", "bleeding"], "annotations": [] },
+          { "civilDate": "2026-06-04", "cycleDay": 4, "monitorReading": "Peak", "markers": ["monitor"], "annotations": ["P"] },
+          { "civilDate": "2026-06-05", "cycleDay": 5, "monitorReading": null, "markers": ["mucus"], "annotations": ["P+1"] },
+          { "civilDate": "2026-06-06", "cycleDay": 6, "monitorReading": null, "markers": ["mucus"], "annotations": ["P+2"] },
+          { "civilDate": "2026-06-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": ["P+3"] },
+          { "civilDate": "2026-06-08", "cycleDay": 8, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-06-09", "cycleDay": 9, "monitorReading": null, "markers": [], "annotations": [] }
+        ],
+        "mucusPeak": {
+          "civilDate": "2026-06-05",
+          "cycleDay": 5,
+          "provisional": false
+        }
+      },
+      {
+        "startDate": "2026-06-10",
+        "days": [
+          { "civilDate": "2026-06-10", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
+          { "civilDate": "2026-06-11", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
+          { "civilDate": "2026-06-12", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor"], "annotations": [] },
+          { "civilDate": "2026-06-13", "cycleDay": 4, "monitorReading": null, "markers": ["mucus"], "annotations": [] },
+          { "civilDate": "2026-06-14", "cycleDay": 5, "monitorReading": null, "markers": ["peak_override"], "annotations": ["P"] },
+          { "civilDate": "2026-06-15", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": ["P+1"] },
+          { "civilDate": "2026-06-16", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": ["P+2"] },
+          { "civilDate": "2026-06-17", "cycleDay": 8, "monitorReading": null, "markers": [], "annotations": ["P+3"] }
+        ],
+        "mucusPeak": {
+          "civilDate": "2026-06-13",
+          "cycleDay": 4,
+          "provisional": true
+        }
+      }
+    ],
+    "unassignedDays": []
+  }
+}

@@ -5,6 +5,7 @@ import {
   MONITOR_READINGS,
   applyUpdate,
   isFullFlow,
+  mucusCategory,
   unrecordedObservation,
   updateOf,
 } from "./observation";
@@ -13,6 +14,16 @@ describe("Monitor reading", () => {
   it("carries Missed and Error as values", () => {
     expect(MONITOR_READINGS).toContain("Missed");
     expect(MONITOR_READINGS).toContain("Error");
+  });
+});
+
+describe("Mucus category", () => {
+  it("maps descriptions to Low, High, or Peak", () => {
+    expect(mucusCategory("Dry")).toBe("Low");
+    expect(mucusCategory("Sticky")).toBe("Low");
+    expect(mucusCategory("Creamy")).toBe("High");
+    expect(mucusCategory("Stretchy")).toBe("Peak");
+    expect(mucusCategory(null)).toBeNull();
   });
 });
 
@@ -33,7 +44,7 @@ describe("an unrecorded day", () => {
       civilDate: "2026-08-30",
       monitorReading: null,
       bleeding: null,
-      userMarkedPeak: null,
+      peakOverride: null,
       intercourse: null,
       lhStrip: null,
       mucus: null,
@@ -49,7 +60,7 @@ describe("applyUpdate", () => {
     const hers = applyUpdate(unrecordedObservation("2026-08-30"), {
       monitorReading: "High",
       bleeding: "None",
-      userMarkedPeak: false,
+      peakOverride: false,
       intercourse: true,
     });
 
@@ -69,6 +80,18 @@ describe("applyUpdate", () => {
     const recorded = applyUpdate(unrecordedObservation("2026-08-30"), { note: "away" });
     expect(applyUpdate(recorded, { note: null }).note).toBeNull();
   });
+
+  it("can set and clear a Peak override on a date", () => {
+    const unrecorded = unrecordedObservation("2026-08-30");
+    const setOverride = applyUpdate(unrecorded, { peakOverride: true });
+    expect(setOverride.peakOverride).toBe(true);
+
+    const clearedOverride = applyUpdate(setOverride, { peakOverride: false });
+    expect(clearedOverride.peakOverride).toBe(false);
+
+    const resetToNull = applyUpdate(clearedOverride, { peakOverride: null });
+    expect(resetToNull.peakOverride).toBeNull();
+  });
 });
 
 describe("isFullFlow", () => {
@@ -85,7 +108,7 @@ describe("updateOf", () => {
   const values = {
     monitorReading: "High",
     bleeding: "Heavy",
-    userMarkedPeak: false,
+    peakOverride: false,
     intercourse: true,
     lhStrip: null,
     mucus: null,
