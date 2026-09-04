@@ -33,15 +33,67 @@
       {
         "startDate": "2026-12-01",
         "days": [
-          { "civilDate": "2026-12-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
-          { "civilDate": "2026-12-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-12-03", "cycleDay": 3, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-12-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-12-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-12-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-12-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [] }
+          {
+            "civilDate": "2026-12-01",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-12-02",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-12-03",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-12-04",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-12-05",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-12-06",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-12-07",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          }
         ],
-        "mucusPeak": null
+        "mucusPeak": null,
+        "fertileWindow": null
       }
     ],
     "unassignedDays": []

@@ -2,12 +2,16 @@
 import { computed } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
-import { chartCellClass } from "../chart/chart-presentation";
+import {
+  chartCellClass,
+  type FertileBandCellPresentation,
+} from "../chart/chart-presentation";
 import type { ChartDay } from "../chart/projection";
 
 const props = defineProps<{
   day: ChartDay | null;
   isToday?: boolean;
+  band?: FertileBandCellPresentation | null;
 }>();
 
 const emit = defineEmits<{
@@ -16,9 +20,14 @@ const emit = defineEmits<{
 
 const cellClass = computed(() => chartCellClass(props.day ?? undefined));
 
+const bandClasses = computed(() => props.band?.classes ?? []);
+
 const ariaLabel = computed(() => {
   if (!props.day) return "";
   const details = [`Cycle Day ${props.day.cycleDay}`, props.day.civilDate];
+  if (props.day.dayStatus !== null) {
+    details.push(`Day status ${props.day.dayStatus}`);
+  }
   if (props.day.monitorReading !== null) {
     details.push(`Monitor reading ${props.day.monitorReading}`);
   }
@@ -33,10 +42,9 @@ const ariaLabel = computed(() => {
   <td
     v-if="day"
     class="chart__cell"
-    :class="{
-      'chart__cell--today': isToday,
-    }"
+    :class="[{ 'chart__cell--today': isToday }, ...bandClasses]"
     :data-civil-date="day.civilDate"
+    :data-day-status="day.dayStatus ?? undefined"
     data-testid="chart-cell"
   >
     <button
@@ -45,6 +53,7 @@ const ariaLabel = computed(() => {
       :class="cellClass"
       :aria-label="ariaLabel"
       :data-civil-date="day.civilDate"
+      :data-day-status="day.dayStatus ?? undefined"
       data-testid="chart-day"
       @click="emit('selectDate', day.civilDate)"
     >
@@ -70,7 +79,8 @@ const ariaLabel = computed(() => {
   </td>
   <td
     v-else
-    class="chart-empty"
+    class="chart__cell chart-empty"
+    :class="bandClasses"
     data-testid="chart-cell"
   />
 </template>

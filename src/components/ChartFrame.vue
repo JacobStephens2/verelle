@@ -4,9 +4,11 @@ import { computed, onMounted, ref, useTemplateRef } from "vue";
 import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
 import type { ChartZoom } from "../chart/chart-presentation";
-import { DEFAULT_CHART_ZOOM } from "../chart/chart-presentation";
-import type { ChartDay, UnassignedChartDay } from "../chart/projection";
+import { DEFAULT_CHART_ZOOM, fertileBandPresentation } from "../chart/chart-presentation";
+import type { ChartDay, FertileWindow, UnassignedChartDay } from "../chart/projection";
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
+import type { CycleOverlay } from "../observations/cycle-overlay";
+import type { Profile } from "../observations/profile";
 import type { MonitorReading, Observation } from "../observations/observation";
 import type { PairingState } from "../owners/owner-secret-store";
 import type { SyncState } from "../sync/sync-state";
@@ -16,6 +18,8 @@ import ChartZoomControl from "./ChartZoom.vue";
 const props = defineProps<{
   today?: CivilDate;
   observations?: readonly Observation[];
+  cycleOverlays?: readonly CycleOverlay[];
+  profile?: Profile;
   syncState?: SyncState;
   pairingState?: PairingState;
 }>();
@@ -27,7 +31,12 @@ const emit = defineEmits<{
 const zoom = ref<ChartZoom>(DEFAULT_CHART_ZOOM);
 
 const chart = computed(() =>
-  projectChart(props.observations ?? [], props.today ?? todayCivilDate()),
+  projectChart(
+    props.observations ?? [],
+    props.today ?? todayCivilDate(),
+    props.cycleOverlays ?? [],
+    props.profile ?? null,
+  ),
 );
 
 const columnCount = computed(() =>
@@ -45,6 +54,8 @@ interface ChartRow {
   readonly key: string;
   readonly type: string;
   readonly startDate?: CivilDate;
+  readonly fertileWindow: FertileWindow | null;
+  readonly cycleLength: number;
   readonly cells: readonly (ChartDay | null)[];
 }
 
@@ -55,6 +66,8 @@ const rows = computed<readonly ChartRow[]>(() => {
         key: "empty-current-cycle",
         type: "Current Cycle",
         startDate: undefined,
+        fertileWindow: null,
+        cycleLength: 0,
         cells: Array.from({ length: columnCount.value }, () => null),
       },
     ];
@@ -64,6 +77,8 @@ const rows = computed<readonly ChartRow[]>(() => {
     key: cycle.startDate,
     type: index === chart.value.cycles.length - 1 ? "Current" : "Previous",
     startDate: cycle.startDate,
+    fertileWindow: cycle.fertileWindow,
+    cycleLength: cycle.days.length,
     cells: Array.from(
       { length: columnCount.value },
       (_, dayIndex) => cycle.days[dayIndex] ?? null,
@@ -158,6 +173,12 @@ onMounted(() => {
             v-for="row in rows"
             :key="row.key"
             class="cycle-row"
+            :class="{ 'cycle-row--has-fertile-window': row.fertileWindow !== null }"
+            :data-has-fertile-window="row.fertileWindow !== null ? 'true' : undefined"
+            :data-fertile-start="row.fertileWindow?.start.cycleDay"
+            :data-fertile-end="row.fertileWindow ? (row.fertileWindow.end ? row.fertileWindow.end.cycleDay : 'open') : undefined"
+            :data-fertile-start-confidence="row.fertileWindow?.start.confidence"
+            :data-fertile-end-confidence="row.fertileWindow ? (row.fertileWindow.end ? row.fertileWindow.end.confidence : 'provisional') : undefined"
             data-testid="chart-cycle"
           >
             <th scope="row" class="chart__cycle-label">
@@ -174,6 +195,7 @@ onMounted(() => {
               :key="index"
               :day="day"
               :is-today="day?.civilDate === chart.today"
+              :band="fertileBandPresentation(index + 1, row.fertileWindow, row.cycleLength)"
               @select-date="emit('selectDate', $event)"
             />
           </tr>

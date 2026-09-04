@@ -4,6 +4,8 @@ import type {
   Observation,
 } from "../observations/observation";
 import { isFullFlow, mucusCategory } from "../observations/observation";
+import type { CycleOverlay } from "../observations/cycle-overlay";
+import type { Profile } from "../observations/profile";
 import type { CivilDate } from "./civil-date";
 import { civilDatePlusDays, daysBetweenCivilDates } from "./civil-date";
 
@@ -26,6 +28,33 @@ export type ObservationMarker =
   | "temperature"
   | "note";
 
+/**
+ * What the selected protocol makes of a single day: fertile or infertile (`CONTEXT.md`).
+ */
+export type DayStatus = "fertile" | "infertile";
+
+/**
+ * Whether a boundary is final or still provisional (`CONTEXT.md`).
+ */
+export type Confidence = "final" | "provisional";
+
+/**
+ * A published boundary of a fertile window (`CONTEXT.md`, ADR 0015).
+ */
+export interface FertileWindowBoundary {
+  readonly cycleDay: number;
+  readonly ruleId: string;
+  readonly confidence: Confidence;
+}
+
+/**
+ * The span of cycle days the selected protocol treats as fertile (`CONTEXT.md`).
+ */
+export interface FertileWindow {
+  readonly start: FertileWindowBoundary;
+  readonly end: FertileWindowBoundary | null;
+}
+
 /** One Civil date in a numbered Cycle. */
 export interface ChartDay {
   readonly civilDate: CivilDate;
@@ -35,6 +64,8 @@ export interface ChartDay {
   readonly markers: readonly ObservationMarker[];
   /** Mechanical labels anchored to a Peak override or the last Monitor Peak. */
   readonly annotations: readonly PeakAnnotation[];
+  /** What the selected protocol makes of a single day: fertile or infertile (`CONTEXT.md`). */
+  readonly dayStatus: DayStatus | null;
 }
 
 /** A dated Observation that precedes the first recorded Cycle Day 1. */
@@ -61,6 +92,8 @@ export interface ChartCycle {
   readonly startDate: CivilDate;
   readonly days: readonly ChartDay[];
   readonly mucusPeak: MucusPeak | null;
+  /** The computed fertile window for the selected protocol family (`CONTEXT.md`, ADR 0015). */
+  readonly fertileWindow: FertileWindow | null;
 }
 
 /**
@@ -92,16 +125,37 @@ function markersFor(observation: Observation | undefined): ObservationMarker[] {
 }
 
 /**
+ * Determine whether a Cycle Day falls within a Fertile window.
+ */
+export function isDayInFertileWindow(
+  cycleDay: number,
+  fertileWindow: FertileWindow | null | undefined,
+  lastCycleDay?: number,
+): boolean {
+  if (!fertileWindow) return false;
+  const startCycleDay = fertileWindow.start.cycleDay;
+  const endCycleDay = fertileWindow.end?.cycleDay ?? lastCycleDay;
+  if (endCycleDay === undefined) {
+    return cycleDay >= startCycleDay;
+  }
+  return cycleDay >= startCycleDay && cycleDay <= endCycleDay;
+}
+
+/**
  * Project Observations into Cycle rows and Cycle Day columns.
  *
  * This is the Chart's single domain seam. It is a pure function of the rows it
  * is handed and today's Civil date; it reaches no store, framework, browser or
- * native API.
+ * native API. Inputs include cycle overlays and the couple profile (Issue #33).
  */
 export function projectChart(
   observations: readonly Observation[],
   today: CivilDate,
+  cycleOverlays: readonly CycleOverlay[] = [],
+  profile: Profile | null = null,
 ): Chart {
+  // Profile input is reserved for subsequent history-based and eligibility rules
+  void profile;
   const observationsByDate = new Map<CivilDate, Observation>();
   for (const observation of observations) {
     if (observation.civilDate <= today) {
@@ -134,6 +188,11 @@ export function projectChart(
           (observation) => observation.civilDate < firstCycleStart,
         );
 
+  const overlaysByStartDate = new Map<CivilDate, CycleOverlay>();
+  for (const overlay of cycleOverlays) {
+    overlaysByStartDate.set(overlay.startDate, overlay);
+  }
+
   const cycles = cycleStarts.map((start, index): ChartCycle => {
     const nextStart = cycleStarts[index + 1]?.civilDate;
     const endDate = nextStart === undefined ? today : civilDatePlusDays(nextStart, -1);
@@ -156,21 +215,65 @@ export function projectChart(
           ? monitorPeaks[monitorPeaks.length - 1]
           : undefined;
 
+    const overlay = overlaysByStartDate.get(start.civilDate);
+    const protocolFamily = overlay?.protocolFamily ?? null;
+
+    // Count only cycles charting under a method protocol family
+    const methodCyclesBefore = cycleStarts.slice(0, index).filter((s) => {
+      const priorOverlay = overlaysByStartDate.get(s.civilDate);
+      return priorOverlay?.protocolFamily !== null && priorOverlay?.protocolFamily !== undefined;
+    }).length;
+    const methodCycleNumber = methodCyclesBefore + 1;
+
+    let fertileWindow: FertileWindow | null = null;
+    if (methodCycleNumber <= 6 && protocolFamily === "regular_monitor") {
+      let end: FertileWindowBoundary | null = null;
+      if (monitorPeaks.length > 0) {
+        const lastMonitorPeak = monitorPeaks[monitorPeaks.length - 1]!;
+        const lastPeakCycleDay =
+          daysBetweenCivilDates(start.civilDate, lastMonitorPeak.civilDate) + 1;
+        const endCycleDay = lastPeakCycleDay + 3;
+        const endCivilDate = civilDatePlusDays(lastMonitorPeak.civilDate, 3);
+        const isEndComplete = today > endCivilDate || nextStart !== undefined;
+        end = {
+          cycleDay: endCycleDay,
+          ruleId: "REG-END-1",
+          confidence: isEndComplete ? "final" : "provisional",
+        };
+      }
+      fertileWindow = {
+        start: {
+          cycleDay: 6,
+          ruleId: "REG-START-1",
+          confidence: "final",
+        },
+        end,
+      };
+    }
+
     const dayCount = daysBetweenCivilDates(start.civilDate, endDate) + 1;
     const days = Array.from({ length: dayCount }, (_, dayIndex): ChartDay => {
       const civilDate = civilDatePlusDays(start.civilDate, dayIndex);
+      const cycleDay = dayIndex + 1;
       const annotations: PeakAnnotation[] = [];
       if (anchorPeak !== undefined) {
         const count = daysBetweenCivilDates(anchorPeak.civilDate, civilDate);
         const annotation = PEAK_COUNT[count];
         if (annotation !== undefined) annotations.push(annotation);
       }
+
+      let dayStatus: DayStatus | null = null;
+      if (fertileWindow !== null) {
+        dayStatus = isDayInFertileWindow(cycleDay, fertileWindow) ? "fertile" : "infertile";
+      }
+
       return {
         civilDate,
-        cycleDay: dayIndex + 1,
+        cycleDay,
         monitorReading: observationsByDate.get(civilDate)?.monitorReading ?? null,
         markers: markersFor(observationsByDate.get(civilDate)),
         annotations,
+        dayStatus,
       };
     });
 
@@ -193,7 +296,7 @@ export function projectChart(
       };
     }
 
-    return { startDate: start.civilDate, days, mucusPeak };
+    return { startDate: start.civilDate, days, mucusPeak, fertileWindow };
   });
 
   const unassignedDays = unassignedObservations.map((observation) => ({

@@ -11,6 +11,9 @@
   --verelle-stamp-peak: #9e2b6c;
   --verelle-stamp-missed: #736e6a;
   --verelle-stamp-error: #b56228;
+  --verelle-fertile-band: rgba(158, 43, 108, 0.1);
+  --verelle-fertile-boundary: #9e2b6c;
+  --verelle-fertile-border: rgba(158, 43, 108, 0.25);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +24,9 @@
     --verelle-stamp-peak: #b83a82;
     --verelle-stamp-missed: #857e79;
     --verelle-stamp-error: #c97136;
+    --verelle-fertile-band: rgba(184, 58, 130, 0.16);
+    --verelle-fertile-boundary: #b83a82;
+    --verelle-fertile-border: rgba(184, 58, 130, 0.35);
   }
 }
 
@@ -217,6 +223,43 @@
   background: var(--verelle-surface-sunken);
   outline: 2px solid var(--verelle-primary);
   outline-offset: -2px;
+}
+
+/* Fertile window continuous band behind Cycle row */
+.cycle-row td.chart__cell--fertile,
+.chart__cell--fertile {
+  background: var(--verelle-fertile-band);
+  border-top: 2px solid var(--verelle-fertile-border);
+  border-bottom: 2px solid var(--verelle-fertile-border);
+}
+
+.cycle-row td.chart__cell--today.chart__cell--fertile,
+.chart__cell--today.chart__cell--fertile {
+  background: var(--verelle-fertile-band);
+  outline: 2px solid var(--verelle-primary);
+  outline-offset: -2px;
+}
+
+/* Start edge: solid when final, dashed when provisional */
+.cycle-row td.chart__cell--fertile-start,
+.chart__cell--fertile-start {
+  border-left: 2px solid var(--verelle-fertile-boundary);
+}
+
+.cycle-row td.chart__cell--fertile-start.chart__cell--provisional-start,
+.chart__cell--fertile-start.chart__cell--provisional-start {
+  border-left: 2px dashed var(--verelle-fertile-boundary);
+}
+
+/* End edge: solid when final, dashed when provisional */
+.cycle-row td.chart__cell--fertile-end,
+.chart__cell--fertile-end {
+  border-right: 2px solid var(--verelle-fertile-boundary);
+}
+
+.cycle-row td.chart__cell--fertile-end.chart__cell--provisional-end,
+.chart__cell--fertile-end.chart__cell--provisional-end {
+  border-right: 2px dashed var(--verelle-fertile-boundary);
 }
 
 
