@@ -7,8 +7,6 @@ import type { ChartZoom } from "../chart/chart-presentation";
 import { DEFAULT_CHART_ZOOM } from "../chart/chart-presentation";
 import type { ChartDay, UnassignedChartDay } from "../chart/projection";
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
-import type { CycleOverlay } from "../observations/cycle-overlay";
-import { PROTOCOL_FAMILY_LABELS } from "../observations/cycle-overlay";
 import type { MonitorReading, Observation } from "../observations/observation";
 import type { PairingState } from "../owners/owner-secret-store";
 import type { SyncState } from "../sync/sync-state";
@@ -18,14 +16,12 @@ import ChartZoomControl from "./ChartZoom.vue";
 const props = defineProps<{
   today?: CivilDate;
   observations?: readonly Observation[];
-  cycleOverlays?: readonly CycleOverlay[];
   syncState?: SyncState;
   pairingState?: PairingState;
 }>();
 
 const emit = defineEmits<{
   selectDate: [date: CivilDate];
-  editCycle: [startDate: CivilDate];
 }>();
 
 const zoom = ref<ChartZoom>(DEFAULT_CHART_ZOOM);
@@ -79,12 +75,6 @@ function monitorReadingText(
   day: { readonly monitorReading: MonitorReading | null } | null | undefined,
 ): string {
   return day?.monitorReading ?? "";
-}
-
-function overlayBadgeText(startDate: CivilDate): string {
-  const overlay = props.cycleOverlays?.find((o) => o.startDate === startDate);
-  if (!overlay || !overlay.protocolFamily) return "Set protocol";
-  return PROTOCOL_FAMILY_LABELS[overlay.protocolFamily];
 }
 
 function unassignedChartDayLabel(day: UnassignedChartDay): string {
@@ -176,15 +166,6 @@ onMounted(() => {
                 <template v-if="row.startDate">
                   <span class="cycle-label-sep"> · </span>
                   <span class="cycle-label-date">{{ row.startDate }}</span>
-                  <button
-                    type="button"
-                    class="cycle-overlay-badge"
-                    data-testid="edit-cycle-overlay"
-                    :aria-label="'Protocol for cycle starting ' + row.startDate"
-                    @click="emit('editCycle', row.startDate)"
-                  >
-                    {{ overlayBadgeText(row.startDate) }}
-                  </button>
                 </template>
               </div>
             </th>
@@ -352,24 +333,5 @@ onMounted(() => {
 
 .chart__unassigned-day time {
   color: var(--verelle-ink-muted);
-}
-
-.cycle-overlay-badge {
-  display: block;
-  margin-top: 0.25rem;
-  padding: 0.125rem 0.375rem;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 4px;
-  background: var(--verelle-surface);
-  color: var(--verelle-ink-muted);
-  font: inherit;
-  font-size: 0.625rem;
-  line-height: 1.2;
-  cursor: pointer;
-  text-align: left;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>
