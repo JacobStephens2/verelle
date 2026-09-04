@@ -7,7 +7,7 @@ export interface CycleTrendItem {
   readonly startDate: CivilDate;
   readonly endDate: CivilDate;
   readonly lengthDays: number;
-  readonly isCurrent: boolean;
+  readonly inProgress: boolean;
 }
 
 export interface CycleStats {
@@ -48,7 +48,7 @@ export function computeCycleStats(
   for (let i = 0; i < cycles.length; i++) {
     const cycle = cycles[i]!;
     const nextCycle = cycles[i + 1];
-    const isCurrent = nextCycle === undefined;
+    const inProgress = nextCycle === undefined;
 
     let endDate: CivilDate;
     let lengthDays: number;
@@ -67,7 +67,7 @@ export function computeCycleStats(
       startDate: cycle.startDate,
       endDate,
       lengthDays,
-      isCurrent,
+      inProgress,
     });
   }
 

@@ -155,7 +155,8 @@ calendar date rather than by counting Cycle Day columns.
 
 **Insights**:
 The view of cycle-length trends and variation across recorded cycles, showing
-her own pattern without drawing a conclusion or applying advice words.
+her own pattern without drawing a conclusion or applying advice words. Distinct
+from prescriptive advice or interpretive conclusions.
 
 **Export**:
 The instructor- and doctor-readable representation of chart observations and

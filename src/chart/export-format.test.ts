@@ -58,7 +58,7 @@ describe("export-format", () => {
       const lines = csv.trim().split("\n");
 
       expect(lines[0]).toBe(
-        "Cycle,Cycle Day,Date,Monitor Reading,Bleeding,Mucus Description,Mucus Category,LH Strip,Temperature,Intercourse,Peak Annotation,Day Status,Notes",
+        "Cycle,Cycle Day,Civil Date,Monitor Reading,Bleeding,Mucus Description,Mucus Category,LH Strip,Temperature,Intercourse,Peak Annotation,Day Status,Notes",
       );
 
       // Line 2 is Cycle Day 1
@@ -76,6 +76,25 @@ describe("export-format", () => {
       expect(day10Line).toContain("Positive");
       expect(day10Line).toContain("97.4°F");
       expect(day10Line).toContain("No");
+    });
+
+    it("includes unassigned days charted prior to Cycle 1", () => {
+      const chartWithUnassigned: Chart = {
+        ...testChart,
+        unassignedDays: [
+          {
+            civilDate: "2025-12-30",
+            monitorReading: "Low",
+            markers: ["monitor"],
+          },
+        ],
+      };
+      const csv = formatChartCsv(chartWithUnassigned, testObservations);
+      expect(csv).toContain("Unassigned,—,2025-12-30,Low");
+
+      const html = formatChartHtml(chartWithUnassigned, testObservations);
+      expect(html).toContain("Observations prior to Cycle 1");
+      expect(html).toContain("2025-12-30");
     });
 
     it("escapes fields containing commas or quotes", () => {
@@ -109,6 +128,9 @@ describe("export-format", () => {
       expect(html).toContain("clear and stretchy like egg white");
       expect(html).toContain("Method disclaimer");
       expect(html).toContain("certified Marquette instructor");
+      // Check neutral intercourse representation without emoji grading
+      expect(html).toContain("<td>Yes</td>");
+      expect(html).not.toContain("❤️");
       // Check no advice words
       expect(html.toLowerCase()).not.toContain("safe");
       expect(html.toLowerCase()).not.toContain("unsafe");

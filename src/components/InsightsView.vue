@@ -18,39 +18,49 @@ const props = defineProps<{
 
 const stats = computed(() => computeCycleStats(props.chart.cycles, props.today));
 
+const maxTrendLength = computed(() => {
+  const lengths = stats.value.cycleTrend.map((t) => t.lengthDays);
+  return Math.max(42, ...lengths);
+});
+
 const exportStatus = ref<string | null>(null);
+let feedbackTimeout: ReturnType<typeof setTimeout> | undefined;
 
-const exportCsv = async () => {
-  const csvContent = formatChartCsv(props.chart, props.observations ?? []);
-  const filename = `verelle-chart-${props.today}.csv`;
+const runExport = async (
+  filename: string,
+  mimeType: string,
+  content: string,
+  successMessage: string,
+) => {
   const res = await shareOrDownloadFile({
     filename,
-    mimeType: "text/csv",
-    content: csvContent,
+    mimeType,
+    content,
   });
   if (res.success) {
-    exportStatus.value = "CSV exported";
-    setTimeout(() => {
+    if (feedbackTimeout) clearTimeout(feedbackTimeout);
+    exportStatus.value = successMessage;
+    feedbackTimeout = setTimeout(() => {
       exportStatus.value = null;
     }, 3000);
   }
 };
 
-const exportHtml = async () => {
-  const htmlContent = formatChartHtml(props.chart, props.observations ?? [], props.profile);
-  const filename = `verelle-chart-${props.today}.html`;
-  const res = await shareOrDownloadFile({
-    filename,
-    mimeType: "text/html",
-    content: htmlContent,
-  });
-  if (res.success) {
-    exportStatus.value = "Printable Chart exported";
-    setTimeout(() => {
-      exportStatus.value = null;
-    }, 3000);
-  }
-};
+const exportCsv = () =>
+  runExport(
+    `verelle-chart-${props.today}.csv`,
+    "text/csv",
+    formatChartCsv(props.chart, props.observations ?? []),
+    "CSV exported",
+  );
+
+const exportHtml = () =>
+  runExport(
+    `verelle-chart-${props.today}.html`,
+    "text/html",
+    formatChartHtml(props.chart, props.observations ?? [], props.profile),
+    "Printable Chart exported",
+  );
 </script>
 
 <template>
@@ -108,7 +118,7 @@ const exportHtml = async () => {
             v-for="item in stats.cycleTrend"
             :key="item.cycleNumber"
             class="trend-item"
-            :class="{ 'is-current': item.isCurrent }"
+            :class="{ 'in-progress': item.inProgress }"
           >
             <div class="trend-info">
               <span class="trend-cycle">Cycle {{ item.cycleNumber }}</span>
@@ -119,12 +129,12 @@ const exportHtml = async () => {
             <div class="trend-bar-wrapper">
               <div
                 class="trend-bar"
-                :style="{ width: `${Math.min(100, Math.max(10, (item.lengthDays / 45) * 100))}%` }"
+                :style="{ width: `${Math.min(100, Math.max(8, (item.lengthDays / maxTrendLength) * 100))}%` }"
               />
             </div>
             <div class="trend-length">
               {{ item.lengthDays }} days
-              <span v-if="item.isCurrent" class="trend-current-tag">(in progress)</span>
+              <span v-if="item.inProgress" class="trend-current-tag">(in progress)</span>
             </div>
           </li>
         </ul>
@@ -287,7 +297,7 @@ const exportHtml = async () => {
   transition: width 0.3s ease;
 }
 
-.trend-item.is-current .trend-bar {
+.trend-item.in-progress .trend-bar {
   background: var(--verelle-ink-muted);
   opacity: 0.6;
 }

@@ -30,7 +30,7 @@ describe("computeCycleStats", () => {
         startDate: "2026-06-01",
         endDate: "2026-06-10",
         lengthDays: 10,
-        isCurrent: true,
+        inProgress: true,
       },
     ]);
   });
@@ -60,14 +60,14 @@ describe("computeCycleStats", () => {
       startDate: "2026-01-01",
       endDate: "2026-01-28",
       lengthDays: 28,
-      isCurrent: false,
+      inProgress: false,
     });
     expect(stats.cycleTrend[3]).toEqual({
       cycleNumber: 4,
       startDate: "2026-04-01",
       endDate: "2026-04-05",
       lengthDays: 5,
-      isCurrent: true,
+      inProgress: true,
     });
   });
 

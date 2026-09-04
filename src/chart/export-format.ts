@@ -1,9 +1,59 @@
-import type { Observation } from "../observations/observation";
+import type { Observation, MonitorReading } from "../observations/observation";
 import { mucusCategory } from "../observations/observation";
 import type { Profile } from "../observations/profile";
 import type { Chart } from "./projection";
 import type { CivilDate } from "./civil-date";
 import { computeCycleStats } from "./cycle-stats";
+
+export interface FormattedDayRow {
+  readonly cycleLabel: string;
+  readonly cycleDayLabel: string;
+  readonly civilDate: CivilDate;
+  readonly monitorReading: string;
+  readonly bleeding: string;
+  readonly mucusDescription: string;
+  readonly mucusCategory: string;
+  readonly lhStrip: string;
+  readonly temperatureFormatted: string;
+  readonly intercourse: string;
+  readonly peakAnnotations: string;
+  readonly dayStatus: string;
+  readonly note: string;
+}
+
+function formatObservationDetails(
+  civilDate: CivilDate,
+  cycleLabel: string,
+  cycleDayLabel: string,
+  obs: Observation | undefined,
+  fallbackReading: MonitorReading | null = null,
+  annotations: readonly string[] = [],
+  dayStatus: string | null = null,
+): FormattedDayRow {
+  const mCategory = mucusCategory(obs?.mucus ?? null);
+  const temperatureFormatted =
+    obs?.temperature != null
+      ? `${obs.temperature}°${obs.temperatureUnit ?? ""}`
+      : "";
+  const intercourse =
+    obs?.intercourse === true ? "Yes" : obs?.intercourse === false ? "No" : "";
+
+  return {
+    cycleLabel,
+    cycleDayLabel,
+    civilDate,
+    monitorReading: obs?.monitorReading ?? fallbackReading ?? "",
+    bleeding: obs?.bleeding ?? "",
+    mucusDescription: obs?.mucus ?? "",
+    mucusCategory: mCategory ?? "",
+    lhStrip: obs?.lhStrip ?? "",
+    temperatureFormatted,
+    intercourse,
+    peakAnnotations: annotations.join(" "),
+    dayStatus: dayStatus ?? "",
+    note: obs?.note ?? "",
+  };
+}
 
 function escapeCsv(val: string | number | null | undefined): string {
   if (val === null || val === undefined) return "";
@@ -41,7 +91,7 @@ export function formatChartCsv(
     [
       "Cycle",
       "Cycle Day",
-      "Date",
+      "Civil Date",
       "Monitor Reading",
       "Bleeding",
       "Mucus Description",
@@ -55,40 +105,87 @@ export function formatChartCsv(
     ],
   ];
 
+  // Include observations recorded prior to Cycle 1
+  for (const unassigned of chart.unassignedDays) {
+    const obs = obsMap.get(unassigned.civilDate);
+    const row = formatObservationDetails(
+      unassigned.civilDate,
+      "Unassigned",
+      "—",
+      obs,
+      unassigned.monitorReading,
+    );
+    rows.push([
+      row.cycleLabel,
+      row.cycleDayLabel,
+      row.civilDate,
+      row.monitorReading,
+      row.bleeding,
+      row.mucusDescription,
+      row.mucusCategory,
+      row.lhStrip,
+      row.temperatureFormatted,
+      row.intercourse,
+      row.peakAnnotations,
+      row.dayStatus,
+      row.note,
+    ]);
+  }
+
   for (let cycleIdx = 0; cycleIdx < chart.cycles.length; cycleIdx++) {
     const cycle = chart.cycles[cycleIdx]!;
     const cycleNumber = cycleIdx + 1;
 
     for (const day of cycle.days) {
       const obs = obsMap.get(day.civilDate);
-      const mCategory = mucusCategory(obs?.mucus ?? null);
-      const tempStr =
-        obs?.temperature != null
-          ? `${obs.temperature}°${obs.temperatureUnit ?? ""}`
-          : "";
-      const intercourseStr =
-        obs?.intercourse === true ? "Yes" : obs?.intercourse === false ? "No" : "";
-      const annotationsStr = day.annotations.join(" ");
-
-      rows.push([
+      const row = formatObservationDetails(
+        day.civilDate,
         String(cycleNumber),
         String(day.cycleDay),
-        day.civilDate,
-        obs?.monitorReading ?? day.monitorReading ?? "",
-        obs?.bleeding ?? "",
-        obs?.mucus ?? "",
-        mCategory ?? "",
-        obs?.lhStrip ?? "",
-        tempStr,
-        intercourseStr,
-        annotationsStr,
-        day.dayStatus ?? "",
-        obs?.note ?? "",
+        obs,
+        day.monitorReading,
+        day.annotations,
+        day.dayStatus,
+      );
+
+      rows.push([
+        row.cycleLabel,
+        row.cycleDayLabel,
+        row.civilDate,
+        row.monitorReading,
+        row.bleeding,
+        row.mucusDescription,
+        row.mucusCategory,
+        row.lhStrip,
+        row.temperatureFormatted,
+        row.intercourse,
+        row.peakAnnotations,
+        row.dayStatus,
+        row.note,
       ]);
     }
   }
 
   return rows.map((r) => r.map(escapeCsv).join(",")).join("\n");
+}
+
+function renderDayRowHtml(row: FormattedDayRow): string {
+  const statusClass = row.dayStatus === "fertile" ? "status-fertile" : "status-infertile";
+  return `
+    <tr class="${statusClass}">
+      <td class="num">${escapeHtml(row.cycleDayLabel)}</td>
+      <td>${escapeHtml(row.civilDate)}</td>
+      <td><span class="badge badge-${escapeHtml(row.monitorReading.toLowerCase())}">${escapeHtml(row.monitorReading || "—")}</span></td>
+      <td>${escapeHtml(row.mucusDescription || "—")}${row.mucusCategory ? ` <small class="category">(${escapeHtml(row.mucusCategory)})</small>` : ""}</td>
+      <td>${escapeHtml(row.bleeding || "—")}</td>
+      <td>${escapeHtml(row.intercourse || "—")}</td>
+      <td>${escapeHtml(row.temperatureFormatted || "—")}</td>
+      <td>${escapeHtml(row.lhStrip || "—")}</td>
+      <td><span class="status-badge">${escapeHtml(row.dayStatus || "—")}</span></td>
+      <td>${escapeHtml(row.peakAnnotations || "—")}</td>
+      <td class="notes-col">${escapeHtml(row.note)}</td>
+    </tr>
+  `;
 }
 
 /**
@@ -107,44 +204,77 @@ export function formatChartHtml(
 
   const stats = computeCycleStats(chart.cycles, chart.today);
 
+  let unassignedHtml = "";
+  if (chart.unassignedDays.length > 0) {
+    let unassignedRowsHtml = "";
+    for (const unassigned of chart.unassignedDays) {
+      const obs = obsMap.get(unassigned.civilDate);
+      const row = formatObservationDetails(
+        unassigned.civilDate,
+        "Unassigned",
+        "—",
+        obs,
+        unassigned.monitorReading,
+      );
+      unassignedRowsHtml += renderDayRowHtml(row);
+    }
+
+    unassignedHtml = `
+      <section class="cycle-section">
+        <header class="cycle-header">
+          <h3>Observations prior to Cycle 1</h3>
+        </header>
+        <div class="table-container">
+          <table class="chart-table">
+            <thead>
+              <tr>
+                <th>Cycle Day</th>
+                <th>Civil Date</th>
+                <th>Monitor Reading</th>
+                <th>Mucus</th>
+                <th>Bleeding</th>
+                <th>Intercourse</th>
+                <th>Temperature</th>
+                <th>LH Strip</th>
+                <th>Day Status</th>
+                <th>Peak Count</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${unassignedRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
   let cyclesHtml = "";
   for (let cycleIdx = 0; cycleIdx < chart.cycles.length; cycleIdx++) {
     const cycle = chart.cycles[cycleIdx]!;
     const cycleNumber = cycleIdx + 1;
-    const isCurrent = cycleIdx === chart.cycles.length - 1;
+    const inProgress = cycleIdx === chart.cycles.length - 1;
 
     let daysHtml = "";
     for (const day of cycle.days) {
       const obs = obsMap.get(day.civilDate);
-      const mCategory = mucusCategory(obs?.mucus ?? null);
-      const tempStr =
-        obs?.temperature != null
-          ? `${obs.temperature}°${obs.temperatureUnit ?? ""}`
-          : "—";
-      const intercourseStr = obs?.intercourse === true ? "❤️ Yes" : "—";
-      const statusClass = day.dayStatus === "fertile" ? "status-fertile" : "status-infertile";
-
-      daysHtml += `
-        <tr class="${statusClass}">
-          <td class="num">${day.cycleDay}</td>
-          <td>${day.civilDate}</td>
-          <td><span class="badge badge-${(obs?.monitorReading ?? day.monitorReading ?? "").toLowerCase()}">${escapeHtml(obs?.monitorReading ?? day.monitorReading ?? "—")}</span></td>
-          <td>${escapeHtml(obs?.mucus ?? "—")}${mCategory ? ` <small class="category">(${escapeHtml(mCategory)})</small>` : ""}</td>
-          <td>${escapeHtml(obs?.bleeding ?? "—")}</td>
-          <td>${intercourseStr}</td>
-          <td>${tempStr}</td>
-          <td>${escapeHtml(obs?.lhStrip ?? "—")}</td>
-          <td><span class="status-badge">${escapeHtml(day.dayStatus ?? "—")}</span></td>
-          <td>${escapeHtml(day.annotations.join(" ") || "—")}</td>
-          <td class="notes-col">${escapeHtml(obs?.note ?? "")}</td>
-        </tr>
-      `;
+      const row = formatObservationDetails(
+        day.civilDate,
+        String(cycleNumber),
+        String(day.cycleDay),
+        obs,
+        day.monitorReading,
+        day.annotations,
+        day.dayStatus,
+      );
+      daysHtml += renderDayRowHtml(row);
     }
 
     cyclesHtml += `
       <section class="cycle-section">
         <header class="cycle-header">
-          <h3>Cycle ${cycleNumber} ${isCurrent ? "(In progress)" : ""}</h3>
+          <h3>Cycle ${cycleNumber} ${inProgress ? "(In progress)" : ""}</h3>
           <p class="cycle-meta">
             Started: <strong>${cycle.startDate}</strong> |
             Days: <strong>${cycle.days.length}</strong>
@@ -352,6 +482,7 @@ export function formatChartHtml(
   ${profileSummaryHtml}
 
   <main>
+    ${unassignedHtml}
     ${cyclesHtml}
   </main>
 </body>
