@@ -266,6 +266,26 @@ describe("UI copy", () => {
     expect(forbiddenWordsIn(cycleScreen)).toEqual([]);
   });
 
+  it("presents Insights and Export without advice words, and never applies interpretation words to a day", async () => {
+    const insightsView = renderedText(
+      "InsightsView.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "InsightsView.vue"), "utf8"),
+    );
+
+    expect(insightsView).toContain('data-testid="insights-view"');
+    expect(insightsView).toContain('data-testid="cycle-stats"');
+    expect(insightsView).toContain('data-testid="cycle-trend-list"');
+    expect(insightsView).toContain('data-testid="export-csv-btn"');
+    expect(insightsView).toContain('data-testid="export-html-btn"');
+    expect(forbiddenWordsIn(insightsView)).toEqual([]);
+
+    // Issue #43: No insight applies an interpretation word to a day
+    const interpretationWords = ["irregular", "abnormal", "healthy", "ovulation occurred"];
+    for (const word of interpretationWords) {
+      expect(insightsView.toLowerCase()).not.toContain(word);
+    }
+  });
+
   it("explains day fertility in DayExplanation without advice words while naming boundary rule, protocol version, and published source", async () => {
     const dayExplanation = renderedText(
       "DayExplanation.vue",
