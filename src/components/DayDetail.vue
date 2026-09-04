@@ -1,0 +1,133 @@
+<script setup lang="ts">
+import { computed } from "vue";
+
+import type { CivilDate } from "../chart/civil-date";
+import type { ChartCycle, ChartDay } from "../chart/projection";
+import type { CycleOverlay } from "../observations/cycle-overlay";
+import type { Observation } from "../observations/observation";
+import { mucusDisplayLabel } from "../observations/observation";
+import DayExplanation from "./DayExplanation.vue";
+
+const props = defineProps<{
+  date: CivilDate;
+  observation?: Observation | null;
+  chartDay?: ChartDay | null;
+  cycle?: ChartCycle | null;
+  cycleOverlay?: CycleOverlay | null;
+}>();
+
+const emit = defineEmits<{
+  edit: [date: CivilDate];
+}>();
+
+const hasObservation = computed(() => {
+  if (!props.observation) return false;
+  const o = props.observation;
+  return (
+    o.monitorReading !== null ||
+    o.bleeding !== null ||
+    o.peakOverride === true ||
+    o.intercourse === true ||
+    o.lhStrip !== null ||
+    o.mucus !== null ||
+    o.temperature !== null ||
+    o.note !== null
+  );
+});
+
+const mucusFormatted = computed(() => {
+  if (!props.observation?.mucus) return null;
+  return mucusDisplayLabel(props.observation.mucus);
+});
+
+const temperatureFormatted = computed(() => {
+  if (props.observation?.temperature === null || props.observation?.temperature === undefined) {
+    return null;
+  }
+  const unit = props.observation.temperatureUnit ?? "F";
+  return `${props.observation.temperature} °${unit}`;
+});
+</script>
+
+<template>
+  <div class="day-detail" data-testid="day-detail">
+    <header class="day-detail-header">
+      <h2 data-testid="day-detail-title">{{ date }}</h2>
+    </header>
+
+    <DayExplanation
+      v-if="chartDay && cycle"
+      :cycle-day="chartDay.cycleDay"
+      :day-status="chartDay.dayStatus"
+      :fertile-window="cycle.fertileWindow"
+      :protocol-family="cycleOverlay?.protocolFamily ?? null"
+      :protocol-version="cycleOverlay?.protocolVersion ?? null"
+    />
+
+    <div v-if="hasObservation && observation" class="day-detail-info">
+      <div v-if="observation.monitorReading" class="day-detail-row">
+        <span class="day-detail-row-label">Monitor reading</span>
+        <span class="day-detail-row-value">{{ observation.monitorReading }}</span>
+      </div>
+
+      <div v-if="observation.bleeding" class="day-detail-row">
+        <span class="day-detail-row-label">Bleeding</span>
+        <span class="day-detail-row-value">{{ observation.bleeding }}</span>
+      </div>
+
+      <div v-if="observation.peakOverride" class="day-detail-row">
+        <span class="day-detail-row-label">Peak override</span>
+        <span class="day-detail-row-value">Yes</span>
+      </div>
+
+      <div v-if="observation.intercourse" class="day-detail-row">
+        <span class="day-detail-row-label">Intercourse</span>
+        <span class="day-detail-row-value">Yes</span>
+      </div>
+
+      <div v-if="observation.lhStrip" class="day-detail-row">
+        <span class="day-detail-row-label">LH strip</span>
+        <span class="day-detail-row-value">{{ observation.lhStrip }}</span>
+      </div>
+
+      <div v-if="mucusFormatted" class="day-detail-row">
+        <span class="day-detail-row-label">Mucus</span>
+        <span class="day-detail-row-value">{{ mucusFormatted }}</span>
+      </div>
+
+      <div v-if="temperatureFormatted" class="day-detail-row">
+        <span class="day-detail-row-label">Temperature</span>
+        <span class="day-detail-row-value">{{ temperatureFormatted }}</span>
+      </div>
+
+      <div v-if="observation.note" class="day-detail-row">
+        <span class="day-detail-row-label">Note</span>
+        <span class="day-detail-row-value">{{ observation.note }}</span>
+      </div>
+
+      <div class="day-detail-actions">
+        <button
+          type="button"
+          class="btn btn-primary"
+          data-testid="edit-observation"
+          @click="emit('edit', date)"
+        >
+          Edit
+        </button>
+      </div>
+    </div>
+
+    <div v-else class="empty-state" data-testid="empty-day-detail">
+      <h2>No Observation</h2>
+      <p>No data recorded for this day.</p>
+      <button
+        type="button"
+        class="btn btn-primary btn-block"
+        data-testid="add-observation"
+        @click="emit('edit', date)"
+      >
+        Add Observation
+      </button>
+    </div>
+  </div>
+</template>

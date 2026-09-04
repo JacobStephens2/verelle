@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   BLEEDING_LEVELS,
   MONITOR_READINGS,
+  MUCUS_OBSERVATIONS,
   applyUpdate,
   isFullFlow,
   mucusCategory,
+  mucusDisplayLabel,
   unrecordedObservation,
   updateOf,
 } from "./observation";
@@ -18,12 +20,33 @@ describe("Monitor reading", () => {
 });
 
 describe("Mucus category", () => {
-  it("maps descriptions to Low, High, or Peak", () => {
+  it("defines MUCUS_OBSERVATIONS using the Marquette manual's own descriptions", () => {
+    expect(MUCUS_OBSERVATIONS).toEqual([
+      "dry or scant",
+      "thick and sticky",
+      "cloudy and slightly stretchy",
+      "clear and stretchy like egg white",
+    ]);
+  });
+
+  it("maps the manual's descriptions to Low, High, or Peak", () => {
+    expect(mucusCategory("dry or scant")).toBe("Low");
+    expect(mucusCategory("thick and sticky")).toBe("Low");
+    expect(mucusCategory("cloudy and slightly stretchy")).toBe("High");
+    expect(mucusCategory("clear and stretchy like egg white")).toBe("Peak");
     expect(mucusCategory("Dry")).toBe("Low");
     expect(mucusCategory("Sticky")).toBe("Low");
     expect(mucusCategory("Creamy")).toBe("High");
     expect(mucusCategory("Stretchy")).toBe("Peak");
     expect(mucusCategory(null)).toBeNull();
+  });
+
+  it("formats each mucus description with its Mucus category for display", () => {
+    expect(mucusDisplayLabel("dry or scant")).toBe("dry or scant (Low)");
+    expect(mucusDisplayLabel("thick and sticky")).toBe("thick and sticky (Low)");
+    expect(mucusDisplayLabel("cloudy and slightly stretchy")).toBe("cloudy and slightly stretchy (High)");
+    expect(mucusDisplayLabel("clear and stretchy like egg white")).toBe("clear and stretchy like egg white (Peak)");
+    expect(mucusDisplayLabel(null)).toBe("Not recorded");
   });
 });
 

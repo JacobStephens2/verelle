@@ -226,7 +226,7 @@ try {
   await setRecordDate(page, pastDate);
   await waitForRecordDate(page, pastDate);
   await page.select('[data-testid="lh-strip"]', "Positive");
-  await page.select('[data-testid="mucus"]', "Stretchy");
+  await page.select('[data-testid="mucus"]', "clear and stretchy like egg white");
   await page.type('[data-testid="temperature"]', "97.8");
   await page.type('[data-testid="note"]', "Copied from the paper Chart");
   await page.click('[data-testid="monitor-Low"]');
@@ -352,7 +352,7 @@ try {
     "true",
   );
   assert.equal(await page.$eval('[data-testid="lh-strip"]', (element) => element.value), "Positive");
-  assert.equal(await page.$eval('[data-testid="mucus"]', (element) => element.value), "Stretchy");
+  assert.equal(await page.$eval('[data-testid="mucus"]', (element) => element.value), "clear and stretchy like egg white");
   assert.equal(await page.$eval('[data-testid="temperature"]', (element) => element.value), "97.8");
   assert.equal(
     await page.$eval('[data-testid="temperature-unit"]', (element) => element.value),

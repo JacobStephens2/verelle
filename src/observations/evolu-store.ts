@@ -84,7 +84,16 @@ const Schema = {
     intercourse: nullOr(SqliteBoolean),
     lhStrip: nullOr(union(literal("Negative"), literal("Positive"), literal("Invalid"))),
     mucus: nullOr(
-      union(literal("Dry"), literal("Sticky"), literal("Creamy"), literal("Stretchy")),
+      union(
+        literal("dry or scant"),
+        literal("thick and sticky"),
+        literal("cloudy and slightly stretchy"),
+        literal("clear and stretchy like egg white"),
+        literal("Dry"),
+        literal("Sticky"),
+        literal("Creamy"),
+        literal("Stretchy"),
+      ),
     ),
     temperature: nullOr(FiniteNumber),
     temperatureUnit: nullOr(union(literal("C"), literal("F"))),

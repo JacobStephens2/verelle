@@ -1,4 +1,5 @@
 @import "./styles/chart.css";
+@import "./styles/form.css";
 
 :root {
   --verelle-ink: #1c1a19;

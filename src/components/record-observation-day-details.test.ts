@@ -109,4 +109,88 @@ describe("RecordObservation day details teaching surface integration", () => {
     expect(html).toContain('data-testid="provisional-explanation"');
     expect(html).toContain("Completing three full days after the last Monitor Peak will make it final");
   });
+
+  it("shows everything recorded for a day in day details, including optional fields and manual mucus with categories", async () => {
+    const fullDay = applyUpdate(unrecordedObservation("2026-06-14"), {
+      monitorReading: "Peak",
+      bleeding: "Spotting",
+      peakOverride: true,
+      intercourse: true,
+      lhStrip: "Positive",
+      mucus: "clear and stretchy like egg white",
+      temperature: 98.6,
+      temperatureUnit: "F",
+      note: "Morning peak observation",
+    });
+
+    const chart = projectChart([cd1, cd6, fullDay], "2026-06-20", [overlay]);
+
+    const app = createTestApp({
+      date: "2026-06-14",
+      today: "2026-06-20",
+      observations: [cd1, cd6, fullDay],
+      showAllFields: true,
+      chart,
+      cycleOverlays: [overlay],
+    });
+
+    const html = await renderToString(app);
+
+    // Day details title
+    expect(html).toContain("Observation details");
+
+    // Shows optional fields
+    expect(html).toContain('data-testid="lh-strip"');
+    expect(html).toContain('data-testid="mucus"');
+    expect(html).toContain('data-testid="temperature"');
+    expect(html).toContain('data-testid="note"');
+
+    // Mucus options use the Marquette manual's descriptions, each displaying its category
+    expect(html).toContain("dry or scant (Low)");
+    expect(html).toContain("thick and sticky (Low)");
+    expect(html).toContain("cloudy and slightly stretchy (High)");
+    expect(html).toContain("clear and stretchy like egg white (Peak)");
+
+    // Values of recorded fields are present
+    expect(html).toContain("Positive");
+    expect(html).toContain("clear and stretchy like egg white");
+    expect(html).toContain("98.6");
+    expect(html).toContain("Morning peak observation");
+  });
+
+  it("hides optional fields behind the more affordance when daily fields are shown", async () => {
+    const chart = projectChart([cd1, cd6, peak], "2026-06-20", [overlay]);
+
+    const app = createTestApp({
+      date: "2026-06-20",
+      today: "2026-06-20",
+      observations: [cd1, cd6, peak],
+      showAllFields: false,
+      chart,
+      cycleOverlays: [overlay],
+    });
+
+    const html = await renderToString(app);
+
+    // Daily title
+    expect(html).toContain("Today");
+
+    // Mandatory daily fields are present
+    expect(html).toContain('data-testid="record-date-input"');
+    expect(html).toContain('data-testid="monitor-Low"');
+    expect(html).toContain('data-testid="bleeding-None"');
+    expect(html).toContain('data-testid="peak-override"');
+    expect(html).toContain('data-testid="intercourse"');
+    expect(html).toContain('data-testid="save"');
+
+    // More affordance is present
+    expect(html).toContain('data-testid="toggle-more"');
+    expect(html).toContain("More fields");
+
+    // Optional fields are collapsed and hidden by default
+    expect(html).not.toContain('data-testid="lh-strip"');
+    expect(html).not.toContain('data-testid="mucus"');
+    expect(html).not.toContain('data-testid="temperature"');
+    expect(html).not.toContain('data-testid="note"');
+  });
 });
