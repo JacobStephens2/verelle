@@ -64,4 +64,45 @@ export function displayCivilDate(date: CivilDate): string {
   }).format(new Date(utcMidnight(date)));
 }
 
+/**
+ * Completed calendar years between two CivilDates; negative when `to` is earlier.
+ * Returns 0 if either date is malformed or invalid.
+ */
+export function completedYearsBetweenCivilDates(from: CivilDate, to: CivilDate): number {
+  const fromParts = from.split("-").map(Number);
+  const toParts = to.split("-").map(Number);
+  const fromYear = fromParts[0];
+  const fromMonth = fromParts[1];
+  const fromDay = fromParts[2];
+  const toYear = toParts[0];
+  const toMonth = toParts[1];
+  const toDay = toParts[2];
+  if (
+    fromYear === undefined ||
+    fromMonth === undefined ||
+    fromDay === undefined ||
+    toYear === undefined ||
+    toMonth === undefined ||
+    toDay === undefined ||
+    Number.isNaN(fromYear) ||
+    Number.isNaN(fromMonth) ||
+    Number.isNaN(fromDay) ||
+    Number.isNaN(toYear) ||
+    Number.isNaN(toMonth) ||
+    Number.isNaN(toDay)
+  ) {
+    return 0;
+  }
+  let years = toYear - fromYear;
+  if (toMonth < fromMonth || (toMonth === fromMonth && toDay < fromDay)) {
+    years--;
+  }
+  return years;
+}
+
+/** Alias for completedYearsBetweenCivilDates when calculating age from a birth date. */
+export const ageOnCivilDate = completedYearsBetweenCivilDates;
+
+
+
 

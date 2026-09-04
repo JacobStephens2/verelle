@@ -204,4 +204,37 @@ describe("ChartFrame component presentation seam", () => {
     expect(html).not.toContain("chart__cell--fertile");
     expect(html).not.toContain("data-day-status");
   });
+
+  it("renders eligibility warnings while computing and rendering the chart", async () => {
+    const overlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "regular_monitor" as const,
+      protocolVersion: "marquette_regular_manual_public" as const,
+    };
+    const app = createSSRApp({
+      render: () =>
+        h(ChartFrame, {
+          today: "2026-06-20",
+          observations: [cd1, peak],
+          cycleOverlays: [overlay],
+          profile: {
+            dateOfBirth: "1980-01-01",
+            breastfeeding: null,
+            postpartum: null,
+            perimenopause: null,
+            hormonalContraceptionStop: null,
+          },
+        }),
+    });
+
+    const html = await renderToString(app);
+    // Warning is rendered
+    expect(html).toContain('data-testid="eligibility-warnings"');
+    expect(html).toContain('data-testid="warning-reason"');
+    expect(html).toContain("Find a Marquette instructor");
+
+    // Chart and fertile window are still rendered
+    expect(html).toContain('data-has-fertile-window="true"');
+    expect(html).toContain("chart__cell--fertile");
+  });
 });

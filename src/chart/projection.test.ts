@@ -549,3 +549,52 @@ describe("Fertile window computation (regular_monitor, after six cycles: the his
   });
 });
 
+describe("Eligibility warnings integration", () => {
+  const cd1 = applyUpdate(unrecordedObservation("2026-06-01"), { bleeding: "Heavy" });
+  const cd6 = applyUpdate(unrecordedObservation("2026-06-06"), { monitorReading: "Low" });
+  const peak = applyUpdate(unrecordedObservation("2026-06-12"), { monitorReading: "Peak" });
+  const overlay: CycleOverlay = {
+    ...defaultCycleOverlay("2026-06-01"),
+    protocolFamily: "regular_monitor",
+    protocolVersion: "marquette_regular_manual_public",
+  };
+
+  it("produces empty eligibilityWarnings when fields are not entered", () => {
+    const chart = projectChart([cd1, cd6, peak], "2026-06-18", [overlay], null);
+    expect(chart.eligibilityWarnings).toEqual([]);
+  });
+
+  it("continues computing fertile window while an eligibility warning is active", () => {
+    const profile: Profile = {
+      dateOfBirth: "1980-01-01", // age 46 on 2026-06-18
+      breastfeeding: null,
+      postpartum: null,
+      perimenopause: null,
+      hormonalContraceptionStop: null,
+    };
+    const chart = projectChart([cd1, cd6, peak], "2026-06-18", [overlay], profile);
+
+    // Warning is produced
+    expect(chart.eligibilityWarnings.some((w) => w.circumstance === "age_outside_range")).toBe(true);
+
+    // Fertile window is STILL computed (never blocked)
+    const cycle = chart.cycles[0]!;
+    expect(cycle).toBeDefined();
+    expect(cycle.fertileWindow).toEqual({
+      start: {
+        cycleDay: 6,
+        ruleId: "REG-START-1",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 15,
+        ruleId: "REG-END-1",
+        confidence: "final",
+      },
+    });
+    expect(cycle.days[0]?.dayStatus).toBe("infertile");
+    expect(cycle.days[5]?.dayStatus).toBe("fertile");
+  });
+});
+
+

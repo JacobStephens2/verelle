@@ -14,6 +14,7 @@ import type { PairingState } from "../owners/owner-secret-store";
 import type { SyncState } from "../sync/sync-state";
 import ChartCell from "./ChartCell.vue";
 import ChartZoomControl from "./ChartZoom.vue";
+import EligibilityWarnings from "./EligibilityWarnings.vue";
 
 const props = defineProps<{
   today?: CivilDate;
@@ -144,6 +145,9 @@ onMounted(() => {
 
     <!-- Zoom toolbar: Normal, Compact, Trend -->
     <ChartZoomControl v-model="zoom" />
+
+    <!-- Eligibility warnings -->
+    <EligibilityWarnings :warnings="chart.eligibilityWarnings" />
 
     <!-- Chart Table Container (Chart35 layout, sticky cycle column, 3 zoom levels) -->
     <div

@@ -1,0 +1,132 @@
+{
+  "name": "eligibility warning: perimenopausal in isolation",
+  "today": "2026-06-10",
+  "profile": {
+    "dateOfBirth": null,
+    "breastfeeding": null,
+    "postpartum": null,
+    "perimenopause": true,
+    "hormonalContraceptionStop": null
+  },
+  "observations": [
+    {
+      "civilDate": "2026-06-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-06-10",
+    "cycles": [
+      {
+        "startDate": "2026-06-01",
+        "days": [
+          {
+            "civilDate": "2026-06-01",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-02",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-03",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-04",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-05",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-06",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-07",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-08",
+            "cycleDay": 8,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-09",
+            "cycleDay": 9,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-10",
+            "cycleDay": 10,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          }
+        ],
+        "mucusPeak": null,
+        "fertileWindow": null
+      }
+    ],
+    "unassignedDays": [],
+    "eligibilityWarnings": [
+      {
+        "circumstance": "perimenopausal",
+        "reason": "Perimenopausal status recorded in Profile.",
+        "instructionLimit": "The Marquette regular-cycle manual does not cover perimenopause; the method publishes specialized protocols for the perimenopausal transition.",
+        "conservativeGuidance": "Published method instructions advise consulting an instructor for perimenopausal transition protocols; continue charting and treat days before confirmed post-Peak infertility as fertile.",
+        "instructorRoute": {
+          "label": "Find a Marquette instructor",
+          "url": "https://www.marquettemethod.com/"
+        }
+      }
+    ]
+  }
+}

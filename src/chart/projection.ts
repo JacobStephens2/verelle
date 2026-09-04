@@ -10,6 +10,9 @@ import type { Profile } from "../observations/profile";
 import type { CivilDate } from "./civil-date";
 import { civilDatePlusDays, daysBetweenCivilDates } from "./civil-date";
 
+import type { EligibilityWarning } from "./eligibility-warnings";
+import { evaluateEligibilityWarnings } from "./eligibility-warnings";
+
 /** Minimum Cycle Day columns shown before the current Cycle grows past them. */
 export const CYCLE_DAY_COLUMNS = 42;
 
@@ -108,6 +111,7 @@ export interface Chart {
   readonly today: CivilDate;
   readonly cycles: readonly ChartCycle[];
   readonly unassignedDays: readonly UnassignedChartDay[];
+  readonly eligibilityWarnings: readonly EligibilityWarning[];
 }
 
 function markersFor(observation: Observation | undefined): ObservationMarker[] {
@@ -155,8 +159,6 @@ export function projectChart(
   cycleOverlays: readonly CycleOverlay[] = [],
   profile: Profile | null = null,
 ): Chart {
-  // Profile input is reserved for subsequent history-based and eligibility rules
-  void profile;
   const observationsByDate = new Map<CivilDate, Observation>();
   for (const observation of observations) {
     if (observation.civilDate <= today) {
@@ -462,5 +464,12 @@ export function projectChart(
     markers: markersFor(observation),
   }));
 
-  return { today, cycles, unassignedDays };
+  const eligibilityWarnings = evaluateEligibilityWarnings(
+    cycles,
+    today,
+    profile,
+    cycleOverlays,
+  );
+
+  return { today, cycles, unassignedDays, eligibilityWarnings };
 }

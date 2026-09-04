@@ -116,6 +116,18 @@
         "fertileWindow": null
       }
     ],
-    "unassignedDays": []
+    "unassignedDays": [],
+    "eligibilityWarnings": [
+      {
+        "circumstance": "cycle_length_outside_range",
+        "reason": "Cycle length (4 days) is outside the 22–42 day range of published regular-cycle instructions.",
+        "instructionLimit": "The Marquette regular-cycle manual publishes instructions for cycles between 22 and 42 days.",
+        "conservativeGuidance": "Published method instructions advise consulting an instructor for cycles outside 22–42 days; continue charting and treat days before confirmed post-Peak infertility as fertile.",
+        "instructorRoute": {
+          "label": "Find a Marquette instructor",
+          "url": "https://www.marquettemethod.com/"
+        }
+      }
+    ]
   }
 }

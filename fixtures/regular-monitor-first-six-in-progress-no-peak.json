@@ -54,16 +54,94 @@
       {
         "startDate": "2026-06-01",
         "days": [
-          { "civilDate": "2026-06-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [], "dayStatus": "infertile" },
-          { "civilDate": "2026-06-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "infertile" },
-          { "civilDate": "2026-06-03", "cycleDay": 3, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "infertile" },
-          { "civilDate": "2026-06-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "infertile" },
-          { "civilDate": "2026-06-05", "cycleDay": 5, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "infertile" },
-          { "civilDate": "2026-06-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "fertile" },
-          { "civilDate": "2026-06-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "fertile" },
-          { "civilDate": "2026-06-08", "cycleDay": 8, "monitorReading": "Low", "markers": ["monitor", "bleeding"], "annotations": [], "dayStatus": "fertile" },
-          { "civilDate": "2026-06-09", "cycleDay": 9, "monitorReading": "High", "markers": ["monitor", "bleeding"], "annotations": [], "dayStatus": "fertile" },
-          { "civilDate": "2026-06-10", "cycleDay": 10, "monitorReading": null, "markers": [], "annotations": [], "dayStatus": "fertile" }
+          {
+            "civilDate": "2026-06-01",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-02",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-03",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-04",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-05",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-06",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-07",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-08",
+            "cycleDay": 8,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-09",
+            "cycleDay": 9,
+            "monitorReading": "High",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-10",
+            "cycleDay": 10,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          }
         ],
         "mucusPeak": null,
         "fertileWindow": {
@@ -76,6 +154,7 @@
         }
       }
     ],
-    "unassignedDays": []
+    "unassignedDays": [],
+    "eligibilityWarnings": []
   }
 }
