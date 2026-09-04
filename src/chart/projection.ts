@@ -5,6 +5,7 @@ import type {
 } from "../observations/observation";
 import { isFullFlow, mucusCategory } from "../observations/observation";
 import type { CycleOverlay } from "../observations/cycle-overlay";
+import { defaultProtocolVersion } from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
 import type { CivilDate } from "./civil-date";
 import { civilDatePlusDays, daysBetweenCivilDates } from "./civil-date";
@@ -217,6 +218,9 @@ export function projectChart(
 
     const overlay = overlaysByStartDate.get(start.civilDate);
     const protocolFamily = overlay?.protocolFamily ?? null;
+    const protocolVersion =
+      overlay?.protocolVersion ??
+      (protocolFamily ? defaultProtocolVersion(protocolFamily) : null);
 
     // Count only cycles charting under a method protocol family
     const methodCyclesBefore = cycleStarts.slice(0, index).filter((s) => {
@@ -226,29 +230,182 @@ export function projectChart(
     const methodCycleNumber = methodCyclesBefore + 1;
 
     let fertileWindow: FertileWindow | null = null;
-    if (methodCycleNumber <= 6 && protocolFamily === "regular_monitor") {
-      let end: FertileWindowBoundary | null = null;
-      if (monitorPeaks.length > 0) {
-        const lastMonitorPeak = monitorPeaks[monitorPeaks.length - 1]!;
-        const lastPeakCycleDay =
-          daysBetweenCivilDates(start.civilDate, lastMonitorPeak.civilDate) + 1;
-        const endCycleDay = lastPeakCycleDay + 3;
-        const endCivilDate = civilDatePlusDays(lastMonitorPeak.civilDate, 3);
-        const isEndComplete = today > endCivilDate || nextStart !== undefined;
-        end = {
-          cycleDay: endCycleDay,
-          ruleId: "REG-END-1",
-          confidence: isEndComplete ? "final" : "provisional",
+    if (
+      protocolFamily === "regular_monitor" &&
+      protocolVersion === "marquette_regular_manual_public"
+    ) {
+      if (methodCycleNumber <= 6) {
+        let end: FertileWindowBoundary | null = null;
+        if (monitorPeaks.length > 0) {
+          const lastMonitorPeak = monitorPeaks[monitorPeaks.length - 1]!;
+          const lastPeakCycleDay =
+            daysBetweenCivilDates(start.civilDate, lastMonitorPeak.civilDate) + 1;
+          const endCycleDay = lastPeakCycleDay + 3;
+          const endCivilDate = civilDatePlusDays(lastMonitorPeak.civilDate, 3);
+          const isEndComplete = today > endCivilDate || nextStart !== undefined;
+          end = {
+            cycleDay: endCycleDay,
+            ruleId: "REG-END-1",
+            confidence: isEndComplete ? "final" : "provisional",
+          };
+        }
+        fertileWindow = {
+          start: {
+            cycleDay: 6,
+            ruleId: "REG-START-1",
+            confidence: "final",
+          },
+          end,
         };
+      } else {
+        // After six completed method cycles: use historical Monitor Peaks
+        const priorMethodStarts = cycleStarts.slice(0, index).filter((s) => {
+          const priorOverlay = overlaysByStartDate.get(s.civilDate);
+          return priorOverlay?.protocolFamily !== null && priorOverlay?.protocolFamily !== undefined;
+        });
+        const lastSixPriorStarts = priorMethodStarts.slice(-6);
+        const historicalPeakCycleDays: number[] = [];
+
+        for (const priorStart of lastSixPriorStarts) {
+          const priorIndex = cycleStarts.findIndex(
+            (s) => s.civilDate === priorStart.civilDate,
+          );
+          const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
+          const priorEndDate =
+            priorNextStart === undefined
+              ? today
+              : civilDatePlusDays(priorNextStart, -1);
+          const priorObservations = datedObservations.filter(
+            (o) => o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
+          );
+          const priorMonitorPeaks = priorObservations.filter(
+            (o) => o.monitorReading === "Peak",
+          );
+          for (const peak of priorMonitorPeaks) {
+            const peakCycleDay =
+              daysBetweenCivilDates(priorStart.civilDate, peak.civilDate) + 1;
+            historicalPeakCycleDays.push(peakCycleDay);
+          }
+        }
+
+        if (historicalPeakCycleDays.length === 0) {
+          // When no historical Peak data exists, fall back to flat start with open end
+          fertileWindow = {
+            start: {
+              cycleDay: 6,
+              ruleId: "REG-START-1",
+              confidence: "final",
+            },
+            end: null,
+          };
+        } else {
+          const earliestPeakLast6 = Math.min(...historicalPeakCycleDays);
+          const latestPeakLast6 = Math.max(...historicalPeakCycleDays);
+
+          // Start rule: earlier of earliest Monitor Peak minus six and current cycle's first High
+          const historicalCalendarStart = Math.max(1, earliestPeakLast6 - 6);
+          const highReadings = observationsInCycle.filter(
+            (o) => o.monitorReading === "High",
+          );
+          const firstHighObs = highReadings[0];
+          const firstHighCycleDay =
+            firstHighObs !== undefined
+              ? daysBetweenCivilDates(start.civilDate, firstHighObs.civilDate) + 1
+              : undefined;
+
+          let startBoundary: FertileWindowBoundary;
+          if (
+            firstHighCycleDay !== undefined &&
+            firstHighCycleDay < historicalCalendarStart
+          ) {
+            startBoundary = {
+              cycleDay: firstHighCycleDay,
+              ruleId: "REG-START-3",
+              confidence: "final",
+            };
+          } else {
+            startBoundary = {
+              cycleDay: historicalCalendarStart,
+              ruleId: "REG-START-2",
+              confidence: "final",
+            };
+          }
+
+          // End rule: earlier of current last Peak + 3 and historical latest Peak + 3
+          const historicalEnd = latestPeakLast6 + 3;
+          const makeFallbackEndBoundary = (
+            fallbackCycleDay: number,
+          ): FertileWindowBoundary => {
+            const endCivilDate = civilDatePlusDays(start.civilDate, fallbackCycleDay - 1);
+            const isEndComplete = today > endCivilDate || nextStart !== undefined;
+            return {
+              cycleDay: fallbackCycleDay,
+              ruleId: "REG-END-2",
+              confidence: isEndComplete ? "final" : "provisional",
+            };
+          };
+
+          let endBoundary: FertileWindowBoundary | null = null;
+
+          if (monitorPeaks.length > 0) {
+            const lastMonitorPeak = monitorPeaks[monitorPeaks.length - 1]!;
+            const currentPeakCycleDay =
+              daysBetweenCivilDates(start.civilDate, lastMonitorPeak.civilDate) + 1;
+            const currentEnd = currentPeakCycleDay + 3;
+
+            if (currentEnd <= historicalEnd) {
+              const endCivilDate = civilDatePlusDays(lastMonitorPeak.civilDate, 3);
+              const isEndComplete = today > endCivilDate || nextStart !== undefined;
+              endBoundary = {
+                cycleDay: currentEnd,
+                ruleId: "REG-END-1",
+                confidence: isEndComplete ? "final" : "provisional",
+              };
+            } else {
+              endBoundary = makeFallbackEndBoundary(historicalEnd);
+            }
+          } else {
+            // No Monitor Peak in current cycle:
+            // Check for prolonged run of High readings
+            const totalDays = daysBetweenCivilDates(start.civilDate, endDate) + 1;
+            let maxConsecutiveHigh = 0;
+            let currentConsecutiveHigh = 0;
+            let hasRunIntoHistoricalEnd = false;
+
+            for (let dayIdx = 0; dayIdx < totalDays; dayIdx++) {
+              const dayCivilDate = civilDatePlusDays(start.civilDate, dayIdx);
+              const cycleDay = dayIdx + 1;
+              const reading = observationsByDate.get(dayCivilDate)?.monitorReading;
+              if (reading === "High") {
+                currentConsecutiveHigh++;
+                if (currentConsecutiveHigh > maxConsecutiveHigh) {
+                  maxConsecutiveHigh = currentConsecutiveHigh;
+                }
+                if (cycleDay >= historicalEnd && currentConsecutiveHigh >= 3) {
+                  hasRunIntoHistoricalEnd = true;
+                }
+              } else {
+                currentConsecutiveHigh = 0;
+              }
+            }
+
+            const isProlongedHigh =
+              maxConsecutiveHigh >= 6 || hasRunIntoHistoricalEnd;
+
+            if (isProlongedHigh) {
+              // Prolonged run of High readings keeps window open rather than reading as infertility
+              endBoundary = null;
+            } else {
+              endBoundary = makeFallbackEndBoundary(historicalEnd);
+            }
+          }
+
+          fertileWindow = {
+            start: startBoundary,
+            end: endBoundary,
+          };
+        }
       }
-      fertileWindow = {
-        start: {
-          cycleDay: 6,
-          ruleId: "REG-START-1",
-          confidence: "final",
-        },
-        end,
-      };
     }
 
     const dayCount = daysBetweenCivilDates(start.civilDate, endDate) + 1;

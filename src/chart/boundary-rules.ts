@@ -20,14 +20,31 @@ const REGULAR_MANUAL_SOURCE: PublishedSource = {
   url: "https://device.report/m/5d2a8bd09ddf8f66399d538367a5d586e38444ab368d3e85f42fd740a0aeb0ea.pdf",
 };
 
+const CASE_REPORTS_SOURCE: PublishedSource = {
+  title: "Case Reports of the Marquette Method",
+  url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC6081769/",
+};
+
 export const BOUNDARY_RULES: Record<string, BoundaryRule> = {
   "REG-START-1": {
     id: "REG-START-1",
     source: REGULAR_MANUAL_SOURCE,
   },
+  "REG-START-2": {
+    id: "REG-START-2",
+    source: REGULAR_MANUAL_SOURCE,
+  },
+  "REG-START-3": {
+    id: "REG-START-3",
+    source: REGULAR_MANUAL_SOURCE,
+  },
   "REG-END-1": {
     id: "REG-END-1",
     source: REGULAR_MANUAL_SOURCE,
+  },
+  "REG-END-2": {
+    id: "REG-END-2",
+    source: CASE_REPORTS_SOURCE,
   },
 };
 

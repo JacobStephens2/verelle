@@ -142,8 +142,17 @@ const confidenceDisplay = computed<string>(() => {
         <span v-if="rule.id === 'REG-START-1'" class="day-explanation__rule-desc">
           &mdash; First six cycles begin fertility on Cycle Day 6.
         </span>
+        <span v-else-if="rule.id === 'REG-START-2'" class="day-explanation__rule-desc">
+          &mdash; Earliest Monitor Peak of the last six cycles minus six.
+        </span>
+        <span v-else-if="rule.id === 'REG-START-3'" class="day-explanation__rule-desc">
+          &mdash; First High reading earlier than calendar start.
+        </span>
         <span v-else-if="rule.id === 'REG-END-1'" class="day-explanation__rule-desc">
           &mdash; End is three full days after last Monitor Peak.
+        </span>
+        <span v-else-if="rule.id === 'REG-END-2'" class="day-explanation__rule-desc">
+          &mdash; Missed-surge fallback uses latest Monitor Peak from last six cycles plus three full days.
         </span>
       </div>
 
@@ -166,7 +175,12 @@ const confidenceDisplay = computed<string>(() => {
         This boundary is provisional. Recording a Monitor Peak and completing three full days after the last Monitor Peak will make it final.
       </span>
       <span v-else-if="fertileWindow.end.confidence === 'provisional'">
-        This boundary is provisional. Completing three full days after the last Monitor Peak will make it final.
+        <span v-if="fertileWindow.end.ruleId === 'REG-END-2'">
+          This boundary is provisional. Passing the historical fallback day or completing three full days after a Monitor Peak will make it final.
+        </span>
+        <span v-else>
+          This boundary is provisional. Completing three full days after the last Monitor Peak will make it final.
+        </span>
       </span>
       <span v-else-if="fertileWindow.start.confidence === 'provisional'">
         This boundary is provisional.
