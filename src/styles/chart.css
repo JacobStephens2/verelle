@@ -1,0 +1,351 @@
+/* Verelle Chart view structural styles and palette.
+ * Rebuilt from Chart35's layout, zoom modes, and structural CSS.
+ * Verelle gets its own hues: Low (slate blue), High (violet), Peak (magenta),
+ * Bleeding (crimson). Creighton's green/white/yellow stamp colours are excluded.
+ */
+
+:root {
+  --verelle-stamp-bleeding: #b33939;
+  --verelle-stamp-low: #3b7a9e;
+  --verelle-stamp-high: #7b4ea6;
+  --verelle-stamp-peak: #9e2b6c;
+  --verelle-stamp-missed: #736e6a;
+  --verelle-stamp-error: #b56228;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --verelle-stamp-bleeding: #c24949;
+    --verelle-stamp-low: #4a8eb8;
+    --verelle-stamp-high: #9466c4;
+    --verelle-stamp-peak: #b83a82;
+    --verelle-stamp-missed: #857e79;
+    --verelle-stamp-error: #c97136;
+  }
+}
+
+.chart-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* No left padding: the sticky cycle-label column pins to left:0, so any
+   * left padding would leave a strip where horizontally-scrolled cells peek
+   * through beside it. Flush-left keeps the label hard against the card edge. */
+  padding: 10px 10px 10px 0;
+  margin-top: 8px;
+  background: var(--verelle-surface-sunken);
+  border-radius: 28px;
+  /* Zoom variables — overridden by [data-zoom] for compact/trend modes */
+  --stamp-size: 36px;
+  --stamp-font: 0.75rem;
+  --cell-min: 46px;
+  --cell-pad-y: 8px;
+  --cell-pad-x: 4px;
+  --code-font: 0.5625rem;
+  --code-max: 44px;
+  --day-font: 0.625rem;
+  --label-num-font: 0.9rem;
+  --label-meta-font: 0.66rem;
+  --label-min: 82px;
+}
+
+.chart-container[data-zoom="compact"] {
+  --stamp-size: 26px;
+  --stamp-font: 0.625rem;
+  --cell-min: 32px;
+  --cell-pad-y: 5px;
+  --cell-pad-x: 2px;
+  --code-font: 0.5rem;
+  --code-max: 30px;
+  --day-font: 0.55rem;
+  --label-num-font: 0.78rem;
+  --label-meta-font: 0.58rem;
+  --label-min: 68px;
+}
+
+.chart-container[data-zoom="trend"] {
+  --stamp-size: 14px;
+  --stamp-font: 0.5rem;
+  --cell-min: 16px;
+  --cell-pad-y: 3px;
+  --cell-pad-x: 1px;
+  --label-num-font: 0.7rem;
+  --label-meta-font: 0.52rem;
+  --label-min: 54px;
+}
+
+/* In trend mode, hide per-stamp date label, observation code, and peak count
+ * so a row collapses to a tight ribbon of colored circles without overflow. */
+.chart-container[data-zoom="trend"] .stamp-day,
+.chart-container[data-zoom="trend"] .stamp-code,
+.chart-container[data-zoom="trend"] .chart__peak-annotation {
+  display: none;
+}
+
+.chart-container[data-zoom="trend"] .cycle-label-date,
+.chart-container[data-zoom="trend"] .cycle-label-len {
+  display: none;
+}
+
+
+.chart-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.chart-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--verelle-surface-sunken);
+}
+
+.chart-zoom-btn {
+  border: none;
+  background: transparent;
+  color: var(--verelle-ink-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  min-height: 32px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chart-zoom-btn.active {
+  background: var(--verelle-surface);
+  color: var(--verelle-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.chart-table {
+  border-collapse: separate;
+  border-spacing: 0 10px;
+  min-width: 100%;
+}
+
+.chart-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.chart-header th {
+  background: var(--verelle-surface);
+  color: var(--verelle-ink-muted);
+  font-size: var(--label-meta-font);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 10px var(--cell-pad-x);
+  text-align: center;
+  min-width: var(--cell-min);
+}
+
+.chart-header th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 11;
+  min-width: var(--label-min);
+  /* Square left edge: rounded corner here acts as a cut-out revealing scrolled columns */
+  border-radius: 0;
+  text-align: left;
+  padding-left: 14px;
+  background: var(--verelle-surface);
+}
+
+.chart-header th:last-child {
+  border-radius: 0 18px 18px 0;
+}
+
+.cycle-row td,
+.cycle-row th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  text-align: center;
+  vertical-align: top;
+  min-width: var(--cell-min);
+  background: var(--verelle-surface);
+  font-weight: normal;
+}
+
+.cycle-row td:first-child,
+.cycle-row th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  min-width: var(--label-min);
+  text-align: left;
+  padding-left: 14px;
+  border-radius: 0;
+  background: var(--verelle-surface);
+}
+
+.cycle-row td:last-child {
+  border-radius: 0 20px 20px 0;
+}
+
+.cycle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cycle-label-sep {
+  display: none;
+}
+
+.cycle-label-num {
+  font-size: var(--label-num-font);
+  font-weight: 700;
+  color: var(--verelle-ink);
+}
+
+.cycle-label-date,
+.cycle-label-len {
+  font-size: var(--label-meta-font);
+  color: var(--verelle-ink-muted);
+}
+
+.chart-empty {
+  background: var(--verelle-surface-sunken);
+}
+
+.stamp-cell.chart__cell--today,
+.chart__cell--today {
+  background: var(--verelle-surface-sunken);
+  outline: 2px solid var(--verelle-primary);
+  outline-offset: -2px;
+}
+
+
+/* Cell / Stamp styles */
+.stamp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.stamp-circle {
+  width: var(--stamp-size, 36px);
+  height: var(--stamp-size, 36px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--stamp-font, 0.75rem);
+  font-weight: 700;
+  position: relative;
+  border: 2px solid transparent;
+  transition: transform 0.1s;
+  color: #ffffff;
+}
+
+.stamp-circle:active {
+  transform: scale(0.92);
+}
+
+.stamp-day {
+  font-size: var(--day-font, 0.625rem);
+  color: var(--verelle-ink-muted);
+  white-space: nowrap;
+}
+
+.stamp-code {
+  font-size: var(--code-font, 0.5625rem);
+  color: var(--verelle-ink-muted);
+  white-space: nowrap;
+  max-width: var(--code-max, 44px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.stamp--low .stamp-circle {
+  background: var(--verelle-stamp-low);
+  color: #ffffff;
+}
+
+.stamp--high .stamp-circle {
+  background: var(--verelle-stamp-high);
+  color: #ffffff;
+}
+
+.stamp--peak .stamp-circle {
+  background: var(--verelle-stamp-peak);
+  color: #ffffff;
+}
+
+.stamp--missed .stamp-circle {
+  background: transparent;
+  border: 2px solid var(--verelle-stamp-missed);
+  color: var(--verelle-ink);
+}
+
+.stamp--error .stamp-circle {
+  background: var(--verelle-stamp-error);
+  color: #ffffff;
+}
+
+.stamp--empty .stamp-circle {
+  background: transparent;
+  border: 2px dashed var(--verelle-rule);
+  color: var(--verelle-ink-muted);
+}
+
+.stamp--recorded .stamp-circle {
+  background: var(--verelle-surface-sunken);
+  border: 1.5px solid var(--verelle-rule);
+  color: var(--verelle-ink);
+}
+
+/* Print styles */
+@media print {
+  .chart-toolbar,
+  .chart-zoom {
+    display: none !important;
+  }
+
+  .chart-container {
+    overflow: visible !important;
+    border-radius: 0 !important;
+    background: white !important;
+    padding: 0 !important;
+  }
+
+  .chart-table {
+    border-spacing: 0 4px;
+    width: 100%;
+  }
+
+  .chart-header th:first-child,
+  .cycle-row td:first-child {
+    position: static !important;
+  }
+
+  .cycle-row td,
+  .chart-header th {
+    background: white !important;
+    color: black !important;
+  }
+
+  .stamp-circle,
+  .chart-empty {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+}

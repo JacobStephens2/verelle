@@ -4,6 +4,7 @@ import {
   civilDateIn,
   civilDatePlusDays,
   daysBetweenCivilDates,
+  displayCivilDate,
   todayCivilDate,
 } from "./civil-date";
 
@@ -65,4 +66,10 @@ describe("civil date arithmetic", () => {
     expect(civilDatePlusDays("2026-08-30", 2)).toBe("2026-09-01");
     expect(civilDatePlusDays("2026-01-01", -1)).toBe("2025-12-31");
   });
+
+  it("formats a civil date for display", () => {
+    expect(displayCivilDate("2026-09-04")).toBe("Sep 4");
+    expect(displayCivilDate("2026-01-01")).toBe("Jan 1");
+  });
 });
+

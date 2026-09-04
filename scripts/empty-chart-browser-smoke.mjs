@@ -118,6 +118,46 @@ try {
   assert.equal(filledCells, 0, `${filledCells} cells were filled in an empty chart`);
   console.log(`ok: empty state reads ${JSON.stringify(emptyState)} over ${columns.length} empty cells`);
 
+  // 3a. The Cycle label column stays pinned while the chart scrolls horizontally.
+  const stickyStyles = await page.evaluate(() => {
+    const scroller = document.querySelector(".chart-container");
+    const headerTh = document.querySelector(".chart-header th:first-child");
+    const rowTh = document.querySelector(".cycle-row th:first-child");
+    if (!scroller || !headerTh || !rowTh) return null;
+    const initialHeaderLeft = headerTh.getBoundingClientRect().left;
+    const initialRowLeft = rowTh.getBoundingClientRect().left;
+    scroller.scrollLeft = 250;
+    const scrolledHeaderLeft = headerTh.getBoundingClientRect().left;
+    const scrolledRowLeft = rowTh.getBoundingClientRect().left;
+    scroller.scrollLeft = 0;
+    return {
+      headerSticky: window.getComputedStyle(headerTh).position === "sticky",
+      rowSticky: window.getComputedStyle(rowTh).position === "sticky",
+      pinnedHeader: Math.abs(initialHeaderLeft - scrolledHeaderLeft) < 2,
+      pinnedRow: Math.abs(initialRowLeft - scrolledRowLeft) < 2,
+    };
+  });
+  assert.ok(stickyStyles?.headerSticky, "The header Cycle column was not position: sticky");
+  assert.ok(stickyStyles?.rowSticky, "The row Cycle column was not position: sticky");
+  assert.ok(stickyStyles?.pinnedHeader, "The header Cycle column drifted when scrolled");
+  assert.ok(stickyStyles?.pinnedRow, "The row Cycle column drifted when scrolled");
+  console.log("ok: Cycle label column stays pinned while the Chart scrolls horizontally");
+
+  // 3b. Three zoom levels are available and update the chart container zoom mode.
+  await page.click('[data-testid="zoom-compact"]');
+  const compactZoom = await page.$eval(".chart-container", (el) => el.getAttribute("data-zoom"));
+  assert.equal(compactZoom, "compact", "Compact zoom mode did not set data-zoom='compact'");
+
+  await page.click('[data-testid="zoom-trend"]');
+  const trendZoom = await page.$eval(".chart-container", (el) => el.getAttribute("data-zoom"));
+  assert.equal(trendZoom, "trend", "Trend zoom mode did not set data-zoom='trend'");
+
+  await page.click('[data-testid="zoom-normal"]');
+  const normalZoom = await page.$eval(".chart-container", (el) => el.getAttribute("data-zoom"));
+  assert.equal(normalZoom, null, "Normal zoom mode left data-zoom set");
+  console.log("ok: three zoom levels (normal, compact, trend) switch cleanly");
+
+
   const pairingState = await page.$eval(
     '[data-testid="pairing-state"]',
     (element) => element.textContent?.trim() ?? "",

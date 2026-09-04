@@ -54,3 +54,14 @@ export function civilDatePlusDays(date: CivilDate, days: number): CivilDate {
     .toISOString()
     .slice(0, 10);
 }
+
+/** Format a CivilDate for display, e.g. "2026-09-04" -> "Sep 4" */
+export function displayCivilDate(date: CivilDate): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(utcMidnight(date)));
+}
+
+
