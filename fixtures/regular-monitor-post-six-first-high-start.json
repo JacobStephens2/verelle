@@ -2067,6 +2067,7 @@
         }
       }
     ],
-    "unassignedDays": []
+    "unassignedDays": [],
+    "eligibilityWarnings": []
   }
 }

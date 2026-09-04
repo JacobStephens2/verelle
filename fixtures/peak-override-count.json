@@ -106,6 +106,7 @@
         "fertileWindow": null
       }
     ],
-    "unassignedDays": []
+    "unassignedDays": [],
+    "eligibilityWarnings": []
   }
 }

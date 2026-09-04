@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { BOUNDARY_RULES } from "./chart/boundary-rules";
+import { evaluateEligibilityWarnings } from "./chart/eligibility-warnings";
 
 // ADR 0015: Verelle computes the Marquette fertile window, naming days
 // fertile or infertile in the method's own words, but never gives advice.
@@ -285,6 +286,93 @@ describe("UI copy", () => {
       if (rule.provisionalRequirement) {
         expect(forbiddenWordsIn(rule.provisionalRequirement)).toEqual([]);
       }
+    }
+  });
+
+  it("presents eligibility warnings in EligibilityWarnings without advice words", async () => {
+    const warningsTemplate = renderedText(
+      "EligibilityWarnings.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "EligibilityWarnings.vue"), "utf8"),
+    );
+
+    expect(warningsTemplate).toContain('data-testid="eligibility-warnings"');
+    expect(warningsTemplate).toContain('data-testid="eligibility-warning"');
+    expect(warningsTemplate).toContain('data-testid="warning-reason"');
+    expect(warningsTemplate).toContain('data-testid="warning-limit"');
+    expect(warningsTemplate).toContain('data-testid="warning-guidance"');
+    expect(warningsTemplate).toContain('data-testid="warning-instructor-link"');
+    expect(forbiddenWordsIn(warningsTemplate)).toEqual([]);
+  });
+
+  it("frames eligibility warning limits as limits of the method's published instructions and contains no advice words", () => {
+    // Generate all 7 warnings
+    const today = "2026-06-15";
+    const profile = {
+      dateOfBirth: "1975-01-01", // age 51
+      breastfeeding: false,
+      postpartum: true,
+      perimenopause: true,
+      hormonalContraceptionStop: "2026-05-01",
+    };
+    const cycle1 = {
+      startDate: "2026-01-01",
+      days: Array.from({ length: 20 }, (_, i) => ({
+        civilDate: "2026-01-01",
+        cycleDay: i + 1,
+        monitorReading: null,
+        markers: [],
+        annotations: [],
+        dayStatus: null,
+      })),
+      mucusPeak: null,
+      fertileWindow: null,
+    };
+    const cycle2 = {
+      startDate: "2026-01-21",
+      days: Array.from({ length: 36 }, (_, i) => ({
+        civilDate: "2026-01-21",
+        cycleDay: i + 1,
+        monitorReading: null,
+        markers: [],
+        annotations: [],
+        dayStatus: null,
+      })),
+      mucusPeak: null,
+      fertileWindow: null,
+    };
+    const currentCycle = {
+      startDate: "2026-02-26",
+      days: Array.from({ length: 5 }, (_, i) => ({
+        civilDate: "2026-02-26",
+        cycleDay: i + 1,
+        monitorReading: null,
+        markers: [],
+        annotations: [],
+        dayStatus: null,
+      })),
+      mucusPeak: null,
+      fertileWindow: null,
+    };
+
+    const warnings = evaluateEligibilityWarnings([cycle1, cycle2, currentCycle], today, profile);
+
+    // Verify all circumstances present
+    expect(warnings.length).toBeGreaterThanOrEqual(5);
+
+    for (const warning of warnings) {
+      // Framing: Limit belongs to the method's published instructions, never the app
+      expect(warning.instructionLimit).toMatch(/Marquette|Clearblue/i);
+      expect(warning.instructionLimit).not.toMatch(/Verelle/i);
+      expect(warning.reason).not.toMatch(/Verelle/i);
+
+      // Advice words check
+      expect(forbiddenWordsIn(warning.reason)).toEqual([]);
+      expect(forbiddenWordsIn(warning.instructionLimit)).toEqual([]);
+      expect(forbiddenWordsIn(warning.conservativeGuidance)).toEqual([]);
+
+      // Route to finding an instructor
+      expect(warning.instructorRoute.label).toMatch(/instructor/i);
+      expect(warning.instructorRoute.url).toMatch(/^https?:\/\//);
     }
   });
 });

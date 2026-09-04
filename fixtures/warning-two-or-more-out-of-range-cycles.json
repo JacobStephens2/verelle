@@ -1,0 +1,475 @@
+{
+  "name": "eligibility warning: two or more out-of-range cycles in isolation",
+  "today": "2026-06-14",
+  "observations": [
+    {
+      "civilDate": "2026-05-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-05-02",
+      "monitorReading": null,
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-05-21",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-05-22",
+      "monitorReading": null,
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-11",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-06-14",
+    "cycles": [
+      {
+        "startDate": "2026-05-01",
+        "days": [
+          {
+            "civilDate": "2026-05-01",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-02",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-03",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-04",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-05",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-06",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-07",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-08",
+            "cycleDay": 8,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-09",
+            "cycleDay": 9,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-10",
+            "cycleDay": 10,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-11",
+            "cycleDay": 11,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-12",
+            "cycleDay": 12,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-13",
+            "cycleDay": 13,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-14",
+            "cycleDay": 14,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-15",
+            "cycleDay": 15,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-16",
+            "cycleDay": 16,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-17",
+            "cycleDay": 17,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-18",
+            "cycleDay": 18,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-19",
+            "cycleDay": 19,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-20",
+            "cycleDay": 20,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          }
+        ],
+        "mucusPeak": null,
+        "fertileWindow": null
+      },
+      {
+        "startDate": "2026-05-21",
+        "days": [
+          {
+            "civilDate": "2026-05-21",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-22",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-23",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-24",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-25",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-26",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-27",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-28",
+            "cycleDay": 8,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-29",
+            "cycleDay": 9,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-30",
+            "cycleDay": 10,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-05-31",
+            "cycleDay": 11,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-01",
+            "cycleDay": 12,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-02",
+            "cycleDay": 13,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-03",
+            "cycleDay": 14,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-04",
+            "cycleDay": 15,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-05",
+            "cycleDay": 16,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-06",
+            "cycleDay": 17,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-07",
+            "cycleDay": 18,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-08",
+            "cycleDay": 19,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-09",
+            "cycleDay": 20,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-10",
+            "cycleDay": 21,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          }
+        ],
+        "mucusPeak": null,
+        "fertileWindow": null
+      },
+      {
+        "startDate": "2026-06-11",
+        "days": [
+          {
+            "civilDate": "2026-06-11",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-12",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-13",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-14",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          }
+        ],
+        "mucusPeak": null,
+        "fertileWindow": null
+      }
+    ],
+    "unassignedDays": [],
+    "eligibilityWarnings": [
+      {
+        "circumstance": "two_or_more_out_of_range_cycles",
+        "reason": "Two or more cycles (2 cycles) are outside the 22–42 day range of published regular-cycle instructions.",
+        "instructionLimit": "The Marquette regular-cycle manual states that experiencing two or more cycles outside 22–42 days requires professional teacher advice.",
+        "conservativeGuidance": "Published method instructions advise consulting an instructor for individualized guidance when multiple cycles fall outside 22–42 days; continue charting and treat days before confirmed post-Peak infertility as fertile.",
+        "instructorRoute": {
+          "label": "Find a Marquette instructor",
+          "url": "https://www.marquettemethod.com/"
+        }
+      }
+    ]
+  }
+}
