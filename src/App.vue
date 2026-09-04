@@ -28,9 +28,13 @@ const pairingState = ref<PairingState>("unpaired");
 const observationStore = useObservationStore();
 const ownerManager = useOwnerManager();
 const observations = observationStore.observe();
+const cycleOverlays = observationStore.observeCycleOverlays();
+const profile = observationStore.observeProfile();
 const syncState = observationStore.observeSyncState();
 
-const chart = computed(() => projectChart(observations.value, today.value));
+const chart = computed(() =>
+  projectChart(observations.value, today.value, cycleOverlays.value, profile.value),
+);
 const cycleStartDates = computed(() => chart.value.cycles.map((c) => c.startDate));
 
 onMounted(async () => {
@@ -103,6 +107,8 @@ const openCycleOverlay = (startDate?: CivilDate) => {
     <ChartFrame
       :today="today"
       :observations="observations"
+      :cycle-overlays="cycleOverlays"
+      :profile="profile"
       :sync-state="syncState"
       :pairing-state="pairingState"
       @select-date="openDayDetails"

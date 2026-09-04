@@ -117,39 +117,195 @@
       {
         "startDate": "2026-06-01",
         "days": [
-          { "civilDate": "2026-06-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
-          { "civilDate": "2026-06-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-06-03", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor", "bleeding"], "annotations": [] },
-          { "civilDate": "2026-06-04", "cycleDay": 4, "monitorReading": "Peak", "markers": ["monitor"], "annotations": ["P"] },
-          { "civilDate": "2026-06-05", "cycleDay": 5, "monitorReading": null, "markers": ["mucus"], "annotations": ["P+1"] },
-          { "civilDate": "2026-06-06", "cycleDay": 6, "monitorReading": null, "markers": ["mucus"], "annotations": ["P+2"] },
-          { "civilDate": "2026-06-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": ["P+3"] },
-          { "civilDate": "2026-06-08", "cycleDay": 8, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-06-09", "cycleDay": 9, "monitorReading": null, "markers": [], "annotations": [] }
+          {
+            "civilDate": "2026-06-01",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-02",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-03",
+            "cycleDay": 3,
+            "monitorReading": "Peak",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-04",
+            "cycleDay": 4,
+            "monitorReading": "Peak",
+            "markers": [
+              "monitor"
+            ],
+            "annotations": [
+              "P"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-05",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [
+              "mucus"
+            ],
+            "annotations": [
+              "P+1"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-06",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [
+              "mucus"
+            ],
+            "annotations": [
+              "P+2"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-07",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [
+              "P+3"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-08",
+            "cycleDay": 8,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-09",
+            "cycleDay": 9,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          }
         ],
         "mucusPeak": {
           "civilDate": "2026-06-05",
           "cycleDay": 5,
           "provisional": false
-        }
+        },
+        "fertileWindow": null
       },
       {
         "startDate": "2026-06-10",
         "days": [
-          { "civilDate": "2026-06-10", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
-          { "civilDate": "2026-06-11", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-06-12", "cycleDay": 3, "monitorReading": "Peak", "markers": ["monitor"], "annotations": [] },
-          { "civilDate": "2026-06-13", "cycleDay": 4, "monitorReading": null, "markers": ["mucus"], "annotations": [] },
-          { "civilDate": "2026-06-14", "cycleDay": 5, "monitorReading": null, "markers": ["peak_override"], "annotations": ["P"] },
-          { "civilDate": "2026-06-15", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": ["P+1"] },
-          { "civilDate": "2026-06-16", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": ["P+2"] },
-          { "civilDate": "2026-06-17", "cycleDay": 8, "monitorReading": null, "markers": [], "annotations": ["P+3"] }
+          {
+            "civilDate": "2026-06-10",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-11",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-12",
+            "cycleDay": 3,
+            "monitorReading": "Peak",
+            "markers": [
+              "monitor"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-13",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [
+              "mucus"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-14",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [
+              "peak_override"
+            ],
+            "annotations": [
+              "P"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-15",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [
+              "P+1"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-16",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [
+              "P+2"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-06-17",
+            "cycleDay": 8,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [
+              "P+3"
+            ],
+            "dayStatus": null
+          }
         ],
         "mucusPeak": {
           "civilDate": "2026-06-13",
           "cycleDay": 4,
           "provisional": true
-        }
+        },
+        "fertileWindow": null
       }
     ],
     "unassignedDays": []

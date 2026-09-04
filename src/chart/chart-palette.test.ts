@@ -3,7 +3,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { ChartDay } from "./projection";
-import { chartCellClass, CHART_ZOOM_LEVELS } from "./chart-presentation";
+import {
+  chartCellClass,
+  CHART_ZOOM_LEVELS,
+  fertileBandPresentation,
+} from "./chart-presentation";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 
@@ -43,6 +47,7 @@ describe("Chart presentation and palette", () => {
       monitorReading: null,
       markers: [],
       annotations: [],
+      dayStatus: null,
       ...partial,
     });
 
@@ -64,4 +69,86 @@ describe("Chart presentation and palette", () => {
     expect(chartCellClass(makeDay({ markers: ["bleeding"] }))).toBe("stamp--recorded");
     expect(chartCellClass(makeDay({ markers: ["mucus"] }))).toBe("stamp--recorded");
   });
+
+  it("defines palette and styling for the Fertile window continuous band behind the Cycle row", async () => {
+    const cssPath = path.join(REPO_ROOT, "src", "styles", "chart.css");
+    const css = await readFile(cssPath, "utf8");
+
+    // Palette tokens
+    expect(css).toContain("--verelle-fertile-band");
+    expect(css).toContain("--verelle-fertile-boundary");
+
+    // Continuous band styles
+    expect(css).toContain(".chart__cell--fertile");
+    expect(css).toContain(".chart__cell--fertile-start");
+    expect(css).toContain(".chart__cell--fertile-end");
+    expect(css).toContain(".chart__cell--provisional-start");
+    expect(css).toContain(".chart__cell--provisional-end");
+  });
+
+  it("computes fertile band presentation classes and edges for cells", () => {
+    const closedWindow = {
+      start: { cycleDay: 6, ruleId: "REG-START-1", confidence: "final" as const },
+      end: { cycleDay: 17, ruleId: "REG-END-1", confidence: "final" as const },
+    };
+
+    // Cycle with no protocol chosen (fertileWindow is null) -> no band
+    expect(fertileBandPresentation(6, null, 25).classes).toEqual([]);
+    expect(fertileBandPresentation(6, null, 25).inFertileWindow).toBe(false);
+
+    // Days before window
+    expect(fertileBandPresentation(5, closedWindow, 25).inFertileWindow).toBe(false);
+    expect(fertileBandPresentation(5, closedWindow, 25).classes).toEqual([]);
+
+    // Start day (CD6, final confidence)
+    const startPres = fertileBandPresentation(6, closedWindow, 25);
+    expect(startPres.inFertileWindow).toBe(true);
+    expect(startPres.isFertileStart).toBe(true);
+    expect(startPres.isFertileEnd).toBe(false);
+    expect(startPres.classes).toContain("chart__cell--fertile");
+    expect(startPres.classes).toContain("chart__cell--fertile-start");
+    expect(startPres.classes).not.toContain("chart__cell--provisional-start");
+
+    // Mid-window day (CD10)
+    const midPres = fertileBandPresentation(10, closedWindow, 25);
+    expect(midPres.inFertileWindow).toBe(true);
+    expect(midPres.isFertileStart).toBe(false);
+    expect(midPres.isFertileEnd).toBe(false);
+    expect(midPres.classes).toEqual(["chart__cell--fertile"]);
+
+    // End day (CD17, final confidence -> solid edge)
+    const endPres = fertileBandPresentation(17, closedWindow, 25);
+    expect(endPres.inFertileWindow).toBe(true);
+    expect(endPres.isFertileEnd).toBe(true);
+    expect(endPres.classes).toContain("chart__cell--fertile-end");
+    expect(endPres.classes).not.toContain("chart__cell--provisional-end");
+
+    // Day after window
+    expect(fertileBandPresentation(18, closedWindow, 25).inFertileWindow).toBe(false);
+
+    // Provisional end boundary (e.g. today <= CD17)
+    const provisionalWindow = {
+      start: { cycleDay: 6, ruleId: "REG-START-1", confidence: "final" as const },
+      end: { cycleDay: 17, ruleId: "REG-END-1", confidence: "provisional" as const },
+    };
+    const provEndPres = fertileBandPresentation(17, provisionalWindow, 25);
+    expect(provEndPres.isFertileEnd).toBe(true);
+    expect(provEndPres.classes).toContain("chart__cell--fertile-end");
+    expect(provEndPres.classes).toContain("chart__cell--provisional-end");
+
+    // Open-ended window (no Peak in cycle -> end is null)
+    const noPeakWindow = {
+      start: { cycleDay: 6, ruleId: "REG-START-1", confidence: "final" as const },
+      end: null,
+    };
+    // Middle day CD15
+    expect(fertileBandPresentation(15, noPeakWindow, 24).inFertileWindow).toBe(true);
+    // Last cycle day (CD24) renders as the provisional end edge
+    const noPeakLastPres = fertileBandPresentation(24, noPeakWindow, 24);
+    expect(noPeakLastPres.inFertileWindow).toBe(true);
+    expect(noPeakLastPres.isFertileEnd).toBe(true);
+    expect(noPeakLastPres.classes).toContain("chart__cell--fertile-end");
+    expect(noPeakLastPres.classes).toContain("chart__cell--provisional-end");
+  });
 });
+
