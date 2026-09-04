@@ -10,7 +10,9 @@ import { inject, type InjectionKey, type Ref } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
 import type { SyncState } from "../sync/sync-state";
+import type { CycleOverlay, CycleOverlayUpdate } from "./cycle-overlay";
 import type { Observation, ObservationUpdate } from "./observation";
+import type { Profile, ProfileUpdate } from "./profile";
 
 export interface ObservationStore {
   /**
@@ -29,6 +31,25 @@ export interface ObservationStore {
 
   /** Whether this Chart has completed its latest Relay sync. */
   observeSyncState: () => Readonly<Ref<SyncState>>;
+
+  /**
+   * Writes the named choices for one Cycle, keyed by its Cycle Day 1 Civil date.
+   * Fields the update does not name are left untouched, so two partners editing
+   * different choices for the same cycle both win.
+   */
+  upsertCycleOverlay: (startDate: CivilDate, update: CycleOverlayUpdate) => Promise<void>;
+
+  /** Every Cycle overlay, ordered by ascending Cycle Day 1 Civil date. */
+  observeCycleOverlays: () => Readonly<Ref<readonly CycleOverlay[]>>;
+
+  /**
+   * Writes the named profile fields for the couple. Fields the update does not
+   * name are left untouched, so two partners editing different fields both win.
+   */
+  upsertProfile: (update: ProfileUpdate) => Promise<void>;
+
+  /** The couple's profile, kept up to date in place. */
+  observeProfile: () => Readonly<Ref<Profile>>;
 }
 
 /**

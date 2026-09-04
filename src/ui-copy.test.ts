@@ -223,4 +223,42 @@ describe("UI copy", () => {
     expect(privacyScreen).toContain("Verelle does not ask for a name or contact information.");
     expect(privacyScreen).not.toMatch(/handing your identity/i);
   });
+
+  it("reaches Profile and Protocol choices from the Chart tools", async () => {
+    const app = renderedText(
+      "App.vue",
+      await readFile(path.join(REPO_ROOT, "src", "App.vue"), "utf8"),
+    );
+
+    expect(app).toContain('data-testid="open-profile"');
+    expect(app).toContain('data-testid="open-cycle-overlay"');
+  });
+
+  it("offers date of birth and eligibility circumstances in Profile without advice words", async () => {
+    const profileScreen = renderedText(
+      "ProfileSettings.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "ProfileSettings.vue"), "utf8"),
+    );
+
+    expect(profileScreen).toContain('data-testid="profile-dob"');
+    expect(profileScreen).toContain('data-testid="profile-breastfeeding"');
+    expect(profileScreen).toContain('data-testid="profile-postpartum"');
+    expect(profileScreen).toContain('data-testid="profile-perimenopause"');
+    expect(profileScreen).toContain('data-testid="profile-contraception-stop"');
+    expect(forbiddenWordsIn(profileScreen)).toEqual([]);
+  });
+
+  it("offers Protocol family and Intention per Cycle in CycleOverlayDialog without advice words", async () => {
+    const cycleScreen = renderedText(
+      "CycleOverlayDialog.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "CycleOverlayDialog.vue"), "utf8"),
+    );
+
+    expect(cycleScreen).toContain('data-testid="protocol-family-select"');
+    expect(cycleScreen).toContain('data-testid="protocol-version-display"');
+    expect(cycleScreen).toContain('data-testid="intention-select"');
+    expect(cycleScreen).toContain("Protocol family");
+    expect(cycleScreen).toContain("Intention");
+    expect(forbiddenWordsIn(cycleScreen)).toEqual([]);
+  });
 });

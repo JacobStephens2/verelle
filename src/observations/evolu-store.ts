@@ -33,11 +33,16 @@ import type { OwnerManager } from "../owners/owner-manager";
 import { createVerelleEvoluDeps } from "../sync/evolu-deps";
 import { createSyncState } from "../sync/sync-state";
 import type { OwnerSyncTransportEvent } from "../sync/sync-transport";
+import type { CycleOverlay, CycleOverlayUpdate, ProtocolVersion } from "./cycle-overlay";
 import type { Observation, ObservationUpdate } from "./observation";
 import { unrecordedObservation } from "./observation";
+import type { Profile, ProfileUpdate } from "./profile";
+import { defaultProfile } from "./profile";
 import type { ObservationStore } from "./store";
 
 const ObservationId = id("Observation");
+const CycleOverlayId = id("CycleOverlay");
+const ProfileId = id("Profile");
 
 /**
  * One row per **Civil date**, every field its own column.
@@ -85,6 +90,32 @@ const Schema = {
     temperatureUnit: nullOr(union(literal("C"), literal("F"))),
     note: nullOr(NonEmptyTrimmedString1000),
   },
+  cycleOverlay: {
+    id: CycleOverlayId,
+    /** `YYYY-MM-DD` Cycle Day 1 Civil date. */
+    startDate: NonEmptyTrimmedString100,
+    protocolFamily: nullOr(
+      union(
+        literal("regular_monitor"),
+        literal("regular_monitor_plus_mucus"),
+        literal("mucus_only"),
+        literal("postpartum_cycle_zero_original"),
+        literal("postpartum_return_to_cycles"),
+      ),
+    ),
+    protocolVersion: nullOr(NonEmptyTrimmedString100),
+    intention: nullOr(union(literal("avoid"), literal("achieve"))),
+    postpartumCycleNumber: nullOr(FiniteNumber),
+  },
+  profile: {
+    id: ProfileId,
+    /** `YYYY-MM-DD` date of birth, never a computed age. */
+    dateOfBirth: nullOr(NonEmptyTrimmedString100),
+    breastfeeding: nullOr(SqliteBoolean),
+    postpartum: nullOr(SqliteBoolean),
+    perimenopause: nullOr(SqliteBoolean),
+    hormonalContraceptionStop: nullOr(NonEmptyTrimmedString100),
+  },
 };
 
 const createQuery = createQueryBuilder(Schema);
@@ -97,7 +128,24 @@ const allObservations = createQuery((db) =>
     .orderBy("civilDate"),
 );
 
+const allCycleOverlays = createQuery((db) =>
+  db
+    .selectFrom("cycleOverlay")
+    .selectAll()
+    .where("isDeleted", "is not", 1)
+    .orderBy("startDate"),
+);
+
+const allProfiles = createQuery((db) =>
+  db
+    .selectFrom("profile")
+    .selectAll()
+    .where("isDeleted", "is not", 1),
+);
+
 type ObservationRow = typeof allObservations.Row;
+type CycleOverlayRow = typeof allCycleOverlays.Row;
+type ProfileRow = typeof allProfiles.Row;
 
 /**
  * The row Evolu hands back, turned into the Observation the app deals in.
@@ -120,6 +168,28 @@ function toObservation(row: ObservationRow): Observation | null {
     temperature: row.temperature,
     temperatureUnit: row.temperatureUnit,
     note: row.note,
+  };
+}
+
+function toCycleOverlay(row: CycleOverlayRow): CycleOverlay | null {
+  if (row.startDate === null) return null;
+  return {
+    startDate: row.startDate,
+    protocolFamily: row.protocolFamily,
+    protocolVersion: row.protocolVersion as ProtocolVersion | null,
+    intention: row.intention,
+    postpartumCycleNumber: row.postpartumCycleNumber,
+  };
+}
+
+function toProfile(row: ProfileRow | undefined): Profile {
+  if (!row) return defaultProfile();
+  return {
+    dateOfBirth: row.dateOfBirth,
+    breastfeeding: row.breastfeeding === null ? null : row.breastfeeding === 1,
+    postpartum: row.postpartum === null ? null : row.postpartum === 1,
+    perimenopause: row.perimenopause === null ? null : row.perimenopause === 1,
+    hormonalContraceptionStop: row.hormonalContraceptionStop,
   };
 }
 
@@ -160,8 +230,57 @@ function toColumns(update: ObservationUpdate): ObservationColumns {
   return columns;
 }
 
+type CycleOverlayColumns = Partial<
+  Omit<MutationValues<(typeof Schema)["cycleOverlay"], "upsert">, "id" | "startDate">
+>;
+
+function toCycleOverlayColumns(update: CycleOverlayUpdate): CycleOverlayColumns {
+  const columns: { -readonly [K in keyof CycleOverlayColumns]: CycleOverlayColumns[K] } = {};
+  if (update.protocolFamily !== undefined) columns.protocolFamily = update.protocolFamily;
+  if (update.protocolVersion !== undefined) {
+    const version = update.protocolVersion?.trim() ?? "";
+    columns.protocolVersion = version === "" ? null : NonEmptyTrimmedString100.orThrow(version);
+  }
+  if (update.intention !== undefined) columns.intention = update.intention;
+  if (update.postpartumCycleNumber !== undefined) {
+    columns.postpartumCycleNumber =
+      update.postpartumCycleNumber === null
+        ? null
+        : FiniteNumber.orThrow(update.postpartumCycleNumber);
+  }
+  return columns;
+}
+
+type ProfileColumns = Partial<
+  Omit<MutationValues<(typeof Schema)["profile"], "upsert">, "id">
+>;
+
+function toProfileColumns(update: ProfileUpdate): ProfileColumns {
+  const columns: { -readonly [K in keyof ProfileColumns]: ProfileColumns[K] } = {};
+  if (update.dateOfBirth !== undefined) {
+    const dob = update.dateOfBirth?.trim() ?? "";
+    columns.dateOfBirth = dob === "" ? null : NonEmptyTrimmedString100.orThrow(dob);
+  }
+  if (update.breastfeeding !== undefined) {
+    columns.breastfeeding = toSqliteBoolean(update.breastfeeding);
+  }
+  if (update.postpartum !== undefined) {
+    columns.postpartum = toSqliteBoolean(update.postpartum);
+  }
+  if (update.perimenopause !== undefined) {
+    columns.perimenopause = toSqliteBoolean(update.perimenopause);
+  }
+  if (update.hormonalContraceptionStop !== undefined) {
+    const stop = update.hormonalContraceptionStop?.trim() ?? "";
+    columns.hormonalContraceptionStop = stop === "" ? null : NonEmptyTrimmedString100.orThrow(stop);
+  }
+  return columns;
+}
+
 async function boot(
   observations: ReturnType<typeof ref<readonly Observation[]>>,
+  cycleOverlays: ReturnType<typeof ref<readonly CycleOverlay[]>>,
+  profile: ReturnType<typeof ref<Profile>>,
   ownerManager: OwnerManager,
   onSharedOwner: (sharedOwner: SharedOwner) => void,
   onSyncTransportEvent: (message: OwnerSyncTransportEvent) => void,
@@ -212,9 +331,21 @@ async function boot(
       .getQueryRows(allObservations)
       .map(toObservation)
       .filter((observation) => observation !== null);
+    cycleOverlays.value = evolu
+      .getQueryRows(allCycleOverlays)
+      .map(toCycleOverlay)
+      .filter((overlay) => overlay !== null);
+    const profileRows = evolu.getQueryRows(allProfiles);
+    profile.value = toProfile(profileRows[0]);
   };
   evolu.subscribeQuery(allObservations)(publish);
-  await evolu.loadQuery(allObservations);
+  evolu.subscribeQuery(allCycleOverlays)(publish);
+  evolu.subscribeQuery(allProfiles)(publish);
+  await Promise.all([
+    evolu.loadQuery(allObservations),
+    evolu.loadQuery(allCycleOverlays),
+    evolu.loadQuery(allProfiles),
+  ]);
   publish();
   return { evolu, sharedOwner };
 }
@@ -230,10 +361,14 @@ async function boot(
  */
 export function createEvoluObservationStore(ownerManager: OwnerManager): ObservationStore {
   const observations = ref<readonly Observation[]>([]);
+  const cycleOverlays = ref<readonly CycleOverlay[]>([]);
+  const profile = ref<Profile>(defaultProfile());
   const syncState = createSyncState();
   let sharedOwnerId: SharedOwner["id"] | null = null;
   const ready = boot(
     observations,
+    cycleOverlays,
+    profile,
     ownerManager,
     (sharedOwner) => {
       sharedOwnerId = sharedOwner.id;
@@ -268,5 +403,38 @@ export function createEvoluObservationStore(ownerManager: OwnerManager): Observa
     },
     observe: () => observations,
     observeSyncState: syncState.observe,
+
+    upsertCycleOverlay: async (startDate: CivilDate, update: CycleOverlayUpdate) => {
+      syncState.markLocalChange();
+      const { evolu, sharedOwner } = await ready;
+      await new Promise<void>((resolve) => {
+        evolu.upsert(
+          "cycleOverlay",
+          {
+            id: CycleOverlayId.orThrow(createIdFromString(startDate)),
+            startDate: NonEmptyTrimmedString100.orThrow(startDate),
+            ...toCycleOverlayColumns(update),
+          },
+          { onComplete: resolve, ownerId: sharedOwner.id },
+        );
+      });
+    },
+    observeCycleOverlays: () => cycleOverlays,
+
+    upsertProfile: async (update: ProfileUpdate) => {
+      syncState.markLocalChange();
+      const { evolu, sharedOwner } = await ready;
+      await new Promise<void>((resolve) => {
+        evolu.upsert(
+          "profile",
+          {
+            id: ProfileId.orThrow(createIdFromString("profile")),
+            ...toProfileColumns(update),
+          },
+          { onComplete: resolve, ownerId: sharedOwner.id },
+        );
+      });
+    },
+    observeProfile: () => profile,
   };
 }

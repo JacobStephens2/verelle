@@ -4,10 +4,13 @@ import { computed, nextTick, onMounted, ref, useTemplateRef } from "vue";
 import type { CivilDate } from "./chart/civil-date";
 import BackupRestore from "./components/BackupRestore.vue";
 import ChartFrame from "./components/ChartFrame.vue";
+import CycleOverlayDialog from "./components/CycleOverlayDialog.vue";
 import Pairing from "./components/Pairing.vue";
 import PrivacyAbout from "./components/PrivacyAbout.vue";
+import ProfileSettings from "./components/ProfileSettings.vue";
 import RecordObservation from "./components/RecordObservation.vue";
 import { todayCivilDate } from "./chart/civil-date";
+import { projectChart } from "./chart/projection";
 import { useObservationStore } from "./observations/store";
 import { useOwnerManager } from "./owners/owner-manager-store";
 import type { PairingState } from "./owners/owner-secret-store";
@@ -18,13 +21,17 @@ const today = computed(() => todayCivilDate());
 const selectedDate = ref<CivilDate>(today.value);
 const showAllFields = ref(false);
 const editor = useTemplateRef<HTMLElement>("editor");
-const overlay = ref<"backup" | "privacy" | "pairing" | null>(null);
+const overlay = ref<"backup" | "privacy" | "pairing" | "profile" | "cycle" | null>(null);
+const selectedCycleStartDate = ref<CivilDate | undefined>(undefined);
 const pairingState = ref<PairingState>("unpaired");
 
 const observationStore = useObservationStore();
 const ownerManager = useOwnerManager();
 const observations = observationStore.observe();
 const syncState = observationStore.observeSyncState();
+
+const chart = computed(() => projectChart(observations.value, today.value));
+const cycleStartDates = computed(() => chart.value.cycles.map((c) => c.startDate));
 
 onMounted(async () => {
   pairingState.value = (await ownerManager.load()).pairingState;
@@ -47,14 +54,33 @@ const openDayDetails = async (date: CivilDate) => {
   await nextTick();
   editor.value?.scrollIntoView({ block: "start" });
 };
+
+const openCycleOverlay = (startDate?: CivilDate) => {
+  selectedCycleStartDate.value =
+    startDate ?? cycleStartDates.value[cycleStartDates.value.length - 1];
+  overlay.value = "cycle";
+};
 </script>
 
 <template>
   <BackupRestore v-if="overlay === 'backup'" @close="overlay = null" />
   <PrivacyAbout v-else-if="overlay === 'privacy'" @close="overlay = null" />
   <Pairing v-else-if="overlay === 'pairing'" @close="closePairing" />
+  <ProfileSettings v-else-if="overlay === 'profile'" @close="overlay = null" />
+  <CycleOverlayDialog
+    v-else-if="overlay === 'cycle'"
+    :start-date="selectedCycleStartDate"
+    :cycle-start-dates="cycleStartDates"
+    @close="overlay = null"
+  />
   <main v-else class="app">
     <nav class="app__utility" aria-label="Chart tools">
+      <button type="button" data-testid="open-profile" @click="overlay = 'profile'">
+        Profile
+      </button>
+      <button type="button" data-testid="open-cycle-overlay" @click="openCycleOverlay(undefined)">
+        Protocol
+      </button>
       <button type="button" data-testid="open-privacy" @click="overlay = 'privacy'">
         Privacy &amp; about
       </button>
