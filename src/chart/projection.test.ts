@@ -71,6 +71,30 @@ describe("projectChart golden fixtures", () => {
       expect(projected, fixture.name).toEqual(fixture.expected);
     }
   });
+
+  it("asserts that Intention does not move a boundary in the intention-boundary-invariance golden fixture", async () => {
+    const fixturePath = path.join(FIXTURES_DIRECTORY, "intention-boundary-invariance.json");
+    const fixture = JSON.parse(await readFile(fixturePath, "utf8")) as GoldenFixture;
+    const achieveChart = projectChart(
+      fixture.observations,
+      fixture.today,
+      fixture.cycleOverlays ?? [],
+      fixture.profile ?? null,
+    );
+    const avoidOverlays = (fixture.cycleOverlays ?? []).map((o) => ({
+      ...o,
+      intention: "avoid" as const,
+    }));
+    const avoidChart = projectChart(
+      fixture.observations,
+      fixture.today,
+      avoidOverlays,
+      fixture.profile ?? null,
+    );
+    expect(achieveChart.cycles[0]?.fertileWindow).toEqual(
+      avoidChart.cycles[0]?.fertileWindow,
+    );
+  });
 });
 
 describe("Mucus Peak derivation", () => {

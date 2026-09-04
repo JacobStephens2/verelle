@@ -11,11 +11,13 @@ import type {
 import {
   defaultCycleOverlay,
   defaultProtocolVersion,
+  DEFAULT_INTENTION,
   INTENTION_LABELS,
   INTENTIONS,
   PROTOCOL_FAMILIES,
   PROTOCOL_FAMILY_LABELS,
   PROTOCOL_VERSION_LABELS,
+  resolvedCycleIntention,
   cycleOverlayUpdateOf,
 } from "../observations/cycle-overlay";
 import { useObservationStore } from "../observations/store";
@@ -52,7 +54,7 @@ const currentOverlay = computed<CycleOverlay | null>(() => {
 });
 
 const protocolFamily = ref<ProtocolFamily | null>(null);
-const intention = ref<Intention>("avoid");
+const intention = ref<Intention>(DEFAULT_INTENTION);
 const postpartumCycleNumber = ref<string | number>("");
 
 const recordingEdits = createRecordingEdits<keyof CycleOverlayFields>();
@@ -65,14 +67,14 @@ const edit = (field: keyof CycleOverlayFields) => {
 const load = (overlay: CycleOverlay | null, preserveEdited: boolean) => {
   if (!overlay) {
     protocolFamily.value = null;
-    intention.value = "avoid";
+    intention.value = DEFAULT_INTENTION;
     postpartumCycleNumber.value = "";
     return;
   }
   const settled = (field: keyof CycleOverlayFields) =>
     !preserveEdited || !edited.value.has(field);
   if (settled("protocolFamily")) protocolFamily.value = overlay.protocolFamily;
-  if (settled("intention")) intention.value = overlay.intention ?? "avoid";
+  if (settled("intention")) intention.value = resolvedCycleIntention(overlay);
   if (settled("postpartumCycleNumber")) {
     postpartumCycleNumber.value =
       overlay.postpartumCycleNumber === null ? "" : overlay.postpartumCycleNumber;

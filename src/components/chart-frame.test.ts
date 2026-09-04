@@ -396,7 +396,7 @@ describe("ChartFrame component presentation seam", () => {
       expect(html).toContain('data-intention="achieve"');
       expect(html).toContain("cycle-row--achieve");
 
-      // High day (CD11, 2026-06-11) is highlighted
+      // High day (Cycle Day 11, 2026-06-11) is highlighted
       expect(html).toMatch(
         /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-11"/,
       );
@@ -404,7 +404,7 @@ describe("ChartFrame component presentation seam", () => {
         /data-civil-date="2026-06-11"[^>]*data-highlight="true"/,
       );
 
-      // Peak day (CD14, 2026-06-14) is highlighted
+      // Monitor Peak day (Cycle Day 14, 2026-06-14) is highlighted
       expect(html).toMatch(
         /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-14"/,
       );
@@ -412,13 +412,66 @@ describe("ChartFrame component presentation seam", () => {
         /data-civil-date="2026-06-14"[^>]*data-highlight="true"/,
       );
 
-      // Early fertile day before High (CD6, 2026-06-06) is fertile but NOT highlighted
+      // Early fertile day before High (Cycle Day 6, 2026-06-06) is fertile but NOT highlighted
       expect(html).not.toMatch(
         /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-06"/,
       );
     });
 
-    it("defaults row intention to avoid and does not highlight High/Peak days when avoiding", async () => {
+    it("does not highlight High readings that occur on infertile days outside the fertile window", async () => {
+      // High reading recorded on Cycle Day 20 (post-ovulatory, infertile)
+      const postWindowHigh = applyUpdate(unrecordedObservation("2026-06-20"), { monitorReading: "High" });
+      const achieveOverlay = {
+        ...defaultCycleOverlay("2026-06-01"),
+        protocolFamily: "regular_monitor" as const,
+        protocolVersion: "marquette_regular_manual_public" as const,
+        intention: "achieve" as const,
+      };
+
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-25",
+            observations: [cd1, peak, postWindowHigh],
+            cycleOverlays: [achieveOverlay],
+          }),
+      });
+
+      const html = await renderToString(app);
+      // Cycle Day 20 is infertile, so even with a High reading it must not receive achieving emphasis
+      expect(html).not.toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-20"/,
+      );
+    });
+
+    it("highlights High-category cervical mucus days within the fertile window when Intention is achieve", async () => {
+      const highMucus = applyUpdate(unrecordedObservation("2026-06-10"), { mucus: "Creamy" });
+      const achieveOverlay = {
+        ...defaultCycleOverlay("2026-06-01"),
+        protocolFamily: "regular_monitor_plus_mucus" as const,
+        protocolVersion: "marquette_regular_plus_mucus_manual" as const,
+        intention: "achieve" as const,
+      };
+
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-20",
+            observations: [cd1, highMucus, peak],
+            cycleOverlays: [achieveOverlay],
+          }),
+      });
+
+      const html = await renderToString(app);
+      expect(html).toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-10"/,
+      );
+      expect(html).toMatch(
+        /data-civil-date="2026-06-10"[^>]*data-highlight="true"/,
+      );
+    });
+
+    it("defaults row intention to avoid and does not highlight High or Peak days when avoiding", async () => {
       const high = applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" });
       const avoidOverlay = {
         ...defaultCycleOverlay("2026-06-01"),
@@ -438,9 +491,8 @@ describe("ChartFrame component presentation seam", () => {
 
       const html = await renderToString(app);
 
-      // Row carries avoid intention data attribute and class
+      // Row carries avoid intention data attribute
       expect(html).toContain('data-intention="avoid"');
-      expect(html).toContain("cycle-row--avoid");
       expect(html).not.toContain("cycle-row--achieve");
 
       // High day and Peak day are NOT highlighted when avoiding
@@ -465,7 +517,6 @@ describe("ChartFrame component presentation seam", () => {
 
       const html = await renderToString(app);
       expect(html).toContain('data-intention="avoid"');
-      expect(html).toContain("cycle-row--avoid");
       expect(html).not.toContain("cycle-row--achieve");
     });
   });

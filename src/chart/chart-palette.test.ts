@@ -170,14 +170,27 @@ describe("Chart presentation and palette", () => {
     expect(isHighOrPeakDay(makeDay({ monitorReading: "Error" }))).toBe(false);
     expect(isHighOrPeakDay(makeDay({ monitorReading: null, markers: ["bleeding"] }))).toBe(false);
 
-    // High and Peak readings
+    // High and Peak readings within fertile window
     expect(isHighOrPeakDay(makeDay({ monitorReading: "High", markers: ["monitor"] }))).toBe(true);
     expect(isHighOrPeakDay(makeDay({ monitorReading: "Peak", markers: ["monitor"] }))).toBe(true);
 
-    // Peak override
+    // High/Peak readings outside fertile window are not targeted by the method
+    expect(
+      isHighOrPeakDay(makeDay({ monitorReading: "High", markers: ["monitor"], dayStatus: "infertile" })),
+    ).toBe(false);
+    expect(
+      isHighOrPeakDay(makeDay({ monitorReading: "Peak", markers: ["monitor"], dayStatus: null })),
+    ).toBe(false);
+
+    // Peak override within fertile window
     expect(isHighOrPeakDay(makeDay({ markers: ["peak_override"] }))).toBe(true);
 
-    // Mucus Peak day
+    // Mucus category High or Peak within fertile window
+    expect(isHighOrPeakDay(makeDay({}), null, "High")).toBe(true);
+    expect(isHighOrPeakDay(makeDay({}), null, "Peak")).toBe(true);
+    expect(isHighOrPeakDay(makeDay({}), null, "Low")).toBe(false);
+
+    // Mucus Peak
     const mucusPeak = { civilDate: "2026-06-14", cycleDay: 14, provisional: false };
     expect(isHighOrPeakDay(makeDay({ cycleDay: 14 }), mucusPeak)).toBe(true);
     expect(isHighOrPeakDay(makeDay({ cycleDay: 13 }), mucusPeak)).toBe(false);

@@ -20,7 +20,11 @@ import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
 import type { CycleOverlay, Intention } from "../observations/cycle-overlay";
 import { resolvedCycleIntention } from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
-import type { MonitorReading, Observation } from "../observations/observation";
+import {
+  mucusCategory,
+  type MonitorReading,
+  type Observation,
+} from "../observations/observation";
 import type { PairingState } from "../owners/owner-secret-store";
 import type { SyncState } from "../sync/sync-state";
 import ChartCell from "./ChartCell.vue";
@@ -44,6 +48,14 @@ const emit = defineEmits<{
 }>();
 
 const zoom = ref<ChartZoom>(DEFAULT_CHART_ZOOM);
+
+const observationsByDate = computed(() => {
+  const map = new Map<CivilDate, Observation>();
+  for (const obs of props.observations ?? []) {
+    map.set(obs.civilDate, obs);
+  }
+  return map;
+});
 
 const chart = computed(() =>
   projectChart(
@@ -284,7 +296,6 @@ onMounted(() => {
             :class="{
               'cycle-row--has-fertile-window': row.fertileWindow !== null,
               'cycle-row--achieve': row.intention === 'achieve',
-              'cycle-row--avoid': row.intention === 'avoid',
             }"
             :data-intention="row.intention"
             :data-has-fertile-window="row.fertileWindow !== null ? 'true' : undefined"
@@ -309,7 +320,18 @@ onMounted(() => {
               :day="day"
               :is-today="day?.civilDate === chart.today"
               :band="fertileBandPresentation(index + 1, row.fertileWindow, row.cycleLength)"
-              :highlight="isAchievingHighlight(day ?? undefined, row.intention, row.mucusPeak)"
+              :highlight="
+                isAchievingHighlight(
+                  day ?? undefined,
+                  row.intention,
+                  row.mucusPeak,
+                  day
+                    ? mucusCategory(
+                        observationsByDate.get(day.civilDate)?.mucus ?? null,
+                      )
+                    : null,
+                )
+              "
               @select-date="emit('selectDate', $event)"
             />
           </tr>

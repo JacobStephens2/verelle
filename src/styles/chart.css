@@ -265,13 +265,11 @@
 }
 
 /* Achieving intention emphasis: High and Peak days stand out (`CONTEXT.md`, Issue #41) */
-.cycle-row--achieve .chart__cell--highlight,
-.chart__cell--highlight {
+.cycle-row--achieve .chart__cell--highlight {
   background: var(--verelle-highlight-band);
 }
 
-.cycle-row--achieve .chart__cell--highlight .stamp-circle,
-.stamp--highlight .stamp-circle {
+.cycle-row--achieve .stamp--highlight .stamp-circle {
   transform: scale(1.08);
   box-shadow: 0 0 0 2px var(--verelle-surface), 0 0 0 4px var(--verelle-stamp-peak);
   font-weight: 800;
