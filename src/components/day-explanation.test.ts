@@ -450,6 +450,124 @@ describe("DayExplanation component", () => {
     expect(html).toContain("USCCB Marquette Model history/effectiveness paper");
     expect(html).toContain("https://www.usccb.org/resources/MM%20History%20and%20effectiveness%20Paper%202018.pdf");
   });
+
+  it("explains cycle zero day when no High reading has occurred", async () => {
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 5,
+          dayStatus: "infertile",
+          fertileWindow: null,
+          protocolFamily: "postpartum_cycle_zero_original",
+          protocolVersion: "marquette_postpartum_cycle_zero_2005",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 5 is infertile");
+    expect(html).toContain("no High or Peak monitor reading has occurred");
+    expect(html).toContain("PP0-START");
+    expect(html).toContain("Marquette Postpartum Cycle 0 (2005)");
+    expect(html).toContain("https://doi.org/10.1016/j.fertnstert.2005.03.042");
+    expect(html).toContain("Final");
+  });
+
+  it("explains cycle zero fertile window with PP0-START and PP0-END", async () => {
+    const pp0Window: FertileWindow = {
+      start: {
+        cycleDay: 10,
+        ruleId: "PP0-START",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 16,
+        ruleId: "PP0-END",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 12,
+          dayStatus: "fertile",
+          fertileWindow: pp0Window,
+          protocolFamily: "postpartum_cycle_zero_original",
+          protocolVersion: "marquette_postpartum_cycle_zero_2005",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 12 is fertile");
+    expect(html).toContain("PP0-START");
+    expect(html).toContain("PP0-END");
+    expect(html).toContain("Marquette Postpartum Cycle 0 (2005)");
+    expect(html).toContain("https://doi.org/10.1016/j.fertnstert.2005.03.042");
+  });
+
+  it("explains return-to-cycles window with PP-RETURN-START-1 and PP-RETURN-END-1", async () => {
+    const returnWindow: FertileWindow = {
+      start: {
+        cycleDay: 10,
+        ruleId: "PP-RETURN-START-1",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 17,
+        ruleId: "PP-RETURN-END-1",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 12,
+          dayStatus: "fertile",
+          fertileWindow: returnWindow,
+          protocolFamily: "postpartum_return_to_cycles",
+          protocolVersion: "marquette_postpartum_return_to_cycles_2013",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 12 is fertile");
+    expect(html).toContain("PP-RETURN-START-1");
+    expect(html).toContain("PP-RETURN-END-1");
+    expect(html).toContain("Marquette Postpartum Return to Cycles (2013)");
+    expect(html).toContain("https://doi.org/10.3122/jabfm.2013.01.120126");
+  });
+
+  it("explains return-to-cycles early High override with PP-RETURN-START-HIGH", async () => {
+    const returnWindow: FertileWindow = {
+      start: {
+        cycleDay: 8,
+        ruleId: "PP-RETURN-START-HIGH",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 16,
+        ruleId: "PP-RETURN-END-1",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 8,
+          dayStatus: "fertile",
+          fertileWindow: returnWindow,
+          protocolFamily: "postpartum_return_to_cycles",
+          protocolVersion: "marquette_postpartum_return_to_cycles_2013",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 8 is fertile");
+    expect(html).toContain("PP-RETURN-START-HIGH");
+    expect(html).toContain("First High reading earlier than calendar start");
+  });
 });
 
 

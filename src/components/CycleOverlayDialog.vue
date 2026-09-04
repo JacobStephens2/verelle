@@ -31,11 +31,11 @@ const emit = defineEmits<{ close: [] }>();
 const store = useObservationStore();
 const overlays = store.observeCycleOverlays();
 
-const activeStartDate = ref<CivilDate>(
+const activeStartDate = ref<CivilDate | null>(
   props.startDate ??
     (props.cycleStartDates && props.cycleStartDates.length > 0
-      ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? ("" as CivilDate))
-      : ("" as CivilDate)),
+      ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? null)
+      : null),
 );
 
 watch(
@@ -45,7 +45,8 @@ watch(
   },
 );
 
-const currentOverlay = computed<CycleOverlay>(() => {
+const currentOverlay = computed<CycleOverlay | null>(() => {
+  if (!activeStartDate.value) return null;
   const found = overlays.value.find((o) => o.startDate === activeStartDate.value);
   return found ?? defaultCycleOverlay(activeStartDate.value);
 });
@@ -61,7 +62,13 @@ const edit = (field: keyof CycleOverlayFields) => {
   edited.value = recordingEdits.mark([field]);
 };
 
-const load = (overlay: CycleOverlay, preserveEdited: boolean) => {
+const load = (overlay: CycleOverlay | null, preserveEdited: boolean) => {
+  if (!overlay) {
+    protocolFamily.value = null;
+    intention.value = null;
+    postpartumCycleNumber.value = "";
+    return;
+  }
   const settled = (field: keyof CycleOverlayFields) =>
     !preserveEdited || !edited.value.has(field);
   if (settled("protocolFamily")) protocolFamily.value = overlay.protocolFamily;
@@ -87,6 +94,21 @@ watch(currentOverlay, (overlay) => {
 
 const saved = ref(false);
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+const isEnteringNewCycle = ref(false);
+
+const toggleEnteringNewCycle = () => {
+  isEnteringNewCycle.value = !isEnteringNewCycle.value;
+  if (isEnteringNewCycle.value) {
+    activeStartDate.value = null;
+  } else {
+    activeStartDate.value =
+      props.startDate ??
+      (props.cycleStartDates && props.cycleStartDates.length > 0
+        ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? null)
+        : null);
+  }
+};
 
 const save = async () => {
   if (!activeStartDate.value) return;
@@ -117,10 +139,11 @@ const save = async () => {
 
   const update = cycleOverlayUpdateOf(values, fieldsToWrite);
 
-  if (fieldsToWrite.size > 0) {
+  if (fieldsToWrite.size > 0 || isEnteringNewCycle.value) {
     await store.upsertCycleOverlay(activeStartDate.value, update);
   }
 
+  isEnteringNewCycle.value = false;
   edited.value = recordingEdits.settle(saving);
   saved.value = true;
   clearTimeout(saveTimer);
@@ -150,22 +173,39 @@ const save = async () => {
     </p>
 
     <form class="overlay-dialog__form" @submit.prevent="save">
-      <label v-if="(cycleStartDates && cycleStartDates.length > 1) || !startDate" class="overlay-dialog__field">
+      <div class="overlay-dialog__field">
         <span class="overlay-dialog__label">Cycle Day 1 date</span>
-        <select
-          v-if="cycleStartDates && cycleStartDates.length > 0"
-          v-model="activeStartDate"
-          class="overlay-dialog__select"
-          data-testid="cycle-select"
-        >
-          <option
-            v-for="date in cycleStartDates"
-            :key="date"
-            :value="date"
+        <div v-if="cycleStartDates && cycleStartDates.length > 0" class="overlay-dialog__date-picker-group">
+          <select
+            v-if="!isEnteringNewCycle"
+            v-model="activeStartDate"
+            class="overlay-dialog__select"
+            data-testid="cycle-select"
           >
-            Cycle starting {{ date }}
-          </option>
-        </select>
+            <option
+              v-for="date in cycleStartDates"
+              :key="date"
+              :value="date"
+            >
+              Cycle starting {{ date }}
+            </option>
+          </select>
+          <input
+            v-else
+            v-model="activeStartDate"
+            type="date"
+            class="overlay-dialog__input"
+            data-testid="cycle-start-input"
+          />
+          <button
+            type="button"
+            class="overlay-dialog__new-cycle-toggle"
+            data-testid="toggle-new-cycle-date"
+            @click="toggleEnteringNewCycle"
+          >
+            {{ isEnteringNewCycle ? "Select existing cycle" : "Enter a new cycle start date" }}
+          </button>
+        </div>
         <input
           v-else
           v-model="activeStartDate"
@@ -173,10 +213,7 @@ const save = async () => {
           class="overlay-dialog__input"
           data-testid="cycle-start-input"
         />
-      </label>
-      <p v-else class="overlay-dialog__cycle-date" data-testid="active-cycle-start">
-        Cycle starting <strong>{{ activeStartDate }}</strong>
-      </p>
+      </div>
 
       <label class="overlay-dialog__field">
         <span class="overlay-dialog__label">Protocol family</span>
@@ -315,6 +352,25 @@ const save = async () => {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
+}
+
+.overlay-dialog__date-picker-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.overlay-dialog__new-cycle-toggle {
+  align-self: flex-start;
+  min-height: 2rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 6px;
+  background: var(--verelle-surface);
+  color: var(--verelle-ink-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
 }
 
 .overlay-dialog__label {
