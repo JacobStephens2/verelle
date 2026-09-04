@@ -255,6 +255,7 @@ describe("UI copy", () => {
     );
 
     expect(cycleScreen).toContain('data-testid="protocol-family-select"');
+    expect(cycleScreen).toContain('data-testid="protocol-version-display"');
     expect(cycleScreen).toContain('data-testid="intention-select"');
     expect(cycleScreen).toContain("Protocol family");
     expect(cycleScreen).toContain("Intention");

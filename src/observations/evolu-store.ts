@@ -33,7 +33,7 @@ import type { OwnerManager } from "../owners/owner-manager";
 import { createVerelleEvoluDeps } from "../sync/evolu-deps";
 import { createSyncState } from "../sync/sync-state";
 import type { OwnerSyncTransportEvent } from "../sync/sync-transport";
-import type { CycleOverlay, CycleOverlayUpdate } from "./cycle-overlay";
+import type { CycleOverlay, CycleOverlayUpdate, ProtocolVersion } from "./cycle-overlay";
 import type { Observation, ObservationUpdate } from "./observation";
 import { unrecordedObservation } from "./observation";
 import type { Profile, ProfileUpdate } from "./profile";
@@ -176,7 +176,7 @@ function toCycleOverlay(row: CycleOverlayRow): CycleOverlay | null {
   return {
     startDate: row.startDate,
     protocolFamily: row.protocolFamily,
-    protocolVersion: row.protocolVersion,
+    protocolVersion: row.protocolVersion as ProtocolVersion | null,
     intention: row.intention,
     postpartumCycleNumber: row.postpartumCycleNumber,
   };

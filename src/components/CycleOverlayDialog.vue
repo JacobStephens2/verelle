@@ -15,6 +15,7 @@ import {
   INTENTIONS,
   PROTOCOL_FAMILIES,
   PROTOCOL_FAMILY_LABELS,
+  PROTOCOL_VERSION_LABELS,
   cycleOverlayUpdateOf,
 } from "../observations/cycle-overlay";
 import { useObservationStore } from "../observations/store";
@@ -31,7 +32,10 @@ const store = useObservationStore();
 const overlays = store.observeCycleOverlays();
 
 const activeStartDate = ref<CivilDate>(
-  props.startDate ?? props.cycleStartDates?.[0] ?? ("" as CivilDate),
+  props.startDate ??
+    (props.cycleStartDates && props.cycleStartDates.length > 0
+      ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? ("" as CivilDate))
+      : ("" as CivilDate)),
 );
 
 watch(
@@ -191,6 +195,13 @@ const save = async () => {
             {{ PROTOCOL_FAMILY_LABELS[family] }}
           </option>
         </select>
+        <span
+          v-if="protocolFamily"
+          class="overlay-dialog__protocol-version"
+          data-testid="protocol-version-display"
+        >
+          Published manual: {{ PROTOCOL_VERSION_LABELS[defaultProtocolVersion(protocolFamily)] }}
+        </span>
       </label>
 
       <label class="overlay-dialog__field">
@@ -319,6 +330,11 @@ const save = async () => {
   margin: 0;
   font-size: 0.9375rem;
   color: var(--verelle-ink);
+}
+
+.overlay-dialog__protocol-version {
+  font-size: 0.8125rem;
+  color: var(--verelle-ink-muted);
 }
 
 .overlay-dialog__input,

@@ -7,6 +7,8 @@ import {
   defaultProtocolVersion,
   PROTOCOL_FAMILIES,
   PROTOCOL_FAMILY_LABELS,
+  PROTOCOL_VERSIONS,
+  PROTOCOL_VERSION_LABELS,
   INTENTIONS,
   INTENTION_LABELS,
   type CycleOverlayFields,
@@ -45,6 +47,13 @@ describe("Protocol families", () => {
     expect(PROTOCOL_FAMILY_LABELS.mucus_only).toBe("Mucus only");
     expect(PROTOCOL_FAMILY_LABELS.postpartum_cycle_zero_original).toBe("Postpartum cycle zero");
     expect(PROTOCOL_FAMILY_LABELS.postpartum_return_to_cycles).toBe("Postpartum return to cycles");
+  });
+
+  it("includes published protocol versions with labels", () => {
+    expect(PROTOCOL_VERSIONS).toHaveLength(5);
+    for (const version of PROTOCOL_VERSIONS) {
+      expect(PROTOCOL_VERSION_LABELS[version]).toBeDefined();
+    }
   });
 });
 

@@ -31,7 +31,24 @@ export const PROTOCOL_FAMILY_LABELS: Record<ProtocolFamily, string> = {
 /**
  * Which published source a family's rules were taken from (`CONTEXT.md`, ADR 0015).
  */
-export function defaultProtocolVersion(family: ProtocolFamily): string {
+export const PROTOCOL_VERSIONS = [
+  "marquette_regular_manual_public",
+  "marquette_regular_plus_mucus_manual",
+  "marquette_mucus_only_manual",
+  "marquette_postpartum_cycle_zero_2005",
+  "marquette_postpartum_return_to_cycles_2013",
+] as const;
+export type ProtocolVersion = (typeof PROTOCOL_VERSIONS)[number];
+
+export const PROTOCOL_VERSION_LABELS: Record<ProtocolVersion, string> = {
+  marquette_regular_manual_public: "Marquette Regular Manual (Public)",
+  marquette_regular_plus_mucus_manual: "Marquette Regular + Mucus Manual",
+  marquette_mucus_only_manual: "Marquette Mucus-Only Manual",
+  marquette_postpartum_cycle_zero_2005: "Marquette Postpartum Cycle 0 (2005)",
+  marquette_postpartum_return_to_cycles_2013: "Marquette Postpartum Return to Cycles (2013)",
+};
+
+export function defaultProtocolVersion(family: ProtocolFamily): ProtocolVersion {
   switch (family) {
     case "regular_monitor":
       return "marquette_regular_manual_public";
@@ -64,7 +81,7 @@ export const INTENTION_LABELS: Record<Intention, string> = {
 export interface CycleOverlay {
   readonly startDate: CivilDate;
   readonly protocolFamily: ProtocolFamily | null;
-  readonly protocolVersion: string | null;
+  readonly protocolVersion: ProtocolVersion | null;
   readonly intention: Intention | null;
   readonly postpartumCycleNumber: number | null;
 }
