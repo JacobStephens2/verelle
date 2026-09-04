@@ -4,6 +4,7 @@ import {
   ageOnCivilDate,
   civilDateIn,
   civilDatePlusDays,
+  completedYearsBetweenCivilDates,
   daysBetweenCivilDates,
   displayCivilDate,
   todayCivilDate,
@@ -74,21 +75,23 @@ describe("civil date arithmetic", () => {
   });
 });
 
-describe("ageOnCivilDate", () => {
+describe("completedYearsBetweenCivilDates / ageOnCivilDate", () => {
   it("calculates completed years before and after birthday in a calendar year", () => {
-    expect(ageOnCivilDate("2000-06-15", "2026-06-14")).toBe(25);
+    expect(completedYearsBetweenCivilDates("2000-06-15", "2026-06-14")).toBe(25);
+    expect(completedYearsBetweenCivilDates("2000-06-15", "2026-06-15")).toBe(26);
+    expect(completedYearsBetweenCivilDates("2000-06-15", "2026-06-16")).toBe(26);
     expect(ageOnCivilDate("2000-06-15", "2026-06-15")).toBe(26);
-    expect(ageOnCivilDate("2000-06-15", "2026-06-16")).toBe(26);
   });
 
   it("handles leap day birthdays", () => {
-    expect(ageOnCivilDate("2000-02-29", "2026-02-28")).toBe(25);
-    expect(ageOnCivilDate("2000-02-29", "2026-03-01")).toBe(26);
+    expect(completedYearsBetweenCivilDates("2000-02-29", "2026-02-28")).toBe(25);
+    expect(completedYearsBetweenCivilDates("2000-02-29", "2026-03-01")).toBe(26);
   });
 
   it("returns 0 for malformed dates", () => {
-    expect(ageOnCivilDate("invalid", "2026-06-15")).toBe(0);
+    expect(completedYearsBetweenCivilDates("invalid", "2026-06-15")).toBe(0);
   });
 });
+
 
 

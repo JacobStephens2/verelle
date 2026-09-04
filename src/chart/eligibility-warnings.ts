@@ -9,11 +9,10 @@
  * imply and offers a route to finding a Marquette instructor.
  */
 import type { Profile } from "../observations/profile";
+import type { CycleOverlay } from "../observations/cycle-overlay";
 import type { ChartCycle } from "./projection";
 import type { CivilDate } from "./civil-date";
-import { ageOnCivilDate } from "./civil-date";
-
-export { ageOnCivilDate };
+import { completedYearsBetweenCivilDates } from "./civil-date";
 
 export type EligibilityCircumstance =
   | "age_outside_range"
@@ -46,11 +45,12 @@ export function evaluateEligibilityWarnings(
   cycles: readonly ChartCycle[],
   today: CivilDate,
   profile: Profile | null,
+  cycleOverlays: readonly CycleOverlay[] = [],
 ): readonly EligibilityWarning[] {
   const warnings: EligibilityWarning[] = [];
 
   if (profile?.dateOfBirth) {
-    const age = ageOnCivilDate(profile.dateOfBirth, today);
+    const age = completedYearsBetweenCivilDates(profile.dateOfBirth, today);
     if (age < 20 || age > 42) {
       warnings.push({
         circumstance: "age_outside_range",
@@ -64,11 +64,28 @@ export function evaluateEligibilityWarnings(
     }
   }
 
-  // Evaluate cycle lengths
+  const overlaysByStartDate = new Map<CivilDate, CycleOverlay>();
+  for (const overlay of cycleOverlays) {
+    overlaysByStartDate.set(overlay.startDate, overlay);
+  }
+
+  function isRegularCycle(cycle: ChartCycle): boolean {
+    const overlay = overlaysByStartDate.get(cycle.startDate);
+    if (!overlay || overlay.protocolFamily === null || overlay.protocolFamily === undefined) {
+      return true;
+    }
+    return (
+      overlay.protocolFamily === "regular_monitor" ||
+      overlay.protocolFamily === "regular_monitor_plus_mucus" ||
+      overlay.protocolFamily === "mucus_only"
+    );
+  }
+
+  // Evaluate regular cycle lengths (22–42 days) and cycle variation
   const completedCycleLengths: number[] = [];
   for (let i = 0; i < cycles.length - 1; i++) {
     const cycle = cycles[i];
-    if (cycle) {
+    if (cycle && isRegularCycle(cycle)) {
       completedCycleLengths.push(cycle.days.length);
     }
   }
@@ -81,7 +98,10 @@ export function evaluateEligibilityWarnings(
   }
 
   const currentCycle = cycles[cycles.length - 1];
-  const isCurrentCycleExceeding42 = currentCycle !== undefined && currentCycle.days.length > 42;
+  const isCurrentCycleExceeding42 =
+    currentCycle !== undefined &&
+    isRegularCycle(currentCycle) &&
+    currentCycle.days.length > 42;
   if (isCurrentCycleExceeding42) {
     outOfRangeLengths.push(currentCycle.days.length);
   }

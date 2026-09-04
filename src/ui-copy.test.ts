@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { BOUNDARY_RULES } from "./chart/boundary-rules";
 import { evaluateEligibilityWarnings } from "./chart/eligibility-warnings";
+import { makeTestCycle } from "./chart/test-cycle";
 
 // ADR 0015: Verelle computes the Marquette fertile window, naming days
 // fertile or infertile in the method's own words, but never gives advice.
@@ -314,45 +315,9 @@ describe("UI copy", () => {
       perimenopause: true,
       hormonalContraceptionStop: "2026-05-01",
     };
-    const cycle1 = {
-      startDate: "2026-01-01",
-      days: Array.from({ length: 20 }, (_, i) => ({
-        civilDate: "2026-01-01",
-        cycleDay: i + 1,
-        monitorReading: null,
-        markers: [],
-        annotations: [],
-        dayStatus: null,
-      })),
-      mucusPeak: null,
-      fertileWindow: null,
-    };
-    const cycle2 = {
-      startDate: "2026-01-21",
-      days: Array.from({ length: 36 }, (_, i) => ({
-        civilDate: "2026-01-21",
-        cycleDay: i + 1,
-        monitorReading: null,
-        markers: [],
-        annotations: [],
-        dayStatus: null,
-      })),
-      mucusPeak: null,
-      fertileWindow: null,
-    };
-    const currentCycle = {
-      startDate: "2026-02-26",
-      days: Array.from({ length: 5 }, (_, i) => ({
-        civilDate: "2026-02-26",
-        cycleDay: i + 1,
-        monitorReading: null,
-        markers: [],
-        annotations: [],
-        dayStatus: null,
-      })),
-      mucusPeak: null,
-      fertileWindow: null,
-    };
+    const cycle1 = makeTestCycle("2026-01-01", 20);
+    const cycle2 = makeTestCycle("2026-01-21", 36);
+    const currentCycle = makeTestCycle("2026-02-26", 5);
 
     const warnings = evaluateEligibilityWarnings([cycle1, cycle2, currentCycle], today, profile);
 

@@ -65,39 +65,44 @@ export function displayCivilDate(date: CivilDate): string {
 }
 
 /**
- * Calculate age in completed years from `birthDate` to `onDate`.
+ * Completed calendar years between two CivilDates; negative when `to` is earlier.
+ * Returns 0 if either date is malformed or invalid.
  */
-export function ageOnCivilDate(birthDate: CivilDate, onDate: CivilDate): number {
-  const bParts = birthDate.split("-").map(Number);
-  const tParts = onDate.split("-").map(Number);
-  const bYear = bParts[0];
-  const bMonth = bParts[1];
-  const bDay = bParts[2];
-  const tYear = tParts[0];
-  const tMonth = tParts[1];
-  const tDay = tParts[2];
+export function completedYearsBetweenCivilDates(from: CivilDate, to: CivilDate): number {
+  const fromParts = from.split("-").map(Number);
+  const toParts = to.split("-").map(Number);
+  const fromYear = fromParts[0];
+  const fromMonth = fromParts[1];
+  const fromDay = fromParts[2];
+  const toYear = toParts[0];
+  const toMonth = toParts[1];
+  const toDay = toParts[2];
   if (
-    bYear === undefined ||
-    bMonth === undefined ||
-    bDay === undefined ||
-    tYear === undefined ||
-    tMonth === undefined ||
-    tDay === undefined ||
-    Number.isNaN(bYear) ||
-    Number.isNaN(bMonth) ||
-    Number.isNaN(bDay) ||
-    Number.isNaN(tYear) ||
-    Number.isNaN(tMonth) ||
-    Number.isNaN(tDay)
+    fromYear === undefined ||
+    fromMonth === undefined ||
+    fromDay === undefined ||
+    toYear === undefined ||
+    toMonth === undefined ||
+    toDay === undefined ||
+    Number.isNaN(fromYear) ||
+    Number.isNaN(fromMonth) ||
+    Number.isNaN(fromDay) ||
+    Number.isNaN(toYear) ||
+    Number.isNaN(toMonth) ||
+    Number.isNaN(toDay)
   ) {
     return 0;
   }
-  let age = tYear - bYear;
-  if (tMonth < bMonth || (tMonth === bMonth && tDay < bDay)) {
-    age--;
+  let years = toYear - fromYear;
+  if (toMonth < fromMonth || (toMonth === fromMonth && toDay < fromDay)) {
+    years--;
   }
-  return age;
+  return years;
 }
+
+/** Alias for completedYearsBetweenCivilDates when calculating age from a birth date. */
+export const ageOnCivilDate = completedYearsBetweenCivilDates;
+
 
 
 

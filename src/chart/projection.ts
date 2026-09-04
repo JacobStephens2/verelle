@@ -464,7 +464,12 @@ export function projectChart(
     markers: markersFor(observation),
   }));
 
-  const eligibilityWarnings = evaluateEligibilityWarnings(cycles, today, profile);
+  const eligibilityWarnings = evaluateEligibilityWarnings(
+    cycles,
+    today,
+    profile,
+    cycleOverlays,
+  );
 
   return { today, cycles, unassignedDays, eligibilityWarnings };
 }

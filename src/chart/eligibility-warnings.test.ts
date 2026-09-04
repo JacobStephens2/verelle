@@ -2,23 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import type { Profile } from "../observations/profile";
 import { defaultProfile } from "../observations/profile";
+import { defaultCycleOverlay } from "../observations/cycle-overlay";
 import { evaluateEligibilityWarnings } from "./eligibility-warnings";
+import { makeTestCycle } from "./test-cycle";
 
-function makeCycle(startDate: string, length: number) {
-  return {
-    startDate,
-    days: Array.from({ length }, (_, i) => ({
-      civilDate: `2026-01-${String(i + 1).padStart(2, "0")}`,
-      cycleDay: i + 1,
-      monitorReading: null,
-      markers: [],
-      annotations: [],
-      dayStatus: null,
-    })),
-    mucusPeak: null,
-    fertileWindow: null,
-  };
-}
+const makeCycle = makeTestCycle;
 
 describe("evaluateEligibilityWarnings", () => {
   const today = "2026-06-15";
@@ -277,4 +265,33 @@ describe("evaluateEligibilityWarnings", () => {
       expect(warnings.length).toBe(1);
     });
   });
+
+  describe("Protocol scope filtering", () => {
+    it("does not produce regular-cycle manual warnings for cycles charted under postpartum protocols", () => {
+      // Cycle 1 is 15 days, Cycle 2 is 50 days (both outside 22–42 days for regular cycles)
+      const cycle1 = makeCycle("2026-01-01", 15);
+      const cycle2 = makeCycle("2026-01-16", 50);
+      const overlay1 = {
+        ...defaultCycleOverlay("2026-01-01"),
+        protocolFamily: "postpartum_cycle_zero_original" as const,
+      };
+      const overlay2 = {
+        ...defaultCycleOverlay("2026-01-16"),
+        protocolFamily: "postpartum_return_to_cycles" as const,
+      };
+
+      const warnings = evaluateEligibilityWarnings(
+        [cycle1, cycle2],
+        today,
+        null,
+        [overlay1, overlay2],
+      );
+
+      // No regular-cycle length or variation warnings produced
+      expect(warnings.some((w) => w.circumstance === "cycle_length_outside_range")).toBe(false);
+      expect(warnings.some((w) => w.circumstance === "two_or_more_out_of_range_cycles")).toBe(false);
+      expect(warnings.some((w) => w.circumstance === "cycle_variation_over_10_days")).toBe(false);
+    });
+  });
 });
+
