@@ -7,11 +7,18 @@ import type { ChartZoom } from "../chart/chart-presentation";
 import {
   DEFAULT_CHART_ZOOM,
   fertileBandPresentation,
+  isAchievingHighlight,
 } from "../chart/chart-presentation";
-import type { ChartDay, FertileWindow, UnassignedChartDay } from "../chart/projection";
+import type {
+  ChartDay,
+  FertileWindow,
+  MucusPeak,
+  UnassignedChartDay,
+} from "../chart/projection";
 
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
-import type { CycleOverlay } from "../observations/cycle-overlay";
+import type { CycleOverlay, Intention } from "../observations/cycle-overlay";
+import { resolvedCycleIntention } from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
 import type { MonitorReading, Observation } from "../observations/observation";
 import type { PairingState } from "../owners/owner-secret-store";
@@ -90,6 +97,8 @@ interface ChartRow {
   readonly type: string;
   readonly startDate?: CivilDate;
   readonly fertileWindow: FertileWindow | null;
+  readonly mucusPeak: MucusPeak | null;
+  readonly intention: Intention;
   readonly cycleLength: number;
   readonly cells: readonly (ChartDay | null)[];
 }
@@ -102,23 +111,31 @@ const rows = computed<readonly ChartRow[]>(() => {
         type: "Current Cycle",
         startDate: undefined,
         fertileWindow: null,
+        mucusPeak: null,
+        intention: "avoid",
         cycleLength: 0,
         cells: Array.from({ length: columnCount.value }, () => null),
       },
     ];
   }
 
-  return chart.value.cycles.map((cycle, index) => ({
-    key: cycle.startDate,
-    type: index === chart.value.cycles.length - 1 ? "Current" : "Previous",
-    startDate: cycle.startDate,
-    fertileWindow: cycle.fertileWindow,
-    cycleLength: cycle.days.length,
-    cells: Array.from(
-      { length: columnCount.value },
-      (_, dayIndex) => cycle.days[dayIndex] ?? null,
-    ),
-  }));
+  return chart.value.cycles.map((cycle, index) => {
+    const overlay = props.cycleOverlays?.find((o) => o.startDate === cycle.startDate);
+    const intention = resolvedCycleIntention(overlay);
+    return {
+      key: cycle.startDate,
+      type: index === chart.value.cycles.length - 1 ? "Current" : "Previous",
+      startDate: cycle.startDate,
+      fertileWindow: cycle.fertileWindow,
+      mucusPeak: cycle.mucusPeak,
+      intention,
+      cycleLength: cycle.days.length,
+      cells: Array.from(
+        { length: columnCount.value },
+        (_, dayIndex) => cycle.days[dayIndex] ?? null,
+      ),
+    };
+  });
 });
 
 function monitorReadingText(
@@ -264,7 +281,12 @@ onMounted(() => {
             v-for="row in rows"
             :key="row.key"
             class="cycle-row"
-            :class="{ 'cycle-row--has-fertile-window': row.fertileWindow !== null }"
+            :class="{
+              'cycle-row--has-fertile-window': row.fertileWindow !== null,
+              'cycle-row--achieve': row.intention === 'achieve',
+              'cycle-row--avoid': row.intention === 'avoid',
+            }"
+            :data-intention="row.intention"
             :data-has-fertile-window="row.fertileWindow !== null ? 'true' : undefined"
             :data-fertile-start="row.fertileWindow?.start.cycleDay"
             :data-fertile-end="row.fertileWindow ? (row.fertileWindow.end ? row.fertileWindow.end.cycleDay : 'open') : undefined"
@@ -287,6 +309,7 @@ onMounted(() => {
               :day="day"
               :is-today="day?.civilDate === chart.today"
               :band="fertileBandPresentation(index + 1, row.fertileWindow, row.cycleLength)"
+              :highlight="isAchievingHighlight(day ?? undefined, row.intention, row.mucusPeak)"
               @select-date="emit('selectDate', $event)"
             />
           </tr>

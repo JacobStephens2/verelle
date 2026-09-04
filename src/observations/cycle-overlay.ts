@@ -76,6 +76,20 @@ export const INTENTION_LABELS: Record<Intention, string> = {
 };
 
 /**
+ * Default intention for a cycle when none is chosen (`CONTEXT.md`, Issue #41).
+ */
+export const DEFAULT_INTENTION: Intention = "avoid";
+
+/**
+ * Resolve the effective intention of a cycle overlay, defaulting to avoiding.
+ */
+export function resolvedCycleIntention(
+  overlay: CycleOverlay | null | undefined,
+): Intention {
+  return overlay?.intention ?? DEFAULT_INTENTION;
+}
+
+/**
  * Stored choices for one Cycle, keyed by its Cycle Day 1 Civil date.
  */
 export interface CycleOverlay {
@@ -98,7 +112,7 @@ export function defaultCycleOverlay(startDate: CivilDate): CycleOverlay {
     startDate,
     protocolFamily: null,
     protocolVersion: null,
-    intention: null,
+    intention: "avoid",
     postpartumCycleNumber: null,
   };
 }

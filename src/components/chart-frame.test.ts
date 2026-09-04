@@ -83,6 +83,29 @@ describe("ChartCell component rendering", () => {
     expect(html).not.toContain("data-day-status");
     expect(html).not.toContain("Day status");
   });
+
+  it("renders achieving emphasis highlight and aria-label when highlight prop is true", async () => {
+    const app = createSSRApp({
+      render: () =>
+        h(ChartCell, {
+          day: { ...baseDay, monitorReading: "Peak", cycleDay: 14 },
+          isToday: false,
+          highlight: true,
+          band: {
+            inFertileWindow: true,
+            isFertileStart: false,
+            isFertileEnd: false,
+            classes: ["chart__cell--fertile"],
+          },
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("chart__cell--highlight");
+    expect(html).toContain("stamp--highlight");
+    expect(html).toContain('data-highlight="true"');
+    expect(html).toContain("Achieving emphasis");
+  });
 });
 
 describe("ChartFrame component presentation seam", () => {
@@ -345,6 +368,105 @@ describe("ChartFrame component presentation seam", () => {
 
       const html = await renderToString(app);
       expect(html).not.toContain('data-testid="protocol-family-offer"');
+    });
+  });
+
+  describe("Intention emphasis in ChartFrame", () => {
+    it("highlights High and Peak days on the Chart when Intention is achieve", async () => {
+      const high = applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" });
+      const achieveOverlay = {
+        ...defaultCycleOverlay("2026-06-01"),
+        protocolFamily: "regular_monitor" as const,
+        protocolVersion: "marquette_regular_manual_public" as const,
+        intention: "achieve" as const,
+      };
+
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-20",
+            observations: [cd1, high, peak],
+            cycleOverlays: [achieveOverlay],
+          }),
+      });
+
+      const html = await renderToString(app);
+
+      // Row carries achieve intention data attribute and class
+      expect(html).toContain('data-intention="achieve"');
+      expect(html).toContain("cycle-row--achieve");
+
+      // High day (CD11, 2026-06-11) is highlighted
+      expect(html).toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-11"/,
+      );
+      expect(html).toMatch(
+        /data-civil-date="2026-06-11"[^>]*data-highlight="true"/,
+      );
+
+      // Peak day (CD14, 2026-06-14) is highlighted
+      expect(html).toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-14"/,
+      );
+      expect(html).toMatch(
+        /data-civil-date="2026-06-14"[^>]*data-highlight="true"/,
+      );
+
+      // Early fertile day before High (CD6, 2026-06-06) is fertile but NOT highlighted
+      expect(html).not.toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-06"/,
+      );
+    });
+
+    it("defaults row intention to avoid and does not highlight High/Peak days when avoiding", async () => {
+      const high = applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" });
+      const avoidOverlay = {
+        ...defaultCycleOverlay("2026-06-01"),
+        protocolFamily: "regular_monitor" as const,
+        protocolVersion: "marquette_regular_manual_public" as const,
+        intention: "avoid" as const,
+      };
+
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-20",
+            observations: [cd1, high, peak],
+            cycleOverlays: [avoidOverlay],
+          }),
+      });
+
+      const html = await renderToString(app);
+
+      // Row carries avoid intention data attribute and class
+      expect(html).toContain('data-intention="avoid"');
+      expect(html).toContain("cycle-row--avoid");
+      expect(html).not.toContain("cycle-row--achieve");
+
+      // High day and Peak day are NOT highlighted when avoiding
+      expect(html).not.toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-11"/,
+      );
+      expect(html).not.toMatch(
+        /class="[^"]*chart__cell--highlight[^"]*"[^>]*data-civil-date="2026-06-14"/,
+      );
+      expect(html).not.toContain('data-highlight="true"');
+    });
+
+    it("defaults intention to avoid when no overlay is provided", async () => {
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-20",
+            observations: [cd1, peak],
+            cycleOverlays: [],
+          }),
+      });
+
+      const html = await renderToString(app);
+      expect(html).toContain('data-intention="avoid"');
+      expect(html).toContain("cycle-row--avoid");
+      expect(html).not.toContain("cycle-row--achieve");
     });
   });
 });

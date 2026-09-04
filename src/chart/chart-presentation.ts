@@ -1,9 +1,11 @@
+import type { Intention } from "../observations/cycle-overlay";
 import type { MonitorReading } from "../observations/observation";
 import {
   isDayInFertileWindow,
   type ChartDay,
   type Confidence,
   type FertileWindow,
+  type MucusPeak,
 } from "./projection";
 
 export const CHART_ZOOM_LEVELS = ["normal", "compact", "trend"] as const;
@@ -113,6 +115,32 @@ export function fertileBandPresentation(
     endConfidence,
     classes,
   };
+}
+
+/**
+ * Whether a day is a High or Peak fertility day pointed to by the method (`CONTEXT.md`).
+ */
+export function isHighOrPeakDay(
+  day: ChartDay | undefined,
+  mucusPeak?: MucusPeak | null,
+): boolean {
+  if (!day) return false;
+  if (day.monitorReading === "High" || day.monitorReading === "Peak") return true;
+  if (day.markers.includes("peak_override")) return true;
+  if (mucusPeak && mucusPeak.cycleDay === day.cycleDay) return true;
+  return false;
+}
+
+/**
+ * Whether a day should receive achieving emphasis under an achieving Intention (`CONTEXT.md`, Issue #41).
+ */
+export function isAchievingHighlight(
+  day: ChartDay | undefined,
+  intention: Intention | null | undefined,
+  mucusPeak?: MucusPeak | null,
+): boolean {
+  if (intention !== "achieve") return false;
+  return isHighOrPeakDay(day, mucusPeak);
 }
 
 

@@ -12,6 +12,7 @@ const props = defineProps<{
   day: ChartDay | null;
   isToday?: boolean;
   band?: FertileBandCellPresentation | null;
+  highlight?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -34,6 +35,9 @@ const ariaLabel = computed(() => {
   if (props.day.annotations.length > 0) {
     details.push(`Peak count ${props.day.annotations.join(", ")}`);
   }
+  if (props.highlight) {
+    details.push("Achieving emphasis");
+  }
   return details.join(", ");
 });
 </script>
@@ -42,18 +46,20 @@ const ariaLabel = computed(() => {
   <td
     v-if="day"
     class="chart__cell"
-    :class="[{ 'chart__cell--today': isToday }, ...bandClasses]"
+    :class="[{ 'chart__cell--today': isToday, 'chart__cell--highlight': highlight }, ...bandClasses]"
     :data-civil-date="day.civilDate"
     :data-day-status="day.dayStatus ?? undefined"
+    :data-highlight="highlight ? 'true' : undefined"
     data-testid="chart-cell"
   >
     <button
       type="button"
       class="stamp"
-      :class="cellClass"
+      :class="[cellClass, { 'stamp--highlight': highlight }]"
       :aria-label="ariaLabel"
       :data-civil-date="day.civilDate"
       :data-day-status="day.dayStatus ?? undefined"
+      :data-highlight="highlight ? 'true' : undefined"
       data-testid="chart-day"
       @click="emit('selectDate', day.civilDate)"
     >

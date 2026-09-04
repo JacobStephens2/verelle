@@ -52,7 +52,7 @@ const currentOverlay = computed<CycleOverlay | null>(() => {
 });
 
 const protocolFamily = ref<ProtocolFamily | null>(null);
-const intention = ref<Intention | null>(null);
+const intention = ref<Intention>("avoid");
 const postpartumCycleNumber = ref<string | number>("");
 
 const recordingEdits = createRecordingEdits<keyof CycleOverlayFields>();
@@ -65,14 +65,14 @@ const edit = (field: keyof CycleOverlayFields) => {
 const load = (overlay: CycleOverlay | null, preserveEdited: boolean) => {
   if (!overlay) {
     protocolFamily.value = null;
-    intention.value = null;
+    intention.value = "avoid";
     postpartumCycleNumber.value = "";
     return;
   }
   const settled = (field: keyof CycleOverlayFields) =>
     !preserveEdited || !edited.value.has(field);
   if (settled("protocolFamily")) protocolFamily.value = overlay.protocolFamily;
-  if (settled("intention")) intention.value = overlay.intention;
+  if (settled("intention")) intention.value = overlay.intention ?? "avoid";
   if (settled("postpartumCycleNumber")) {
     postpartumCycleNumber.value =
       overlay.postpartumCycleNumber === null ? "" : overlay.postpartumCycleNumber;
@@ -249,7 +249,6 @@ const save = async () => {
           data-testid="intention-select"
           @change="edit('intention')"
         >
-          <option :value="null">Not selected</option>
           <option
             v-for="intent in INTENTIONS"
             :key="intent"
