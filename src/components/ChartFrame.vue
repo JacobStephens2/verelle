@@ -30,16 +30,6 @@ const chart = computed(() =>
   projectChart(props.observations ?? [], props.today ?? todayCivilDate()),
 );
 
-const observationsByDate = computed(
-  () =>
-    new Map(
-      (props.observations ?? []).map((observation) => [
-        observation.civilDate,
-        observation,
-      ]),
-    ),
-);
-
 const columnCount = computed(() =>
   Math.max(
     CYCLE_DAY_COLUMNS,
@@ -53,7 +43,8 @@ const cycleDays = computed(() =>
 
 interface ChartRow {
   readonly key: string;
-  readonly label: string;
+  readonly type: string;
+  readonly startDate?: CivilDate;
   readonly cells: readonly (ChartDay | null)[];
 }
 
@@ -62,7 +53,8 @@ const rows = computed<readonly ChartRow[]>(() => {
     return [
       {
         key: "empty-current-cycle",
-        label: "Current Cycle",
+        type: "Current Cycle",
+        startDate: undefined,
         cells: Array.from({ length: columnCount.value }, () => null),
       },
     ];
@@ -70,10 +62,8 @@ const rows = computed<readonly ChartRow[]>(() => {
 
   return chart.value.cycles.map((cycle, index) => ({
     key: cycle.startDate,
-    label:
-      index === chart.value.cycles.length - 1
-        ? `Current · ${cycle.startDate}`
-        : `Previous · ${cycle.startDate}`,
+    type: index === chart.value.cycles.length - 1 ? "Current" : "Previous",
+    startDate: cycle.startDate,
     cells: Array.from(
       { length: columnCount.value },
       (_, dayIndex) => cycle.days[dayIndex] ?? null,
@@ -98,12 +88,7 @@ function unassignedChartDayLabel(day: UnassignedChartDay): string {
 const root = useTemplateRef<HTMLElement>("root");
 
 // A launch breadcrumb, reporting the column count and the frame's laid-out
-// size. Capacitor forwards it to the app's stdout, which is the only thing
-// that can tell a WebView that painted the Chart from one that came up blank,
-// and a blank WebView is the failure the native shells have to stay clear of.
-// `.github/workflows/ci.yml` asserts on this line after launching the app on
-// an iOS simulator. The rAF is so the numbers describe a laid-out frame rather
-// than a mounted but unmeasured one.
+// width and position once mounted.
 onMounted(() => {
   requestAnimationFrame(() => {
     const box = root.value?.getBoundingClientRect();
@@ -142,30 +127,6 @@ onMounted(() => {
       </div>
     </header>
 
-    <!-- Stamp Legend: Verelle's own hues, excluding Creighton stamp vocabulary -->
-    <div
-      class="chart-legend"
-      tabindex="0"
-      role="group"
-      aria-label="Stamp legend"
-    >
-      <div class="legend-item">
-        <span class="legend-dot legend-dot-bleeding" />Bleeding
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot legend-dot-low" />Low
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot legend-dot-high" />High
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot legend-dot-peak" />Peak
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot legend-dot-intercourse">❤️</span>Intercourse
-      </div>
-    </div>
-
     <!-- Zoom toolbar: Normal, Compact, Trend -->
     <ChartZoomControl v-model="zoom" />
 
@@ -201,14 +162,17 @@ onMounted(() => {
           >
             <th scope="row" class="chart__cycle-label">
               <div class="cycle-label">
-                <span class="cycle-label-num">{{ row.label }}</span>
+                <span class="cycle-label-num">{{ row.type }}</span>
+                <template v-if="row.startDate">
+                  <span class="cycle-label-sep"> · </span>
+                  <span class="cycle-label-date">{{ row.startDate }}</span>
+                </template>
               </div>
             </th>
             <ChartCell
               v-for="(day, index) in row.cells"
               :key="index"
               :day="day"
-              :observation="day ? observationsByDate.get(day.civilDate) : undefined"
               :is-today="day?.civilDate === chart.today"
               @select-date="emit('selectDate', $event)"
             />

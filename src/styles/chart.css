@@ -73,12 +73,19 @@
   --label-min: 54px;
 }
 
-/* In trend mode, hide per-stamp date label and observation code
- * so a row collapses to a tight ribbon of colored circles. */
+/* In trend mode, hide per-stamp date label, observation code, and peak count
+ * so a row collapses to a tight ribbon of colored circles without overflow. */
 .chart-container[data-zoom="trend"] .stamp-day,
-.chart-container[data-zoom="trend"] .stamp-code {
+.chart-container[data-zoom="trend"] .stamp-code,
+.chart-container[data-zoom="trend"] .chart__peak-annotation {
   display: none;
 }
+
+.chart-container[data-zoom="trend"] .cycle-label-date,
+.chart-container[data-zoom="trend"] .cycle-label-len {
+  display: none;
+}
+
 
 .chart-toolbar {
   display: flex;
@@ -185,6 +192,10 @@
   gap: 3px;
 }
 
+.cycle-label-sep {
+  display: none;
+}
+
 .cycle-label-num {
   font-size: var(--label-num-font);
   font-weight: 700;
@@ -201,68 +212,13 @@
   background: var(--verelle-surface-sunken);
 }
 
-.chart-peak-col {
-  background: color-mix(in srgb, var(--verelle-stamp-peak) 12%, var(--verelle-surface));
-}
-
-/* Legend */
-.chart-legend {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  padding: 6px 0 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
-}
-
-.chart-legend::-webkit-scrollbar {
-  display: none;
-}
-
-.chart-legend:focus-visible {
-  outline: 2px solid var(--verelle-ink);
-  outline-offset: 2px;
-  border-radius: 999px;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.legend-item {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  border-radius: 999px;
+.stamp-cell.chart__cell--today,
+.chart__cell--today {
   background: var(--verelle-surface-sunken);
-  font-size: 0.74rem;
-  white-space: nowrap;
-  color: var(--verelle-ink-muted);
+  outline: 2px solid var(--verelle-primary);
+  outline-offset: -2px;
 }
 
-.legend-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.legend-dot-bleeding { background: var(--verelle-stamp-bleeding); }
-.legend-dot-low { background: var(--verelle-stamp-low); }
-.legend-dot-high { background: var(--verelle-stamp-high); }
-.legend-dot-peak { background: var(--verelle-stamp-peak); }
-.legend-dot-intercourse {
-  background: transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  line-height: 1;
-}
 
 /* Cell / Stamp styles */
 .stamp {
@@ -314,47 +270,6 @@
   text-align: center;
 }
 
-.stamp-intercourse {
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  font-size: 11px;
-  line-height: 1;
-}
-
-/* Bleeding indicator dot when combined with a monitor reading */
-.stamp-bleeding-dot {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--verelle-stamp-bleeding);
-  border: 1.5px solid var(--verelle-surface);
-  display: none;
-}
-
-.stamp--bleeding.stamp--low .stamp-bleeding-dot,
-.stamp--bleeding.stamp--high .stamp-bleeding-dot,
-.stamp--bleeding.stamp--peak .stamp-bleeding-dot,
-.stamp--bleeding.stamp--missed .stamp-bleeding-dot,
-.stamp--bleeding.stamp--error .stamp-bleeding-dot {
-  display: block;
-}
-
-/* Verelle Stamp Colors */
-.stamp--bleeding .stamp-circle {
-  background: var(--verelle-stamp-bleeding);
-  color: #ffffff;
-}
-
-.stamp--spotting .stamp-circle {
-  background: transparent;
-  border-color: var(--verelle-stamp-bleeding);
-  color: var(--verelle-stamp-bleeding);
-}
-
 .stamp--low .stamp-circle {
   background: var(--verelle-stamp-low);
   color: #ffffff;
@@ -385,6 +300,12 @@
   background: transparent;
   border: 2px dashed var(--verelle-rule);
   color: var(--verelle-ink-muted);
+}
+
+.stamp--recorded .stamp-circle {
+  background: var(--verelle-surface-sunken);
+  border: 1.5px solid var(--verelle-rule);
+  color: var(--verelle-ink);
 }
 
 /* Print styles */
@@ -418,8 +339,6 @@
   }
 
   .stamp-circle,
-  .legend-dot,
-  .chart-peak-col,
   .chart-empty {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
