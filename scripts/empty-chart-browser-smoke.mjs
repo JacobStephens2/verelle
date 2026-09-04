@@ -18,7 +18,11 @@ import { installBrowserSmokeOwner } from "./browser-smoke-owner.mjs";
 
 const PORT = 4193;
 const origin = `http://127.0.0.1:${PORT}`;
-const chromePath = process.env.VERELLE_CHROME_PATH || "/usr/bin/google-chrome";
+const chromePath =
+  process.env.VERELLE_CHROME_PATH ||
+  (process.platform === "darwin"
+    ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    : "/usr/bin/google-chrome");
 // The frame is 42 cycle day columns wide - see CYCLE_DAY_COLUMNS in
 // src/chart/projection.ts and the Clearblue 21–42 day range it comes from.
 const EXPECTED_CYCLE_DAY_COLUMNS = 42;
@@ -157,6 +161,52 @@ try {
   assert.equal(normalZoom, null, "Normal zoom mode left data-zoom set");
   console.log("ok: three zoom levels (normal, compact, trend) switch cleanly");
 
+  // 3c. Calendar view is reachable, navigates months, and tapping a day opens day details.
+  await page.click('[data-testid="view-calendar"]');
+  await page.waitForSelector('[data-testid="calendar-view"]', { timeout: PAINT_TIMEOUT_MS });
+  const initialMonth = await page.$eval(
+    '[data-testid="calendar-month-title"]',
+    (el) => el.textContent?.trim() ?? "",
+  );
+  assert.ok(initialMonth.length > 0, "Calendar month title was empty");
+
+  // Navigate backward
+  await page.click('[data-testid="calendar-prev"]');
+  const prevMonth = await page.$eval(
+    '[data-testid="calendar-month-title"]',
+    (el) => el.textContent?.trim() ?? "",
+  );
+  assert.notEqual(initialMonth, prevMonth, "Month title did not change on previous click");
+
+  // Navigate forward twice
+  await page.click('[data-testid="calendar-next"]');
+  await page.click('[data-testid="calendar-next"]');
+  const nextMonth = await page.$eval(
+    '[data-testid="calendar-month-title"]',
+    (el) => el.textContent?.trim() ?? "",
+  );
+  assert.notEqual(initialMonth, nextMonth, "Month title did not change on next click");
+
+  // Go to Today
+  await page.click('[data-testid="calendar-today-btn"]');
+  const resetMonth = await page.$eval(
+    '[data-testid="calendar-month-title"]',
+    (el) => el.textContent?.trim() ?? "",
+  );
+  assert.equal(resetMonth, initialMonth, "Go to Today did not reset month");
+
+  // Tapping a day opens observation details (the same day details the Chart opens)
+  await page.click('[data-testid="calendar-day"]');
+  const observationTitle = await page.$eval(
+    '[data-testid="record-title"]',
+    (el) => el.textContent?.trim() ?? "",
+  );
+  assert.equal(observationTitle, "Observation details", "Tapping a calendar day did not open Observation details");
+
+  // Switch back to Chart
+  await page.click('[data-testid="view-chart"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Calendar view navigates months, opens day details on tap, and switches back to Chart");
 
   const pairingState = await page.$eval(
     '[data-testid="pairing-state"]',

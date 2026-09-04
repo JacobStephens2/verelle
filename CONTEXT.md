@@ -147,7 +147,11 @@ _Avoid_: CD, day of cycle, DoC
 
 **Chart**:
 The grid of observations laid out by cycle and cycle day, with each cycle's
-fertile window banded behind it. Verelle's entire output.
+fertile window banded behind it. Verelle's primary output.
+
+**Calendar**:
+The month-grid view of observations and cycles, letting her find a date by
+calendar date rather than by counting Cycle Day columns.
 
 ### The couple
 

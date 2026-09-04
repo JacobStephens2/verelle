@@ -103,6 +103,52 @@ export function completedYearsBetweenCivilDates(from: CivilDate, to: CivilDate):
 /** Alias for completedYearsBetweenCivilDates when calculating age from a birth date. */
 export const ageOnCivilDate = completedYearsBetweenCivilDates;
 
+/** A calendar month: year and 0-indexed month (0 = January..11 = December). */
+export interface CivilMonth {
+  readonly year: number;
+  readonly month: number;
+}
+
+/** Format a month for display, e.g. (2026, 8) -> "September 2026" (month is 0-indexed). */
+export function displayMonth(year: number, month: number): string {
+  const date = new Date(Date.UTC(year, month, 1));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+/** Get all CivilDates (YYYY-MM-DD) in a month (month is 0-indexed). */
+export function getDatesInMonth(year: number, month: number): CivilDate[] {
+  const dates: CivilDate[] = [];
+  const d = new Date(Date.UTC(year, month, 1));
+  while (d.getUTCMonth() === month) {
+    dates.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+/** First day of week for a given month (0 = Sunday..6 = Saturday, month is 0-indexed). */
+export function firstDayOfMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 1)).getUTCDay();
+}
+
+/** Shift year and 0-indexed month by delta months. */
+export function shiftMonth(year: number, month: number, delta: number): CivilMonth {
+  const totalMonths = year * 12 + month + delta;
+  const newYear = Math.floor(totalMonths / 12);
+  const newMonth = ((totalMonths % 12) + 12) % 12;
+  return { year: newYear, month: newMonth };
+}
+
+/** Extract year and 0-indexed month from a CivilDate. */
+export function civilDateMonth(date: CivilDate): CivilMonth {
+  const parts = date.split("-").map(Number);
+  return { year: parts[0] ?? 0, month: (parts[1] ?? 1) - 1 };
+}
+
 
 
 
