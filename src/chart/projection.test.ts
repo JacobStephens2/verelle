@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 import type { Observation } from "../observations/observation";
 import { applyUpdate, unrecordedObservation } from "../observations/observation";
 import type { CycleOverlay } from "../observations/cycle-overlay";
-import { defaultCycleOverlay } from "../observations/cycle-overlay";
+import {
+  defaultCycleOverlay,
+  PROTOCOL_FAMILIES,
+  PROTOCOL_VERSIONS,
+} from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
 import { defaultProfile } from "../observations/profile";
 import type { CivilDate } from "./civil-date";
@@ -39,6 +43,23 @@ describe("projectChart golden fixtures", () => {
       const fixture = JSON.parse(
         await readFile(filePath, "utf8"),
       ) as GoldenFixture;
+
+      if (fixture.cycleOverlays) {
+        for (const overlay of fixture.cycleOverlays) {
+          if (overlay.protocolFamily !== null && overlay.protocolFamily !== undefined) {
+            expect(
+              (PROTOCOL_FAMILIES as readonly string[]).includes(overlay.protocolFamily),
+              `Fixture ${fixtureFile} has unregistered protocolFamily "${overlay.protocolFamily}"`,
+            ).toBe(true);
+          }
+          if (overlay.protocolVersion !== null && overlay.protocolVersion !== undefined) {
+            expect(
+              (PROTOCOL_VERSIONS as readonly string[]).includes(overlay.protocolVersion),
+              `Fixture ${fixtureFile} has unregistered protocolVersion "${overlay.protocolVersion}"`,
+            ).toBe(true);
+          }
+        }
+      }
 
       const projected = projectChart(
         fixture.observations,

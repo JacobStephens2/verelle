@@ -137,6 +137,8 @@ export const BOUNDARY_RULES: Record<string, BoundaryRule> = {
   },
 };
 
+export type BoundaryRuleId = keyof typeof BOUNDARY_RULES;
+
 export function lookupBoundaryRule(ruleId: string): BoundaryRule | undefined {
   return BOUNDARY_RULES[ruleId];
 }
