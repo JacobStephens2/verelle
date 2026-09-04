@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { BOUNDARY_RULES } from "./chart/boundary-rules";
+
 // ADR 0015: Verelle computes the Marquette fertile window, naming days
 // fertile or infertile in the method's own words, but never gives advice.
 // No UI string may call a day safe or unsafe, or tell a couple what they
@@ -275,5 +277,14 @@ describe("UI copy", () => {
     expect(dayExplanation).toContain('data-testid="boundary-confidence"');
     expect(dayExplanation).toContain('data-testid="provisional-explanation"');
     expect(forbiddenWordsIn(dayExplanation)).toEqual([]);
+  });
+
+  it("contains no advice words in boundary rule descriptions and provisional requirements", () => {
+    for (const rule of Object.values(BOUNDARY_RULES)) {
+      expect(forbiddenWordsIn(rule.description)).toEqual([]);
+      if (rule.provisionalRequirement) {
+        expect(forbiddenWordsIn(rule.provisionalRequirement)).toEqual([]);
+      }
+    }
   });
 });
