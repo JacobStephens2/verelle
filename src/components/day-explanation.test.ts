@@ -357,5 +357,99 @@ describe("DayExplanation component", () => {
     expect(html).toContain("Provisional");
     expect(html).toContain("Passing the historical fallback day or completing three full days after a Monitor Peak will make it final");
   });
+
+  it("explains why a day is fertile under mucus_only with MUCUS-ONLY-START-3 and MUCUS-ONLY-END-1", async () => {
+    const mucusWindow: FertileWindow = {
+      start: {
+        cycleDay: 5,
+        ruleId: "MUCUS-ONLY-START-3",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 17,
+        ruleId: "MUCUS-ONLY-END-1",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 5,
+          dayStatus: "fertile",
+          fertileWindow: mucusWindow,
+          protocolFamily: "mucus_only",
+          protocolVersion: "marquette_mucus_only_manual",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 5 is fertile");
+    expect(html).toContain("MUCUS-ONLY-START-3");
+    expect(html).toContain("First mucus observation earlier than calendar start");
+    expect(html).toContain("Marquette Mucus-Only Manual");
+    expect(html).toContain("Marquette regular-cycles user manual");
+  });
+
+  it("explains provisional requirement under mucus_only when window is still open without peak", async () => {
+    const openMucusWindow: FertileWindow = {
+      start: {
+        cycleDay: 6,
+        ruleId: "MUCUS-ONLY-START-1",
+        confidence: "final",
+      },
+      end: null,
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 8,
+          dayStatus: "fertile",
+          fertileWindow: openMucusWindow,
+          protocolFamily: "mucus_only",
+          protocolVersion: "marquette_mucus_only_manual",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Provisional");
+    expect(html).toContain("Observing a non-Peak mucus day after a Mucus Peak and completing three full days will make it final");
+  });
+
+  it("explains day under regular_monitor_plus_mucus with MUCUS-START and MUCUS-END citing USCCB paper", async () => {
+    const dualWindow: FertileWindow = {
+      start: {
+        cycleDay: 5,
+        ruleId: "MUCUS-START",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 19,
+        ruleId: "MUCUS-END",
+        confidence: "final",
+      },
+      discrepancies: ["mucus_fertile_before_monitor_high", "mucus_peak_after_monitor_peak"],
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 10,
+          dayStatus: "fertile",
+          fertileWindow: dualWindow,
+          protocolFamily: "regular_monitor_plus_mucus",
+          protocolVersion: "marquette_regular_plus_mucus_manual",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 10 is fertile");
+    expect(html).toContain("MUCUS-START");
+    expect(html).toContain("MUCUS-END");
+    expect(html).toContain("USCCB Marquette Model history/effectiveness paper");
+    expect(html).toContain("https://www.usccb.org/resources/MM%20History%20and%20effectiveness%20Paper%202018.pdf");
+  });
 });
+
 

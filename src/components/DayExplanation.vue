@@ -93,6 +93,12 @@ const confidenceDisplay = computed<string>(() => {
 const provisionalExplanation = computed<string | null>(() => {
   if (!isProvisional.value) return null;
   if (props.fertileWindow?.end === null) {
+    if (props.protocolFamily === "mucus_only") {
+      return "This boundary is provisional. Observing a non-Peak mucus day after a Mucus Peak and completing three full days will make it final.";
+    }
+    if (props.protocolFamily === "regular_monitor_plus_mucus") {
+      return "This boundary is provisional. Recording a Peak marker and completing three full days will make it final.";
+    }
     return "This boundary is provisional. Recording a Monitor Peak and completing three full days after the last Monitor Peak will make it final.";
   }
   if (props.fertileWindow?.end?.confidence === "provisional") {

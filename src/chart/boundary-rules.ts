@@ -27,6 +27,11 @@ const CASE_REPORTS_SOURCE: PublishedSource = {
   url: "https://pmc.ncbi.nlm.nih.gov/articles/PMC6081769/",
 };
 
+const USCCB_SOURCE: PublishedSource = {
+  title: "USCCB Marquette Model history/effectiveness paper",
+  url: "https://www.usccb.org/resources/MM%20History%20and%20effectiveness%20Paper%202018.pdf",
+};
+
 export const BOUNDARY_RULES: Record<string, BoundaryRule> = {
   "REG-START-1": {
     id: "REG-START-1",
@@ -54,6 +59,44 @@ export const BOUNDARY_RULES: Record<string, BoundaryRule> = {
     description: "Missed-surge fallback uses latest Monitor Peak from last six cycles plus three full days.",
     source: CASE_REPORTS_SOURCE,
     provisionalRequirement: "Passing the historical fallback day or completing three full days after a Monitor Peak will make it final.",
+  },
+  "MUCUS-START": {
+    id: "MUCUS-START",
+    description: "Mucus change from baseline earlier than calendar start or monitor High.",
+    source: USCCB_SOURCE,
+  },
+  "MUCUS-END": {
+    id: "MUCUS-END",
+    description: "End is three full days after last Mucus Peak.",
+    source: USCCB_SOURCE,
+    provisionalRequirement: "Recording a non-Peak mucus observation and completing three full days after the Mucus Peak will make it final.",
+  },
+  "MUCUS-ONLY-START-1": {
+    id: "MUCUS-ONLY-START-1",
+    description: "First six cycles begin fertility on Cycle Day 6.",
+    source: REGULAR_MANUAL_SOURCE,
+  },
+  "MUCUS-ONLY-START-2": {
+    id: "MUCUS-ONLY-START-2",
+    description: "Earliest Mucus Peak of the last six cycles minus six.",
+    source: REGULAR_MANUAL_SOURCE,
+  },
+  "MUCUS-ONLY-START-3": {
+    id: "MUCUS-ONLY-START-3",
+    description: "First mucus observation earlier than calendar start.",
+    source: REGULAR_MANUAL_SOURCE,
+  },
+  "MUCUS-ONLY-END-1": {
+    id: "MUCUS-ONLY-END-1",
+    description: "End is three full days after the Mucus Peak.",
+    source: REGULAR_MANUAL_SOURCE,
+    provisionalRequirement: "Recording a non-Peak mucus observation and completing three full days after the Mucus Peak will make it final.",
+  },
+  "MUCUS-ONLY-END-2": {
+    id: "MUCUS-ONLY-END-2",
+    description: "Missed-peak fallback uses latest Mucus Peak from last six cycles plus three full days.",
+    source: CASE_REPORTS_SOURCE,
+    provisionalRequirement: "Passing the historical fallback day or completing three full days after a confirmed Mucus Peak will make it final.",
   },
 };
 
