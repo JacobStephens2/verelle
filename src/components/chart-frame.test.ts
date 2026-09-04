@@ -237,4 +237,116 @@ describe("ChartFrame component presentation seam", () => {
     expect(html).toContain('data-has-fertile-window="true"');
     expect(html).toContain("chart__cell--fertile");
   });
+
+  describe("Method disclaimer", () => {
+    it("renders the disclaimer once at the start with an acknowledge action", async () => {
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-20",
+            observations: [cd1, peak],
+            cycleOverlays: [],
+          }),
+      });
+
+      const html = await renderToString(app);
+      expect(html).toContain('data-testid="disclaimer"');
+      expect(html).toContain('data-testid="dismiss-disclaimer"');
+      expect(html).toContain("instructor");
+      expect(html).toMatch(/charting tool|not a medical device/i);
+    });
+
+    it("does not repeat the disclaimer per day in chart cells or cycle rows", async () => {
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-20",
+            observations: [cd1, peak],
+            cycleOverlays: [],
+          }),
+      });
+
+      const html = await renderToString(app);
+      // Exactly one disclaimer section on screen
+      const occurrences = (html.match(/data-testid="disclaimer"/g) || []).length;
+      expect(occurrences).toBe(1);
+
+      // Verify no cell carries disclaimer text
+      const cellApp = createSSRApp({
+        render: () =>
+          h(ChartCell, {
+            day: {
+              civilDate: "2026-06-01",
+              cycleDay: 1,
+              monitorReading: null,
+              markers: [],
+              annotations: [],
+              dayStatus: null,
+            },
+          }),
+      });
+      const cellHtml = await renderToString(cellApp);
+      expect(cellHtml).not.toContain("disclaimer");
+    });
+  });
+
+  describe("Protocol family offer at first Cycle Day 1", () => {
+    it("does not offer a protocol family before Cycle Day 1", async () => {
+      const monitorOnly = applyUpdate(unrecordedObservation("2026-06-01"), {
+        monitorReading: "Low",
+      });
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-02",
+            observations: [monitorOnly],
+            cycleOverlays: [],
+          }),
+      });
+
+      const html = await renderToString(app);
+      expect(html).not.toContain('data-testid="protocol-family-offer"');
+    });
+
+    it("offers a protocol family at the first Cycle Day 1 when no protocol is chosen", async () => {
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-02",
+            observations: [cd1],
+            cycleOverlays: [],
+          }),
+      });
+
+      const html = await renderToString(app);
+      expect(html).toContain('data-testid="protocol-family-offer"');
+      expect(html).toContain('data-testid="offer-choose-protocol"');
+      expect(html).toContain('data-testid="offer-skip-protocol"');
+      expect(html).toContain("Protocol family");
+      // Still renders no band
+      expect(html).not.toContain('data-has-fertile-window="true"');
+      expect(html).not.toContain("chart__cell--fertile");
+    });
+
+    it("does not offer a protocol family once a protocol family has already been chosen", async () => {
+      const overlay = {
+        ...defaultCycleOverlay("2026-06-01"),
+        protocolFamily: "regular_monitor" as const,
+        protocolVersion: "marquette_regular_manual_public" as const,
+      };
+      const app = createSSRApp({
+        render: () =>
+          h(ChartFrame, {
+            today: "2026-06-02",
+            observations: [cd1],
+            cycleOverlays: [overlay],
+          }),
+      });
+
+      const html = await renderToString(app);
+      expect(html).not.toContain('data-testid="protocol-family-offer"');
+    });
+  });
 });
+
+

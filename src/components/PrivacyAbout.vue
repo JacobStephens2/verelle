@@ -14,11 +14,22 @@ const emit = defineEmits<{ close: [] }>();
     <section aria-labelledby="about-title" class="privacy__section">
       <h2 id="about-title">About Verelle</h2>
       <p>
-        Verelle is a record-and-display chart for couples using the Marquette Method.
-        It records what the couple observed and lays it out as an instructor-readable
-        chart. It does not tell them what their data means.
+        Verelle records what the couple observed, lays it out as an instructor-readable
+        chart, and computes the fertile window of the selected Marquette protocol.
       </p>
     </section>
+
+    <section aria-labelledby="disclaimer-title" class="privacy__section">
+      <h2 id="disclaimer-title">Method disclaimer</h2>
+      <p data-testid="permanent-disclaimer">
+        Verelle records observations and computes the fertile window of the
+        published Marquette Method protocol chosen for each cycle. It is a
+        charting tool designed for use alongside a certified Marquette
+        instructor, not a medical device, and does not replace medical advice
+        or individualized instruction.
+      </p>
+    </section>
+
 
     <section aria-labelledby="identity-title" class="privacy__section">
       <h2 id="identity-title">No account, no email, no password</h2>

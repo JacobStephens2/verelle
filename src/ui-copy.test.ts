@@ -340,4 +340,45 @@ describe("UI copy", () => {
       expect(warning.instructorRoute.url).toMatch(/^https?:\/\//);
     }
   });
+
+  it("presents the disclaimer once at the start in ChartFrame and in PrivacyAbout without advice words, and never on per-day surfaces", async () => {
+    const chartFrame = renderedText(
+      "ChartFrame.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "ChartFrame.vue"), "utf8"),
+    );
+    const privacyAbout = renderedText(
+      "PrivacyAbout.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "PrivacyAbout.vue"), "utf8"),
+    );
+    const chartCell = renderedText(
+      "ChartCell.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "ChartCell.vue"), "utf8"),
+    );
+    const dayExplanation = renderedText(
+      "DayExplanation.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "DayExplanation.vue"), "utf8"),
+    );
+
+    // Present at the start of ChartFrame
+    expect(chartFrame).toContain('data-testid="disclaimer"');
+    expect(chartFrame).toContain('data-testid="dismiss-disclaimer"');
+    expect(chartFrame).toContain("Method disclaimer");
+    expect(chartFrame).toMatch(/certified Marquette\s+instructor/);
+    expect(chartFrame).toContain("not a medical device");
+    expect(forbiddenWordsIn(chartFrame)).toEqual([]);
+
+    // Present in Privacy & About
+    expect(privacyAbout).toContain('data-testid="permanent-disclaimer"');
+    expect(privacyAbout).toContain("Method disclaimer");
+    expect(privacyAbout).toMatch(/certified Marquette\s+instructor/);
+    expect(forbiddenWordsIn(privacyAbout)).toEqual([]);
+
+
+    // Never repeated on per-day surfaces
+    expect(chartCell.toLowerCase()).not.toContain("disclaimer");
+    expect(chartCell.toLowerCase()).not.toContain("medical device");
+    expect(dayExplanation.toLowerCase()).not.toContain("disclaimer");
+    expect(dayExplanation.toLowerCase()).not.toContain("medical device");
+  });
 });
+

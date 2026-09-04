@@ -27,6 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   selectDate: [date: CivilDate];
+  openCycleOverlay: [startDate: CivilDate];
 }>();
 
 const zoom = ref<ChartZoom>(DEFAULT_CHART_ZOOM);
@@ -39,6 +40,26 @@ const chart = computed(() =>
     props.profile ?? null,
   ),
 );
+
+const firstCycle = computed(() => chart.value.cycles[0]);
+const firstCycleOverlay = computed(() => {
+  if (!firstCycle.value) return undefined;
+  return props.cycleOverlays?.find((o) => o.startDate === firstCycle.value?.startDate);
+});
+
+const protocolOfferSkipped = ref(false);
+
+const showProtocolOffer = computed(() => {
+  if (!firstCycle.value) return false;
+  const family = firstCycleOverlay.value?.protocolFamily;
+  return (family === null || family === undefined) && !protocolOfferSkipped.value;
+});
+
+const skipProtocolOffer = () => {
+  protocolOfferSkipped.value = true;
+};
+
+
 
 const columnCount = computed(() =>
   Math.max(
@@ -103,9 +124,16 @@ function unassignedChartDayLabel(day: UnassignedChartDay): string {
 
 const root = useTemplateRef<HTMLElement>("root");
 
+const disclaimerDismissed = ref(false);
+
+const dismissDisclaimer = () => {
+  disclaimerDismissed.value = true;
+};
+
 // A launch breadcrumb, reporting the column count and the frame's laid-out
 // width and position once mounted.
 onMounted(() => {
+
   requestAnimationFrame(() => {
     const box = root.value?.getBoundingClientRect();
     console.info(
@@ -142,6 +170,70 @@ onMounted(() => {
         <p class="chart__today" data-testid="chart-today">{{ chart.today }}</p>
       </div>
     </header>
+
+    <!-- Method disclaimer (shown once at start, not repeated per day) -->
+    <aside
+      v-if="!disclaimerDismissed"
+      class="chart__disclaimer"
+      aria-label="Method disclaimer"
+      data-testid="disclaimer"
+    >
+      <div class="chart__disclaimer-content">
+        <h2 class="chart__disclaimer-title">Method disclaimer</h2>
+        <p class="chart__disclaimer-text">
+          Verelle records observations and computes the fertile window of the
+          published Marquette Method protocol chosen for each cycle. It is a
+          charting tool designed for use alongside a certified Marquette
+          instructor, not a medical device, and does not replace medical advice
+          or individualized instruction.
+        </p>
+      </div>
+      <button
+        type="button"
+        class="chart__disclaimer-dismiss"
+        data-testid="dismiss-disclaimer"
+        @click="dismissDisclaimer"
+      >
+        Acknowledge
+      </button>
+    </aside>
+
+    <!-- Protocol family offer at first Cycle Day 1 (skippable) -->
+    <aside
+      v-if="showProtocolOffer"
+      class="chart__protocol-offer"
+      aria-label="Protocol family offer"
+      data-testid="protocol-family-offer"
+    >
+      <div class="chart__protocol-offer-content">
+        <h2 class="chart__protocol-offer-title">Choose a Protocol family</h2>
+        <p class="chart__protocol-offer-text">
+          Your first Cycle Day 1 is recorded. Verelle computes the fertile window
+          once you select a Marquette protocol family. You can choose a family
+          now, or skip and chart without one.
+        </p>
+      </div>
+      <div class="chart__protocol-offer-actions">
+        <button
+          type="button"
+          class="chart__protocol-offer-choose"
+          data-testid="offer-choose-protocol"
+          @click="firstCycle && emit('openCycleOverlay', firstCycle.startDate)"
+        >
+          Choose a Protocol family
+        </button>
+        <button
+          type="button"
+          class="chart__protocol-offer-skip"
+          data-testid="offer-skip-protocol"
+          @click="skipProtocolOffer"
+        >
+          Skip
+        </button>
+      </div>
+    </aside>
+
+
 
     <!-- Zoom toolbar: Normal, Compact, Trend -->
     <ChartZoomControl v-model="zoom" />
@@ -360,4 +452,112 @@ onMounted(() => {
 .chart__unassigned-day time {
   color: var(--verelle-ink-muted);
 }
+
+.chart__disclaimer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+}
+
+.chart__disclaimer-content {
+  flex: 1;
+}
+
+.chart__disclaimer-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--verelle-ink);
+}
+
+.chart__disclaimer-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--verelle-ink-muted);
+}
+
+.chart__disclaimer-dismiss {
+  min-height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 6px;
+  background: var(--verelle-surface-sunken);
+  color: var(--verelle-ink);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chart__protocol-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+}
+
+.chart__protocol-offer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chart__protocol-offer-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--verelle-ink);
+}
+
+.chart__protocol-offer-text {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--verelle-ink-muted);
+}
+
+.chart__protocol-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.chart__protocol-offer-choose {
+  min-height: 2.25rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--verelle-ink);
+  border-radius: 6px;
+  background: var(--verelle-ink);
+  color: var(--verelle-surface);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chart__protocol-offer-skip {
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 6px;
+  background: var(--verelle-surface-sunken);
+  color: var(--verelle-ink-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
 </style>
+
+

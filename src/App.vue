@@ -114,8 +114,10 @@ const openCycleOverlay = (startDate?: CivilDate) => {
       :sync-state="syncState"
       :pairing-state="pairingState"
       @select-date="openDayDetails"
+      @open-cycle-overlay="openCycleOverlay($event)"
     />
   </main>
+
 </template>
 
 <style scoped>
