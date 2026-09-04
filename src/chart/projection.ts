@@ -175,7 +175,7 @@ interface PriorMethodCycle {
 }
 
 function getLastSixPriorMethodCycles(
-  cycleStarts: readonly Observation[],
+  cycleStarts: ReadonlyArray<{ readonly civilDate: CivilDate }>,
   currentIndex: number,
   overlaysByStartDate: ReadonlyMap<CivilDate, CycleOverlay>,
   datedObservations: readonly Observation[],
@@ -233,7 +233,7 @@ export function projectChart(
     left.civilDate.localeCompare(right.civilDate),
   );
 
-  const cycleStarts: Observation[] = [];
+  const cycleStartDates = new Set<CivilDate>();
   let previousRecordedBleeding: Bleeding | undefined;
   for (const observation of datedObservations) {
     if (observation.bleeding === null) continue;
@@ -241,10 +241,20 @@ export function projectChart(
       isFullFlow(observation.bleeding) &&
       (previousRecordedBleeding === undefined || !isFullFlow(previousRecordedBleeding))
     ) {
-      cycleStarts.push(observation);
+      cycleStartDates.add(observation.civilDate);
     }
     previousRecordedBleeding = observation.bleeding;
   }
+
+  for (const overlay of cycleOverlays) {
+    if (overlay.startDate <= today) {
+      cycleStartDates.add(overlay.startDate);
+    }
+  }
+
+  const cycleStarts: Array<{ readonly civilDate: CivilDate }> = [...cycleStartDates]
+    .sort((a, b) => a.localeCompare(b))
+    .map((civilDate) => ({ civilDate }));
 
   const firstCycleStart = cycleStarts[0]?.civilDate;
   const unassignedObservations =
@@ -858,6 +868,88 @@ export function projectChart(
         end: endBoundary,
         discrepancies,
       };
+    } else if (
+      protocolFamily === "postpartum_cycle_zero_original" &&
+      protocolVersion === "marquette_postpartum_cycle_zero_2005"
+    ) {
+      const daysWithHighOrPeak: number[] = [];
+      if (firstHighCycleDay !== undefined) daysWithHighOrPeak.push(firstHighCycleDay);
+      if (monitorPeaks.length > 0) {
+        const firstPeakCD = daysBetweenCivilDates(start.civilDate, monitorPeaks[0]!.civilDate) + 1;
+        daysWithHighOrPeak.push(firstPeakCD);
+      }
+      if (peakOverrides.length > 0) {
+        const firstOverrideCD = daysBetweenCivilDates(start.civilDate, peakOverrides[0]!.civilDate) + 1;
+        daysWithHighOrPeak.push(firstOverrideCD);
+      }
+
+      if (daysWithHighOrPeak.length > 0) {
+        const firstHighOrPeakCycleDay = Math.min(...daysWithHighOrPeak);
+        const startBoundary: FertileWindowBoundary = {
+          cycleDay: firstHighOrPeakCycleDay,
+          ruleId: "PP0-START",
+          confidence: "final",
+        };
+
+        let endBoundary: FertileWindowBoundary | null = null;
+        if (anchorPeak !== undefined) {
+          const anchorPeakCD = daysBetweenCivilDates(start.civilDate, anchorPeak.civilDate) + 1;
+          const endCycleDay = anchorPeakCD + 3;
+          const endCivilDate = civilDatePlusDays(anchorPeak.civilDate, 3);
+          const isEndComplete = today > endCivilDate || nextStart !== undefined;
+          endBoundary = {
+            cycleDay: endCycleDay,
+            ruleId: "PP0-END",
+            confidence: isEndComplete ? "final" : "provisional",
+          };
+        }
+
+        fertileWindow = {
+          start: startBoundary,
+          end: endBoundary,
+        };
+      } else {
+        fertileWindow = null;
+      }
+    } else if (
+      protocolFamily === "postpartum_return_to_cycles" &&
+      protocolVersion === "marquette_postpartum_return_to_cycles_2013"
+    ) {
+      const ppCycleNumber = overlay?.postpartumCycleNumber ?? 1;
+      const calendarStart = Math.max(6, 11 - ppCycleNumber);
+
+      let startBoundary: FertileWindowBoundary;
+      if (firstHighCycleDay !== undefined && firstHighCycleDay < calendarStart) {
+        startBoundary = {
+          cycleDay: firstHighCycleDay,
+          ruleId: "PP-RETURN-START-HIGH",
+          confidence: "final",
+        };
+      } else {
+        startBoundary = {
+          cycleDay: calendarStart,
+          ruleId: "PP-RETURN-START-1",
+          confidence: "final",
+        };
+      }
+
+      let endBoundary: FertileWindowBoundary | null = null;
+      if (anchorPeak !== undefined) {
+        const anchorPeakCD = daysBetweenCivilDates(start.civilDate, anchorPeak.civilDate) + 1;
+        const endCycleDay = anchorPeakCD + 3;
+        const endCivilDate = civilDatePlusDays(anchorPeak.civilDate, 3);
+        const isEndComplete = today > endCivilDate || nextStart !== undefined;
+        endBoundary = {
+          cycleDay: endCycleDay,
+          ruleId: "PP-RETURN-END-1",
+          confidence: isEndComplete ? "final" : "provisional",
+        };
+      }
+
+      fertileWindow = {
+        start: startBoundary,
+        end: endBoundary,
+      };
     }
 
     const dayCount = daysBetweenCivilDates(start.civilDate, endDate) + 1;
@@ -874,6 +966,11 @@ export function projectChart(
       let dayStatus: DayStatus | null = null;
       if (fertileWindow !== null) {
         dayStatus = isDayInFertileWindow(cycleDay, fertileWindow) ? "fertile" : "infertile";
+      } else if (
+        protocolFamily === "postpartum_cycle_zero_original" &&
+        protocolVersion === "marquette_postpartum_cycle_zero_2005"
+      ) {
+        dayStatus = "infertile";
       }
 
       return {

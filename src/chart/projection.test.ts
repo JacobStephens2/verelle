@@ -8,6 +8,7 @@ import { applyUpdate, unrecordedObservation } from "../observations/observation"
 import type { CycleOverlay } from "../observations/cycle-overlay";
 import { defaultCycleOverlay } from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
+import { defaultProfile } from "../observations/profile";
 import type { CivilDate } from "./civil-date";
 import { civilDatePlusDays } from "./civil-date";
 import { projectChart } from "./projection";
@@ -1029,6 +1030,270 @@ describe("Fertile window computation (regular_monitor_plus_mucus: dual-check)", 
   });
 });
 
+describe("Postpartum protocols (cycle zero and return to cycles)", () => {
+  it("can start and chart an artificial cycle during amenorrhea with no menses required", () => {
+    const today = "2026-06-20";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { monitorReading: "Low", bleeding: "None" }),
+      applyUpdate(unrecordedObservation("2026-06-02"), { monitorReading: "Low" }),
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_cycle_zero_original",
+      protocolVersion: "marquette_postpartum_cycle_zero_2005",
+    };
 
+    const chart = projectChart(observations, today, [overlay]);
+    expect(chart.cycles.length).toBe(1);
+    expect(chart.cycles[0]?.startDate).toBe("2026-06-01");
+    expect(chart.cycles[0]?.days.length).toBe(20);
+    expect(chart.unassignedDays).toEqual([]);
+  });
 
+  it("in cycle zero with no High or Peak readings, all days are infertile and fertileWindow is null", () => {
+    const today = "2026-06-20";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { monitorReading: "Low", bleeding: "None" }),
+      applyUpdate(unrecordedObservation("2026-06-05"), { monitorReading: "Low" }),
+      applyUpdate(unrecordedObservation("2026-06-10"), { monitorReading: "Low" }),
+      applyUpdate(unrecordedObservation("2026-06-15"), { monitorReading: "Low" }),
+      applyUpdate(unrecordedObservation("2026-06-20"), { monitorReading: "Low" }),
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_cycle_zero_original",
+      protocolVersion: "marquette_postpartum_cycle_zero_2005",
+    };
 
+    const chart = projectChart(observations, today, [overlay]);
+    const cycle = chart.cycles[0]!;
+    expect(cycle.fertileWindow).toBeNull();
+    for (const day of cycle.days) {
+      expect(day.dayStatus).toBe("infertile");
+    }
+  });
+
+  it("in cycle zero, High and Peak days are fertile along with three full days after the last Peak", () => {
+    const today = "2026-06-25";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { monitorReading: "Low", bleeding: "None" }),
+      applyUpdate(unrecordedObservation("2026-06-09"), { monitorReading: "Low" }),
+      applyUpdate(unrecordedObservation("2026-06-10"), { monitorReading: "High" }), // CD 10: first High
+      applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" }), // CD 11
+      applyUpdate(unrecordedObservation("2026-06-12"), { monitorReading: "Peak" }), // CD 12: Peak
+      applyUpdate(unrecordedObservation("2026-06-13"), { monitorReading: "Peak" }), // CD 13: last Peak
+      applyUpdate(unrecordedObservation("2026-06-14"), { monitorReading: "Low" }),  // CD 14: P+1
+      applyUpdate(unrecordedObservation("2026-06-15"), { monitorReading: "Low" }),  // CD 15: P+2
+      applyUpdate(unrecordedObservation("2026-06-16"), { monitorReading: "Low" }),  // CD 16: P+3
+      applyUpdate(unrecordedObservation("2026-06-17"), { monitorReading: "Low" }),  // CD 17: infertile
+      applyUpdate(unrecordedObservation("2026-06-20"), { monitorReading: "Low" }),  // CD 20: infertile
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_cycle_zero_original",
+      protocolVersion: "marquette_postpartum_cycle_zero_2005",
+    };
+
+    const chart = projectChart(observations, today, [overlay]);
+    const cycle = chart.cycles[0]!;
+    expect(cycle.fertileWindow).not.toBeNull();
+    expect(cycle.fertileWindow?.start).toEqual({
+      cycleDay: 10,
+      ruleId: "PP0-START",
+      confidence: "final",
+    });
+    expect(cycle.fertileWindow?.end).toEqual({
+      cycleDay: 16,
+      ruleId: "PP0-END",
+      confidence: "final",
+    });
+
+    // Check individual dayStatus
+    expect(cycle.days[0]?.dayStatus).toBe("infertile"); // CD 1
+    expect(cycle.days[8]?.dayStatus).toBe("infertile"); // CD 9
+    expect(cycle.days[9]?.dayStatus).toBe("fertile");   // CD 10 (High)
+    expect(cycle.days[10]?.dayStatus).toBe("fertile");  // CD 11 (High)
+    expect(cycle.days[11]?.dayStatus).toBe("fertile");  // CD 12 (Peak)
+    expect(cycle.days[12]?.dayStatus).toBe("fertile");  // CD 13 (Peak)
+    expect(cycle.days[13]?.dayStatus).toBe("fertile");  // CD 14 (P+1)
+    expect(cycle.days[14]?.dayStatus).toBe("fertile");  // CD 15 (P+2)
+    expect(cycle.days[15]?.dayStatus).toBe("fertile");  // CD 16 (P+3)
+    expect(cycle.days[16]?.dayStatus).toBe("infertile"); // CD 17
+    expect(cycle.days[19]?.dayStatus).toBe("infertile"); // CD 20
+  });
+
+  it("in cycle zero, when High occurs without a Peak, fertile window is open and end is null", () => {
+    const today = "2026-06-12";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { monitorReading: "Low", bleeding: "None" }),
+      applyUpdate(unrecordedObservation("2026-06-10"), { monitorReading: "High" }), // CD 10
+      applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" }), // CD 11
+      applyUpdate(unrecordedObservation("2026-06-12"), { monitorReading: "High" }), // CD 12
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_cycle_zero_original",
+      protocolVersion: "marquette_postpartum_cycle_zero_2005",
+    };
+
+    const chart = projectChart(observations, today, [overlay]);
+    const cycle = chart.cycles[0]!;
+    expect(cycle.fertileWindow).not.toBeNull();
+    expect(cycle.fertileWindow?.start).toEqual({
+      cycleDay: 10,
+      ruleId: "PP0-START",
+      confidence: "final",
+    });
+    expect(cycle.fertileWindow?.end).toBeNull();
+    expect(cycle.days[8]?.dayStatus).toBe("infertile"); // CD 9
+    expect(cycle.days[9]?.dayStatus).toBe("fertile");   // CD 10
+    expect(cycle.days[11]?.dayStatus).toBe("fertile");  // CD 12
+  });
+
+  it("in cycle zero, when Peak occurs without prior High, fertility begins on the Peak day", () => {
+    const today = "2026-06-25";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { monitorReading: "Low", bleeding: "None" }),
+      applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "Low" }),
+      applyUpdate(unrecordedObservation("2026-06-12"), { monitorReading: "Peak" }), // CD 12
+      applyUpdate(unrecordedObservation("2026-06-13"), { monitorReading: "Peak" }), // CD 13
+      applyUpdate(unrecordedObservation("2026-06-17"), { monitorReading: "Low" }),  // CD 17
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_cycle_zero_original",
+      protocolVersion: "marquette_postpartum_cycle_zero_2005",
+    };
+
+    const chart = projectChart(observations, today, [overlay]);
+    const cycle = chart.cycles[0]!;
+    expect(cycle.fertileWindow?.start).toEqual({
+      cycleDay: 12,
+      ruleId: "PP0-START",
+      confidence: "final",
+    });
+    expect(cycle.fertileWindow?.end).toEqual({
+      cycleDay: 16,
+      ruleId: "PP0-END",
+      confidence: "final",
+    });
+    expect(cycle.days[10]?.dayStatus).toBe("infertile"); // CD 11
+    expect(cycle.days[11]?.dayStatus).toBe("fertile");   // CD 12
+    expect(cycle.days[15]?.dayStatus).toBe("fertile");   // CD 16 (P+3)
+    expect(cycle.days[16]?.dayStatus).toBe("infertile"); // CD 17
+  });
+
+  it("return to cycles walks calendar start from CD 10 in cycle 1 to CD 6 in cycle 5 onward", () => {
+    const today = "2026-06-25";
+    const cd1 = applyUpdate(unrecordedObservation("2026-06-01"), { bleeding: "Heavy" });
+
+    // Cycle 1 -> CD 10
+    const overlay1: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_return_to_cycles",
+      protocolVersion: "marquette_postpartum_return_to_cycles_2013",
+      postpartumCycleNumber: 1,
+    };
+    const chart1 = projectChart([cd1], today, [overlay1]);
+    expect(chart1.cycles[0]?.fertileWindow?.start).toEqual({
+      cycleDay: 10,
+      ruleId: "PP-RETURN-START-1",
+      confidence: "final",
+    });
+
+    // Cycle 2 -> CD 9
+    const overlay2: CycleOverlay = { ...overlay1, postpartumCycleNumber: 2 };
+    const chart2 = projectChart([cd1], today, [overlay2]);
+    expect(chart2.cycles[0]?.fertileWindow?.start.cycleDay).toBe(9);
+
+    // Cycle 3 -> CD 8
+    const overlay3: CycleOverlay = { ...overlay1, postpartumCycleNumber: 3 };
+    const chart3 = projectChart([cd1], today, [overlay3]);
+    expect(chart3.cycles[0]?.fertileWindow?.start.cycleDay).toBe(8);
+
+    // Cycle 4 -> CD 7
+    const overlay4: CycleOverlay = { ...overlay1, postpartumCycleNumber: 4 };
+    const chart4 = projectChart([cd1], today, [overlay4]);
+    expect(chart4.cycles[0]?.fertileWindow?.start.cycleDay).toBe(7);
+
+    // Cycle 5 -> CD 6
+    const overlay5: CycleOverlay = { ...overlay1, postpartumCycleNumber: 5 };
+    const chart5 = projectChart([cd1], today, [overlay5]);
+    expect(chart5.cycles[0]?.fertileWindow?.start.cycleDay).toBe(6);
+
+    // Cycle 6 -> CD 6
+    const overlay6: CycleOverlay = { ...overlay1, postpartumCycleNumber: 6 };
+    const chart6 = projectChart([cd1], today, [overlay6]);
+    expect(chart6.cycles[0]?.fertileWindow?.start.cycleDay).toBe(6);
+  });
+
+  it("in return to cycles, a first High reading earlier than calendar start moves the start earlier", () => {
+    const today = "2026-06-25";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { bleeding: "Heavy" }),
+      applyUpdate(unrecordedObservation("2026-06-08"), { monitorReading: "High" }), // CD 8: High before CD 10
+      applyUpdate(unrecordedObservation("2026-06-13"), { monitorReading: "Peak" }), // CD 13: Peak
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_return_to_cycles",
+      protocolVersion: "marquette_postpartum_return_to_cycles_2013",
+      postpartumCycleNumber: 1,
+    };
+
+    const chart = projectChart(observations, today, [overlay]);
+    const cycle = chart.cycles[0]!;
+    expect(cycle.fertileWindow?.start).toEqual({
+      cycleDay: 8,
+      ruleId: "PP-RETURN-START-HIGH",
+      confidence: "final",
+    });
+    expect(cycle.fertileWindow?.end).toEqual({
+      cycleDay: 16,
+      ruleId: "PP-RETURN-END-1",
+      confidence: "final",
+    });
+  });
+
+  it("in return to cycles, a first High reading on or after calendar start keeps calendar start", () => {
+    const today = "2026-06-25";
+    const observations = [
+      applyUpdate(unrecordedObservation("2026-06-01"), { bleeding: "Heavy" }),
+      applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" }), // CD 11: High after CD 10
+      applyUpdate(unrecordedObservation("2026-06-13"), { monitorReading: "Peak" }), // CD 13: Peak
+    ];
+    const overlay: CycleOverlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "postpartum_return_to_cycles",
+      protocolVersion: "marquette_postpartum_return_to_cycles_2013",
+      postpartumCycleNumber: 1,
+    };
+
+    const chart = projectChart(observations, today, [overlay]);
+    const cycle = chart.cycles[0]!;
+    expect(cycle.fertileWindow?.start).toEqual({
+      cycleDay: 10,
+      ruleId: "PP-RETURN-START-1",
+      confidence: "final",
+    });
+    expect(cycle.fertileWindow?.end).toEqual({
+      cycleDay: 16,
+      ruleId: "PP-RETURN-END-1",
+      confidence: "final",
+    });
+  });
+
+  it("postpartum without breastfeeding produces an Eligibility warning rather than a computed family", () => {
+    const today = "2026-06-10";
+    const cd1 = applyUpdate(unrecordedObservation("2026-06-01"), { bleeding: "Heavy" });
+    const profile: Profile = {
+      ...defaultProfile(),
+      postpartum: true,
+      breastfeeding: false,
+    };
+
+    const chart = projectChart([cd1], today, [], profile);
+    expect(chart.eligibilityWarnings.some((w) => w.circumstance === "postpartum_without_breastfeeding")).toBe(true);
+    expect(chart.cycles[0]?.fertileWindow).toBeNull();
+  });
+});

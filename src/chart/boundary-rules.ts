@@ -32,6 +32,16 @@ const USCCB_SOURCE: PublishedSource = {
   url: "https://www.usccb.org/resources/MM%20History%20and%20effectiveness%20Paper%202018.pdf",
 };
 
+const POSTPARTUM_2005_SOURCE: PublishedSource = {
+  title: "Marquette breastfeeding protocol while not in cycles (2005)",
+  url: "https://doi.org/10.1016/j.fertnstert.2005.03.042",
+};
+
+const POSTPARTUM_2013_SOURCE: PublishedSource = {
+  title: "Marquette postpartum transition protocol (2013)",
+  url: "https://doi.org/10.3122/jabfm.2013.01.120126",
+};
+
 export const BOUNDARY_RULES: Record<string, BoundaryRule> = {
   "REG-START-1": {
     id: "REG-START-1",
@@ -97,6 +107,33 @@ export const BOUNDARY_RULES: Record<string, BoundaryRule> = {
     description: "Missed-peak fallback uses latest Mucus Peak from last six cycles plus three full days.",
     source: CASE_REPORTS_SOURCE,
     provisionalRequirement: "Passing the historical fallback day or completing three full days after a confirmed Mucus Peak will make it final.",
+  },
+  "PP0-START": {
+    id: "PP0-START",
+    description: "Postpartum cycle zero begins fertility on the first High or Peak reading.",
+    source: POSTPARTUM_2005_SOURCE,
+  },
+  "PP0-END": {
+    id: "PP0-END",
+    description: "End is three full days after the last Peak.",
+    source: POSTPARTUM_2005_SOURCE,
+    provisionalRequirement: "Completing three full days after the last Peak will make it final.",
+  },
+  "PP-RETURN-START-1": {
+    id: "PP-RETURN-START-1",
+    description: "Postpartum return-to-cycles begins fertility on Cycle Day 10 in cycle 1, shifting one day earlier each cycle to Cycle Day 6 from cycle 5 onward.",
+    source: POSTPARTUM_2013_SOURCE,
+  },
+  "PP-RETURN-START-HIGH": {
+    id: "PP-RETURN-START-HIGH",
+    description: "First High reading earlier than calendar start.",
+    source: POSTPARTUM_2013_SOURCE,
+  },
+  "PP-RETURN-END-1": {
+    id: "PP-RETURN-END-1",
+    description: "End is three full days after the last Peak.",
+    source: POSTPARTUM_2013_SOURCE,
+    provisionalRequirement: "Completing three full days after the last Peak will make it final.",
   },
 };
 

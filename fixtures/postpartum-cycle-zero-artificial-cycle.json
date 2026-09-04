@@ -1,0 +1,504 @@
+{
+  "name": "postpartum cycle zero artificial cycle during amenorrhea opens on first High and closes three days post Peak",
+  "today": "2026-08-20",
+  "profile": {
+    "dateOfBirth": null,
+    "breastfeeding": true,
+    "postpartum": true,
+    "perimenopause": null,
+    "hormonalContraceptionStop": null
+  },
+  "cycleOverlays": [
+    {
+      "startDate": "2026-08-01",
+      "protocolFamily": "postpartum_cycle_zero_original",
+      "protocolVersion": "marquette_postpartum_2005_fehring",
+      "intention": "avoid",
+      "postpartumCycleNumber": null
+    }
+  ],
+  "observations": [
+    {
+      "civilDate": "2026-08-01",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-02",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-03",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-04",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-05",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-06",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-07",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-08",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-09",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-10",
+      "monitorReading": "High",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-11",
+      "monitorReading": "High",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-12",
+      "monitorReading": "Peak",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-13",
+      "monitorReading": "Peak",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-14",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-15",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-16",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-17",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-18",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-19",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-08-20",
+      "monitorReading": "Low",
+      "bleeding": "None",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-08-20",
+    "cycles": [
+      {
+        "startDate": "2026-08-01",
+        "days": [
+          {
+            "civilDate": "2026-08-01",
+            "cycleDay": 1,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-02",
+            "cycleDay": 2,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-03",
+            "cycleDay": 3,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-04",
+            "cycleDay": 4,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-05",
+            "cycleDay": 5,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-06",
+            "cycleDay": 6,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-07",
+            "cycleDay": 7,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-08",
+            "cycleDay": 8,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-09",
+            "cycleDay": 9,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-10",
+            "cycleDay": 10,
+            "monitorReading": "High",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-11",
+            "cycleDay": 11,
+            "monitorReading": "High",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-12",
+            "cycleDay": 12,
+            "monitorReading": "Peak",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-13",
+            "cycleDay": 13,
+            "monitorReading": "Peak",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [
+              "P"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-14",
+            "cycleDay": 14,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [
+              "P+1"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-15",
+            "cycleDay": 15,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [
+              "P+2"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-16",
+            "cycleDay": 16,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [
+              "P+3"
+            ],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-17",
+            "cycleDay": 17,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-18",
+            "cycleDay": 18,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-19",
+            "cycleDay": 19,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          },
+          {
+            "civilDate": "2026-08-20",
+            "cycleDay": 20,
+            "monitorReading": "Low",
+            "markers": [
+              "monitor",
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": null
+          }
+        ],
+        "mucusPeak": null,
+        "fertileWindow": null
+      }
+    ],
+    "unassignedDays": [],
+    "eligibilityWarnings": []
+  }
+}

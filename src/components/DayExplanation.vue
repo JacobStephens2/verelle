@@ -48,7 +48,19 @@ const isFertileDay = computed<boolean>(() => {
   return props.dayStatus === "fertile";
 });
 
+const isCycleZeroNoHighInfertile = computed<boolean>(() => {
+  return (
+    props.dayStatus === "infertile" &&
+    props.fertileWindow === null &&
+    props.protocolFamily === "postpartum_cycle_zero_original"
+  );
+});
+
 const boundaryRules = computed<readonly BoundaryRule[]>(() => {
+  if (isCycleZeroNoHighInfertile.value) {
+    const startRule = lookupBoundaryRule("PP0-START");
+    return startRule ? [startRule] : [];
+  }
   if (!props.fertileWindow) return [];
   if (isPreWindowInfertile.value || isFertileStart.value) {
     const startRule = lookupBoundaryRule(props.fertileWindow.start.ruleId);
@@ -119,7 +131,7 @@ const provisionalExplanation = computed<string | null>(() => {
 
 <template>
   <aside
-    v-if="dayStatus !== null && fertileWindow !== null"
+    v-if="dayStatus !== null && (fertileWindow !== null || isCycleZeroNoHighInfertile)"
     class="day-explanation"
     data-testid="day-explanation"
     aria-label="Why this day"
@@ -133,22 +145,25 @@ const provisionalExplanation = computed<string | null>(() => {
       </span>
     </div>
 
-    <p v-if="isPreWindowInfertile" class="day-explanation__summary" data-testid="day-explanation-summary">
-      Cycle Day {{ cycleDay }} is infertile because it is before the fertile window opens on Cycle Day {{ fertileWindow.start.cycleDay }}.
+    <p v-if="isCycleZeroNoHighInfertile" class="day-explanation__summary" data-testid="day-explanation-summary">
+      Cycle Day {{ cycleDay }} is infertile because no High or Peak monitor reading has occurred.
+    </p>
+    <p v-else-if="isPreWindowInfertile" class="day-explanation__summary" data-testid="day-explanation-summary">
+      Cycle Day {{ cycleDay }} is infertile because it is before the fertile window opens on Cycle Day {{ fertileWindow?.start.cycleDay }}.
     </p>
     <p v-else-if="isFertileStart" class="day-explanation__summary" data-testid="day-explanation-summary">
-      Cycle Day {{ cycleDay }} is fertile because the fertile window opens on Cycle Day {{ fertileWindow.start.cycleDay }}.
+      Cycle Day {{ cycleDay }} is fertile because the fertile window opens on Cycle Day {{ fertileWindow?.start.cycleDay }}.
     </p>
     <p v-else-if="isFertileDay" class="day-explanation__summary" data-testid="day-explanation-summary">
-      <span v-if="fertileWindow.end">
-        Cycle Day {{ cycleDay }} is fertile within the fertile window that opened on Cycle Day {{ fertileWindow.start.cycleDay }} and closes on Cycle Day {{ fertileWindow.end.cycleDay }}.
+      <span v-if="fertileWindow?.end">
+        Cycle Day {{ cycleDay }} is fertile within the fertile window that opened on Cycle Day {{ fertileWindow?.start.cycleDay }} and closes on Cycle Day {{ fertileWindow?.end.cycleDay }}.
       </span>
       <span v-else>
-        Cycle Day {{ cycleDay }} is fertile within the fertile window that opened on Cycle Day {{ fertileWindow.start.cycleDay }}.
+        Cycle Day {{ cycleDay }} is fertile within the fertile window that opened on Cycle Day {{ fertileWindow?.start.cycleDay }}.
       </span>
     </p>
-    <p v-else-if="isPostWindowInfertile && fertileWindow.end" class="day-explanation__summary" data-testid="day-explanation-summary">
-      Cycle Day {{ cycleDay }} is infertile because the fertile window closed on Cycle Day {{ fertileWindow.end.cycleDay }}.
+    <p v-else-if="isPostWindowInfertile && fertileWindow?.end" class="day-explanation__summary" data-testid="day-explanation-summary">
+      Cycle Day {{ cycleDay }} is infertile because the fertile window closed on Cycle Day {{ fertileWindow?.end.cycleDay }}.
     </p>
 
     <div class="day-explanation__protocol" data-testid="protocol-version">
