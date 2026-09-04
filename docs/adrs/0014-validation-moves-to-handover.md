@@ -72,6 +72,11 @@ the app to do it." That bet does not cover self-directed users. The
 much as product ones (ADR 0001, ADR 0011), so the risk is carried rather than
 resolved. It should be named at handover rather than discovered there.
 
+> **Resolved by ADR 0015 (2026-09-04).** This carried risk is the reason the
+> record-and-display boundary was reversed: Verelle now computes the fertile
+> window, precisely because self-directed couples were the ones the boundary
+> left unserved.
+
 **Two questions are owed at handover** and must be asked then: what specifically
 stopped them on the other apps, and whether they want an app that interprets
 their chart or specifically do not.

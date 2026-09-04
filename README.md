@@ -1,9 +1,11 @@
 # Verelle
 
-Verelle is a local-first, record-and-display chart for couples using the
-Marquette Method. It records what the couple observed and lays it out as an
-instructor-readable chart. It deliberately does **not** compute fertility
-status, fertile windows, day classifications, or conception guidance (ADR 0001,
+Verelle is a local-first fertility chart for couples using the Marquette
+Method. It records what the couple observed, lays it out as an
+instructor-readable chart, and computes the **Fertile window** of the
+**Protocol family** they selected — naming each day fertile or infertile and
+showing the **Published rule** and the source behind every boundary it draws
+(ADR 0015, which supersedes the record-and-display posture of ADR 0001 and
 ADR 0011).
 
 The repository is being rebuilt. What is on `main` today records an
