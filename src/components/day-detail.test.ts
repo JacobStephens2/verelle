@@ -94,7 +94,7 @@ describe("DayDetail component", () => {
 
     expect(html).toContain('data-testid="day-detail"');
     expect(html).toContain("No Observation");
-    expect(html).toContain("No data recorded for this day");
+    expect(html).toContain("Nothing recorded for this day");
     expect(html).toContain("Add Observation");
   });
 });

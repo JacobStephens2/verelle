@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 
 import ChoiceRow from "./ChoiceRow.vue";
-import DayExplanation from "./DayExplanation.vue";
+import DayDetail from "./DayDetail.vue";
 import type { CivilDate } from "../chart/civil-date";
 import type { Chart } from "../chart/projection";
 import type { CycleOverlay } from "../observations/cycle-overlay";
@@ -21,7 +21,7 @@ import {
   MONITOR_READINGS,
   MUCUS_OBSERVATIONS,
   TEMPERATURE_UNITS,
-  mucusCategory,
+  mucusDisplayLabel,
   unrecordedObservation,
   updateOf,
 } from "../observations/observation";
@@ -209,13 +209,14 @@ const save = async () => {
       />
     </header>
 
-    <DayExplanation
-      v-if="showAllFields && activeDay && activeCycle"
-      :cycle-day="activeDay.cycleDay"
-      :day-status="activeDay.dayStatus"
-      :fertile-window="activeCycle.fertileWindow"
-      :protocol-family="activeCycleOverlay?.protocolFamily ?? null"
-      :protocol-version="activeCycleOverlay?.protocolVersion ?? null"
+    <DayDetail
+      v-if="showAllFields"
+      :date="date"
+      :observation="recorded"
+      :chart-day="activeDay"
+      :cycle="activeCycle"
+      :cycle-overlay="activeCycleOverlay"
+      :show-actions="false"
     />
 
     <ChoiceRow
@@ -297,13 +298,13 @@ const save = async () => {
         <select v-model="mucus" data-testid="mucus" @change="edit('mucus')">
           <option :value="null">Not recorded</option>
           <option v-for="kind in MUCUS_OBSERVATIONS" :key="kind" :value="kind">
-            {{ kind }} ({{ mucusCategory(kind) }})
+            {{ mucusDisplayLabel(kind) }}
           </option>
           <option
             v-if="mucus && !MUCUS_OBSERVATIONS.includes(mucus as any)"
             :value="mucus"
           >
-            {{ mucus }} ({{ mucusCategory(mucus) }})
+            {{ mucusDisplayLabel(mucus) }}
           </option>
         </select>
       </label>

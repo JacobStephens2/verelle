@@ -5,35 +5,28 @@ import type { CivilDate } from "../chart/civil-date";
 import type { ChartCycle, ChartDay } from "../chart/projection";
 import type { CycleOverlay } from "../observations/cycle-overlay";
 import type { Observation } from "../observations/observation";
-import { mucusDisplayLabel } from "../observations/observation";
+import { isRecorded, mucusDisplayLabel } from "../observations/observation";
 import DayExplanation from "./DayExplanation.vue";
 
-const props = defineProps<{
-  date: CivilDate;
-  observation?: Observation | null;
-  chartDay?: ChartDay | null;
-  cycle?: ChartCycle | null;
-  cycleOverlay?: CycleOverlay | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    date: CivilDate;
+    observation?: Observation | null;
+    chartDay?: ChartDay | null;
+    cycle?: ChartCycle | null;
+    cycleOverlay?: CycleOverlay | null;
+    showActions?: boolean;
+  }>(),
+  {
+    showActions: true,
+  },
+);
 
 const emit = defineEmits<{
   edit: [date: CivilDate];
 }>();
 
-const hasObservation = computed(() => {
-  if (!props.observation) return false;
-  const o = props.observation;
-  return (
-    o.monitorReading !== null ||
-    o.bleeding !== null ||
-    o.peakOverride === true ||
-    o.intercourse === true ||
-    o.lhStrip !== null ||
-    o.mucus !== null ||
-    o.temperature !== null ||
-    o.note !== null
-  );
-});
+const hasObservation = computed(() => isRecorded(props.observation));
 
 const mucusFormatted = computed(() => {
   if (!props.observation?.mucus) return null;
@@ -105,7 +98,7 @@ const temperatureFormatted = computed(() => {
         <span class="day-detail-row-value">{{ observation.note }}</span>
       </div>
 
-      <div class="day-detail-actions">
+      <div v-if="showActions" class="day-detail-actions">
         <button
           type="button"
           class="btn btn-primary"
@@ -119,8 +112,9 @@ const temperatureFormatted = computed(() => {
 
     <div v-else class="empty-state" data-testid="empty-day-detail">
       <h2>No Observation</h2>
-      <p>No data recorded for this day.</p>
+      <p>Nothing recorded for this day.</p>
       <button
+        v-if="showActions"
         type="button"
         class="btn btn-primary btn-block"
         data-testid="add-observation"

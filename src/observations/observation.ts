@@ -87,6 +87,23 @@ export function mucusDisplayLabel(mucus: Mucus | string | null): string {
   return category ? `${mucus} (${category})` : mucus;
 }
 
+/**
+ * True if an observation carries at least one recorded field.
+ */
+export function isRecorded(observation: Observation | null | undefined): boolean {
+  if (!observation) return false;
+  return (
+    observation.monitorReading !== null ||
+    observation.bleeding !== null ||
+    observation.peakOverride === true ||
+    observation.intercourse === true ||
+    observation.lhStrip !== null ||
+    observation.mucus !== null ||
+    observation.temperature !== null ||
+    observation.note !== null
+  );
+}
+
 /** The scale a temperature was recorded on. Stored, so it is never guessed. */
 export const TEMPERATURE_UNITS = ["C", "F"] as const;
 export type TemperatureUnit = (typeof TEMPERATURE_UNITS)[number];

@@ -6,6 +6,7 @@ import {
   MUCUS_OBSERVATIONS,
   applyUpdate,
   isFullFlow,
+  isRecorded,
   mucusCategory,
   mucusDisplayLabel,
   unrecordedObservation,
@@ -51,6 +52,22 @@ describe("Mucus category", () => {
 });
 
 describe("an unrecorded day", () => {
+  it("reports false for isRecorded when all fields are empty, and true when any field is recorded", () => {
+    const unrecorded = unrecordedObservation("2026-08-30");
+    expect(isRecorded(unrecorded)).toBe(false);
+    expect(isRecorded(null)).toBe(false);
+    expect(isRecorded(undefined)).toBe(false);
+
+    expect(isRecorded(applyUpdate(unrecorded, { monitorReading: "Low" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { bleeding: "Spotting" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { peakOverride: true }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { intercourse: true }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { lhStrip: "Negative" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { mucus: "dry or scant" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { temperature: 97.5 }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { note: "Note text" }))).toBe(true);
+  });
+
   it("is distinguishable from a recorded Missed and from a recorded Error", () => {
     const unrecorded = unrecordedObservation("2026-08-30");
     const missed = applyUpdate(unrecorded, { monitorReading: "Missed" });
