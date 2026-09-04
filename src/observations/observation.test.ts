@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   BLEEDING_LEVELS,
   MONITOR_READINGS,
+  MUCUS_OBSERVATIONS,
   applyUpdate,
   isFullFlow,
+  isRecorded,
   mucusCategory,
+  mucusDisplayLabel,
   unrecordedObservation,
   updateOf,
 } from "./observation";
@@ -18,16 +21,53 @@ describe("Monitor reading", () => {
 });
 
 describe("Mucus category", () => {
-  it("maps descriptions to Low, High, or Peak", () => {
+  it("defines MUCUS_OBSERVATIONS using the Marquette manual's own descriptions", () => {
+    expect(MUCUS_OBSERVATIONS).toEqual([
+      "dry or scant",
+      "thick and sticky",
+      "cloudy and slightly stretchy",
+      "clear and stretchy like egg white",
+    ]);
+  });
+
+  it("maps the manual's descriptions to Low, High, or Peak", () => {
+    expect(mucusCategory("dry or scant")).toBe("Low");
+    expect(mucusCategory("thick and sticky")).toBe("Low");
+    expect(mucusCategory("cloudy and slightly stretchy")).toBe("High");
+    expect(mucusCategory("clear and stretchy like egg white")).toBe("Peak");
     expect(mucusCategory("Dry")).toBe("Low");
     expect(mucusCategory("Sticky")).toBe("Low");
     expect(mucusCategory("Creamy")).toBe("High");
     expect(mucusCategory("Stretchy")).toBe("Peak");
     expect(mucusCategory(null)).toBeNull();
   });
+
+  it("formats each mucus description with its Mucus category for display", () => {
+    expect(mucusDisplayLabel("dry or scant")).toBe("dry or scant (Low)");
+    expect(mucusDisplayLabel("thick and sticky")).toBe("thick and sticky (Low)");
+    expect(mucusDisplayLabel("cloudy and slightly stretchy")).toBe("cloudy and slightly stretchy (High)");
+    expect(mucusDisplayLabel("clear and stretchy like egg white")).toBe("clear and stretchy like egg white (Peak)");
+    expect(mucusDisplayLabel(null)).toBe("Not recorded");
+  });
 });
 
 describe("an unrecorded day", () => {
+  it("reports false for isRecorded when all fields are empty, and true when any field is recorded", () => {
+    const unrecorded = unrecordedObservation("2026-08-30");
+    expect(isRecorded(unrecorded)).toBe(false);
+    expect(isRecorded(null)).toBe(false);
+    expect(isRecorded(undefined)).toBe(false);
+
+    expect(isRecorded(applyUpdate(unrecorded, { monitorReading: "Low" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { bleeding: "Spotting" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { peakOverride: true }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { intercourse: true }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { lhStrip: "Negative" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { mucus: "dry or scant" }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { temperature: 97.5 }))).toBe(true);
+    expect(isRecorded(applyUpdate(unrecorded, { note: "Note text" }))).toBe(true);
+  });
+
   it("is distinguishable from a recorded Missed and from a recorded Error", () => {
     const unrecorded = unrecordedObservation("2026-08-30");
     const missed = applyUpdate(unrecorded, { monitorReading: "Missed" });

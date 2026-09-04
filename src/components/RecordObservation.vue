@@ -2,7 +2,7 @@
 import { computed, ref, watch } from "vue";
 
 import ChoiceRow from "./ChoiceRow.vue";
-import DayExplanation from "./DayExplanation.vue";
+import DayDetail from "./DayDetail.vue";
 import type { CivilDate } from "../chart/civil-date";
 import type { Chart } from "../chart/projection";
 import type { CycleOverlay } from "../observations/cycle-overlay";
@@ -21,6 +21,7 @@ import {
   MONITOR_READINGS,
   MUCUS_OBSERVATIONS,
   TEMPERATURE_UNITS,
+  mucusDisplayLabel,
   unrecordedObservation,
   updateOf,
 } from "../observations/observation";
@@ -208,13 +209,14 @@ const save = async () => {
       />
     </header>
 
-    <DayExplanation
-      v-if="showAllFields && activeDay && activeCycle"
-      :cycle-day="activeDay.cycleDay"
-      :day-status="activeDay.dayStatus"
-      :fertile-window="activeCycle.fertileWindow"
-      :protocol-family="activeCycleOverlay?.protocolFamily ?? null"
-      :protocol-version="activeCycleOverlay?.protocolVersion ?? null"
+    <DayDetail
+      v-if="showAllFields"
+      :date="date"
+      :observation="recorded"
+      :chart-day="activeDay"
+      :cycle="activeCycle"
+      :cycle-overlay="activeCycleOverlay"
+      :show-actions="false"
     />
 
     <ChoiceRow
@@ -296,7 +298,13 @@ const save = async () => {
         <select v-model="mucus" data-testid="mucus" @change="edit('mucus')">
           <option :value="null">Not recorded</option>
           <option v-for="kind in MUCUS_OBSERVATIONS" :key="kind" :value="kind">
-            {{ kind }}
+            {{ mucusDisplayLabel(kind) }}
+          </option>
+          <option
+            v-if="mucus && !MUCUS_OBSERVATIONS.includes(mucus as any)"
+            :value="mucus"
+          >
+            {{ mucusDisplayLabel(mucus) }}
           </option>
         </select>
       </label>
@@ -337,128 +345,3 @@ const save = async () => {
     </div>
   </section>
 </template>
-
-<style scoped>
-.record {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-  padding: 0.75rem 1rem 0;
-}
-
-.record__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.record__title {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.record__date-input {
-  min-height: 2.25rem;
-  max-width: 8.5rem;
-  padding: 0 0.375rem;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 8px;
-  background: var(--verelle-surface);
-  color: inherit;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-}
-
-.record__legend {
-  padding: 0;
-  color: var(--verelle-ink-muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.record__toggles {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.25rem;
-}
-
-.record__toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.75rem;
-  padding: 0 0.625rem;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 8px;
-}
-
-.record__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.record__more,
-.record__save {
-  min-height: 2.75rem;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 8px;
-  background: var(--verelle-surface);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.record__more {
-  flex: 1;
-}
-
-.record__save {
-  flex: 1;
-  font-weight: 600;
-  background: var(--verelle-surface-sunken);
-}
-
-.record__saved {
-  margin: 0;
-  color: var(--verelle-ink-muted);
-  font-size: 0.8125rem;
-}
-
-.record__more-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.record__more-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.record__more-field select,
-.record__more-field input,
-.record__more-field textarea {
-  min-height: 2.75rem;
-  padding: 0 0.5rem;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 8px;
-  background: var(--verelle-surface);
-  color: inherit;
-  font: inherit;
-}
-
-.record__temperature {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.record__temperature input {
-  flex: 1;
-  min-width: 0;
-}
-</style>

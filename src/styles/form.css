@@ -1,0 +1,286 @@
+/* Verelle Observation Form and Day Detail structural styles.
+ * Ported from Chart35's layout and structural CSS (form.css and calendar.css).
+ * Adapted to Verelle's palette and tokens.
+ */
+
+/* Shared buttons and controls */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 12px;
+  background: var(--verelle-surface);
+  color: var(--verelle-ink);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: var(--verelle-surface-sunken);
+  font-weight: 600;
+  border-color: var(--verelle-rule);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  background: var(--verelle-surface-sunken);
+  border: 1px solid var(--verelle-rule);
+  border-radius: 16px;
+  margin: 0.5rem 0;
+}
+
+.empty-state h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.empty-state p {
+  margin: 0 0 1rem;
+  color: var(--verelle-ink-muted);
+  font-size: 0.9375rem;
+}
+
+/* Observation form styles (Chart35 structural layout) */
+.obs-form,
+.record {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem 0;
+}
+
+.obs-form-header,
+.record__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.obs-form-header h2,
+.record__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.record__date-input {
+  min-height: 2.25rem;
+  max-width: 8.5rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.record__legend,
+.choice-row__legend {
+  padding: 0;
+  color: var(--verelle-ink-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Choice rows */
+.choice-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice-row__choices {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.choice-row__choice {
+  min-height: 2.75rem;
+  padding: 0.25rem 0.125rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.choice-row__choice--on {
+  border-color: currentColor;
+  background: var(--verelle-surface-sunken);
+  font-weight: 600;
+}
+
+/* Toggles */
+.record__toggles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.25rem;
+}
+
+.record__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+}
+
+/* Actions */
+.obs-form-actions,
+.record__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.record__more,
+.record__save {
+  min-height: 2.75rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.record__more {
+  flex: 1;
+}
+
+.record__save {
+  flex: 1;
+  font-weight: 600;
+  background: var(--verelle-surface-sunken);
+}
+
+.record__saved {
+  margin: 0;
+  color: var(--verelle-ink-muted);
+  font-size: 0.8125rem;
+}
+
+/* More / optional fields */
+.record__more-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.record__more-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.record__more-field select,
+.record__more-field input,
+.record__more-field textarea {
+  min-height: 2.75rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--verelle-rule);
+  border-radius: 8px;
+  background: var(--verelle-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.record__temperature {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.record__temperature input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Day detail view (Chart35 structural layout) */
+.day-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.day-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.day-detail-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.day-detail-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.day-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 8px 12px;
+  background: var(--verelle-surface-sunken);
+  border: 1px solid var(--verelle-rule);
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+
+.day-detail-row-label {
+  color: var(--verelle-ink-muted);
+  font-weight: 500;
+}
+
+.day-detail-row-value {
+  font-weight: 600;
+  text-align: right;
+  color: var(--verelle-ink);
+}
+
+.day-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 0.25rem;
+}

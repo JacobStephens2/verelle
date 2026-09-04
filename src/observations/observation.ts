@@ -32,8 +32,22 @@ export type LhStrip = (typeof LH_STRIP_VALUES)[number];
  * Described using the Marquette manual's vocabulary, with each description
  * carrying the Mucus category it belongs to (`CONTEXT.md`).
  */
-export const MUCUS_OBSERVATIONS = ["Dry", "Sticky", "Creamy", "Stretchy"] as const;
-export type Mucus = (typeof MUCUS_OBSERVATIONS)[number];
+export const MARQUETTE_MUCUS_DESCRIPTIONS = [
+  "dry or scant",
+  "thick and sticky",
+  "cloudy and slightly stretchy",
+  "clear and stretchy like egg white",
+] as const;
+
+export const MUCUS_OBSERVATIONS = MARQUETTE_MUCUS_DESCRIPTIONS;
+export type MarquetteMucus = (typeof MARQUETTE_MUCUS_DESCRIPTIONS)[number];
+
+export type Mucus =
+  | MarquetteMucus
+  | "Dry"
+  | "Sticky"
+  | "Creamy"
+  | "Stretchy";
 
 /**
  * Low, High, or Peak: which band of fertility a mucus description falls in
@@ -48,20 +62,46 @@ export type MucusCategory = (typeof MUCUS_CATEGORIES)[number];
 export function mucusCategory(mucus: Mucus | string | null): MucusCategory | null {
   if (mucus === null) return null;
   switch (mucus) {
-    case "Dry":
-    case "Sticky":
     case "dry or scant":
     case "thick and sticky":
+    case "Dry":
+    case "Sticky":
       return "Low";
-    case "Creamy":
     case "cloudy and slightly stretchy":
+    case "Creamy":
       return "High";
-    case "Stretchy":
     case "clear and stretchy like egg white":
+    case "Stretchy":
       return "Peak";
     default:
       return null;
   }
+}
+
+/**
+ * Format a recorded mucus description with its Marquette Mucus category for display.
+ */
+export function mucusDisplayLabel(mucus: Mucus | string | null): string {
+  if (mucus === null) return "Not recorded";
+  const category = mucusCategory(mucus);
+  return category ? `${mucus} (${category})` : mucus;
+}
+
+/**
+ * True if an observation carries at least one recorded field.
+ */
+export function isRecorded(observation: Observation | null | undefined): boolean {
+  if (!observation) return false;
+  return (
+    observation.monitorReading !== null ||
+    observation.bleeding !== null ||
+    observation.peakOverride === true ||
+    observation.intercourse === true ||
+    observation.lhStrip !== null ||
+    observation.mucus !== null ||
+    observation.temperature !== null ||
+    observation.note !== null
+  );
 }
 
 /** The scale a temperature was recorded on. Stored, so it is never guessed. */
