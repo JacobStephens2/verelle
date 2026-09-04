@@ -11,6 +11,7 @@ import {
   PROTOCOL_VERSION_LABELS,
   INTENTIONS,
   INTENTION_LABELS,
+  resolvedCycleIntention,
   type CycleOverlayFields,
 } from "./cycle-overlay";
 
@@ -66,14 +67,42 @@ describe("Intentions", () => {
 });
 
 describe("defaultCycleOverlay", () => {
-  it("creates an unchosen overlay keyed by Cycle Day 1 Civil date", () => {
+  it("creates an unchosen overlay keyed by Cycle Day 1 Civil date with intention defaulting to avoid", () => {
     expect(defaultCycleOverlay("2026-08-01")).toEqual({
       startDate: "2026-08-01",
       protocolFamily: null,
       protocolVersion: null,
-      intention: null,
+      intention: "avoid",
       postpartumCycleNumber: null,
     });
+  });
+});
+
+describe("resolvedCycleIntention", () => {
+  it("defaults to avoiding when overlay is missing or intention is null", () => {
+    expect(resolvedCycleIntention(undefined)).toBe("avoid");
+    expect(resolvedCycleIntention(null)).toBe("avoid");
+    expect(
+      resolvedCycleIntention({
+        ...defaultCycleOverlay("2026-08-01"),
+        intention: null,
+      }),
+    ).toBe("avoid");
+  });
+
+  it("returns the chosen intention when explicitly set", () => {
+    expect(
+      resolvedCycleIntention({
+        ...defaultCycleOverlay("2026-08-01"),
+        intention: "achieve",
+      }),
+    ).toBe("achieve");
+    expect(
+      resolvedCycleIntention({
+        ...defaultCycleOverlay("2026-08-01"),
+        intention: "avoid",
+      }),
+    ).toBe("avoid");
   });
 });
 

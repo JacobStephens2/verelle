@@ -7,6 +7,8 @@ import {
   chartCellClass,
   CHART_ZOOM_LEVELS,
   fertileBandPresentation,
+  isAchievingHighlight,
+  isHighOrPeakDay,
 } from "./chart-presentation";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -149,6 +151,87 @@ describe("Chart presentation and palette", () => {
     expect(noPeakLastPres.isFertileEnd).toBe(true);
     expect(noPeakLastPres.classes).toContain("chart__cell--fertile-end");
     expect(noPeakLastPres.classes).toContain("chart__cell--provisional-end");
+  });
+
+  it("identifies High and Peak days pointed to by the method", () => {
+    const makeDay = (partial: Partial<ChartDay>): ChartDay => ({
+      civilDate: "2026-06-10",
+      cycleDay: 10,
+      monitorReading: null,
+      markers: [],
+      annotations: [],
+      dayStatus: "fertile",
+      ...partial,
+    });
+
+    expect(isHighOrPeakDay(undefined)).toBe(false);
+    expect(isHighOrPeakDay(makeDay({ monitorReading: "Low" }))).toBe(false);
+    expect(isHighOrPeakDay(makeDay({ monitorReading: "Missed" }))).toBe(false);
+    expect(isHighOrPeakDay(makeDay({ monitorReading: "Error" }))).toBe(false);
+    expect(isHighOrPeakDay(makeDay({ monitorReading: null, markers: ["bleeding"] }))).toBe(false);
+
+    // High and Peak readings within fertile window
+    expect(isHighOrPeakDay(makeDay({ monitorReading: "High", markers: ["monitor"] }))).toBe(true);
+    expect(isHighOrPeakDay(makeDay({ monitorReading: "Peak", markers: ["monitor"] }))).toBe(true);
+
+    // High/Peak readings outside fertile window are not targeted by the method
+    expect(
+      isHighOrPeakDay(makeDay({ monitorReading: "High", markers: ["monitor"], dayStatus: "infertile" })),
+    ).toBe(false);
+    expect(
+      isHighOrPeakDay(makeDay({ monitorReading: "Peak", markers: ["monitor"], dayStatus: null })),
+    ).toBe(false);
+
+    // Peak override within fertile window
+    expect(isHighOrPeakDay(makeDay({ markers: ["peak_override"] }))).toBe(true);
+
+    // Mucus category High or Peak within fertile window
+    expect(isHighOrPeakDay(makeDay({}), null, "High")).toBe(true);
+    expect(isHighOrPeakDay(makeDay({}), null, "Peak")).toBe(true);
+    expect(isHighOrPeakDay(makeDay({}), null, "Low")).toBe(false);
+
+    // Mucus Peak
+    const mucusPeak = { civilDate: "2026-06-14", cycleDay: 14, provisional: false };
+    expect(isHighOrPeakDay(makeDay({ cycleDay: 14 }), mucusPeak)).toBe(true);
+    expect(isHighOrPeakDay(makeDay({ cycleDay: 13 }), mucusPeak)).toBe(false);
+  });
+
+  it("highlights High and Peak days only when Intention is achieve", () => {
+    const highDay: ChartDay = {
+      civilDate: "2026-06-11",
+      cycleDay: 11,
+      monitorReading: "High",
+      markers: ["monitor"],
+      annotations: [],
+      dayStatus: "fertile",
+    };
+    const lowDay: ChartDay = {
+      civilDate: "2026-06-06",
+      cycleDay: 6,
+      monitorReading: "Low",
+      markers: ["monitor"],
+      annotations: [],
+      dayStatus: "fertile",
+    };
+
+    // Under avoid: never highlights High or Low days
+    expect(isAchievingHighlight(highDay, "avoid")).toBe(false);
+    expect(isAchievingHighlight(lowDay, "avoid")).toBe(false);
+    expect(isAchievingHighlight(highDay, null)).toBe(false);
+    expect(isAchievingHighlight(highDay, undefined)).toBe(false);
+
+    // Under achieve: highlights High day, but not Low day
+    expect(isAchievingHighlight(highDay, "achieve")).toBe(true);
+    expect(isAchievingHighlight(lowDay, "achieve")).toBe(false);
+  });
+
+  it("defines achieving emphasis CSS styles for cycle row and highlighted High/Peak stamps", async () => {
+    const cssPath = path.join(REPO_ROOT, "src", "styles", "chart.css");
+    const css = await readFile(cssPath, "utf8");
+
+    expect(css).toContain(".cycle-row--achieve");
+    expect(css).toContain(".chart__cell--highlight");
+    expect(css).toContain(".stamp--highlight");
   });
 });
 

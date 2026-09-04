@@ -71,6 +71,30 @@ describe("projectChart golden fixtures", () => {
       expect(projected, fixture.name).toEqual(fixture.expected);
     }
   });
+
+  it("asserts that Intention does not move a boundary in the intention-boundary-invariance golden fixture", async () => {
+    const fixturePath = path.join(FIXTURES_DIRECTORY, "intention-boundary-invariance.json");
+    const fixture = JSON.parse(await readFile(fixturePath, "utf8")) as GoldenFixture;
+    const achieveChart = projectChart(
+      fixture.observations,
+      fixture.today,
+      fixture.cycleOverlays ?? [],
+      fixture.profile ?? null,
+    );
+    const avoidOverlays = (fixture.cycleOverlays ?? []).map((o) => ({
+      ...o,
+      intention: "avoid" as const,
+    }));
+    const avoidChart = projectChart(
+      fixture.observations,
+      fixture.today,
+      avoidOverlays,
+      fixture.profile ?? null,
+    );
+    expect(achieveChart.cycles[0]?.fertileWindow).toEqual(
+      avoidChart.cycles[0]?.fertileWindow,
+    );
+  });
 });
 
 describe("Mucus Peak derivation", () => {
@@ -1316,5 +1340,80 @@ describe("Postpartum protocols (cycle zero and return to cycles)", () => {
     const chart = projectChart([cd1], today, [], profile);
     expect(chart.eligibilityWarnings.some((w) => w.circumstance === "postpartum_without_breastfeeding")).toBe(true);
     expect(chart.cycles[0]?.fertileWindow).toBeNull();
+  });
+});
+
+describe("Intention Fertile window boundary invariance", () => {
+  const cd1Date = "2026-06-01";
+  const cd1 = applyUpdate(unrecordedObservation(cd1Date), { bleeding: "Heavy" });
+  const high = applyUpdate(unrecordedObservation("2026-06-11"), { monitorReading: "High" });
+  const peak1 = applyUpdate(unrecordedObservation("2026-06-13"), { monitorReading: "Peak" });
+  const peak2 = applyUpdate(unrecordedObservation("2026-06-14"), { monitorReading: "Peak" });
+  const mucusPeak = applyUpdate(unrecordedObservation("2026-06-15"), { mucus: "Stretchy" });
+  const postMucus = applyUpdate(unrecordedObservation("2026-06-16"), { mucus: "Dry" });
+  const obs = [cd1, high, peak1, peak2, mucusPeak, postMucus];
+  const today = "2026-06-25";
+
+  it("computes identical fertile window and day statuses under regular_monitor whether avoiding or achieving", () => {
+    const avoidOverlay: CycleOverlay = {
+      ...defaultCycleOverlay(cd1Date),
+      protocolFamily: "regular_monitor",
+      protocolVersion: "marquette_regular_manual_public",
+      intention: "avoid",
+    };
+    const achieveOverlay: CycleOverlay = {
+      ...avoidOverlay,
+      intention: "achieve",
+    };
+
+    const chartAvoid = projectChart(obs, today, [avoidOverlay]);
+    const chartAchieve = projectChart(obs, today, [achieveOverlay]);
+
+    expect(chartAchieve.cycles[0]?.fertileWindow).toEqual(chartAvoid.cycles[0]?.fertileWindow);
+    expect(chartAchieve.cycles[0]?.days.map((d) => d.dayStatus)).toEqual(
+      chartAvoid.cycles[0]?.days.map((d) => d.dayStatus),
+    );
+  });
+
+  it("computes identical fertile window and day statuses under monitor_plus_mucus whether avoiding or achieving", () => {
+    const avoidOverlay: CycleOverlay = {
+      ...defaultCycleOverlay(cd1Date),
+      protocolFamily: "regular_monitor_plus_mucus",
+      protocolVersion: "marquette_regular_plus_mucus_manual",
+      intention: "avoid",
+    };
+    const achieveOverlay: CycleOverlay = {
+      ...avoidOverlay,
+      intention: "achieve",
+    };
+
+    const chartAvoid = projectChart(obs, today, [avoidOverlay]);
+    const chartAchieve = projectChart(obs, today, [achieveOverlay]);
+
+    expect(chartAchieve.cycles[0]?.fertileWindow).toEqual(chartAvoid.cycles[0]?.fertileWindow);
+    expect(chartAchieve.cycles[0]?.days.map((d) => d.dayStatus)).toEqual(
+      chartAvoid.cycles[0]?.days.map((d) => d.dayStatus),
+    );
+  });
+
+  it("computes identical fertile window and day statuses under postpartum families whether avoiding or achieving", () => {
+    const pp0Avoid: CycleOverlay = {
+      ...defaultCycleOverlay(cd1Date),
+      protocolFamily: "postpartum_cycle_zero_original",
+      protocolVersion: "marquette_postpartum_cycle_zero_2005",
+      intention: "avoid",
+    };
+    const pp0Achieve: CycleOverlay = {
+      ...pp0Avoid,
+      intention: "achieve",
+    };
+
+    const pp0ChartAvoid = projectChart(obs, today, [pp0Avoid]);
+    const pp0ChartAchieve = projectChart(obs, today, [pp0Achieve]);
+
+    expect(pp0ChartAchieve.cycles[0]?.fertileWindow).toEqual(pp0ChartAvoid.cycles[0]?.fertileWindow);
+    expect(pp0ChartAchieve.cycles[0]?.days.map((d) => d.dayStatus)).toEqual(
+      pp0ChartAvoid.cycles[0]?.days.map((d) => d.dayStatus),
+    );
   });
 });

@@ -14,6 +14,7 @@
   --verelle-fertile-band: rgba(158, 43, 108, 0.1);
   --verelle-fertile-boundary: #9e2b6c;
   --verelle-fertile-border: rgba(158, 43, 108, 0.25);
+  --verelle-highlight-band: rgba(158, 43, 108, 0.22);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -27,6 +28,7 @@
     --verelle-fertile-band: rgba(184, 58, 130, 0.16);
     --verelle-fertile-boundary: #b83a82;
     --verelle-fertile-border: rgba(184, 58, 130, 0.35);
+    --verelle-highlight-band: rgba(184, 58, 130, 0.3);
   }
 }
 
@@ -260,6 +262,17 @@
 .cycle-row td.chart__cell--fertile-end.chart__cell--provisional-end,
 .chart__cell--fertile-end.chart__cell--provisional-end {
   border-right: 2px dashed var(--verelle-fertile-boundary);
+}
+
+/* Achieving intention emphasis: High and Peak days stand out (`CONTEXT.md`, Issue #41) */
+.cycle-row--achieve .chart__cell--highlight {
+  background: var(--verelle-highlight-band);
+}
+
+.cycle-row--achieve .stamp--highlight .stamp-circle {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--verelle-surface), 0 0 0 4px var(--verelle-stamp-peak);
+  font-weight: 800;
 }
 
 

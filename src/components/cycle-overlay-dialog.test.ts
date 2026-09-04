@@ -51,4 +51,17 @@ describe("CycleOverlayDialog component", () => {
     expect(html).toContain("Postpartum cycle zero");
     expect(html).toContain("Postpartum return to cycles");
   });
+
+  it("offers Intention options per cycle defaulting to avoid", async () => {
+    const { app } = createTestApp({
+      startDate: "2026-06-01",
+      cycleStartDates: ["2026-06-01"],
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain('data-testid="intention-select"');
+    expect(html).toContain("Avoid pregnancy");
+    expect(html).toContain("Achieve pregnancy");
+    expect(html).toMatch(/<option value="avoid"[^>]*\bselected\b[^>]*>Avoid pregnancy<\/option>/);
+  });
 });
