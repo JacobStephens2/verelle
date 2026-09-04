@@ -3,14 +3,14 @@ import type {
   MonitorReading,
   Observation,
 } from "../observations/observation";
-import { isFullFlow } from "../observations/observation";
+import { isFullFlow, mucusCategory } from "../observations/observation";
 import type { CivilDate } from "./civil-date";
 import { civilDatePlusDays, daysBetweenCivilDates } from "./civil-date";
 
 /** Minimum Cycle Day columns shown before the current Cycle grows past them. */
 export const CYCLE_DAY_COLUMNS = 42;
 
-/** Mechanical labels counted from a User-marked Peak (ADR 0011). */
+/** Mechanical labels counted from a Peak override or the last Monitor Peak (`CONTEXT.md`). */
 export type PeakAnnotation = "P" | "P+1" | "P+2" | "P+3";
 
 const PEAK_COUNT: readonly PeakAnnotation[] = ["P", "P+1", "P+2", "P+3"];
@@ -19,7 +19,7 @@ const PEAK_COUNT: readonly PeakAnnotation[] = ["P", "P+1", "P+2", "P+3"];
 export type ObservationMarker =
   | "monitor"
   | "bleeding"
-  | "user_marked_peak"
+  | "peak_override"
   | "intercourse"
   | "lh_strip"
   | "mucus"
@@ -33,7 +33,7 @@ export interface ChartDay {
   readonly monitorReading: MonitorReading | null;
   /** Empty means nobody recorded a field on this date. */
   readonly markers: readonly ObservationMarker[];
-  /** Mechanical labels anchored only to a User-marked Peak. */
+  /** Mechanical labels anchored to a Peak override or the last Monitor Peak. */
   readonly annotations: readonly PeakAnnotation[];
 }
 
@@ -44,10 +44,23 @@ export interface UnassignedChartDay {
   readonly markers: readonly ObservationMarker[];
 }
 
+/**
+ * The last day of Peak-category mucus in a Cycle (`CONTEXT.md`).
+ *
+ * Knowable only once a non-Peak day follows it, so it is provisional until it
+ * isn't.
+ */
+export interface MucusPeak {
+  readonly civilDate: CivilDate;
+  readonly cycleDay: number;
+  readonly provisional: boolean;
+}
+
 /** A Cycle, from one Cycle Day 1 to the day before the next. */
 export interface ChartCycle {
   readonly startDate: CivilDate;
   readonly days: readonly ChartDay[];
+  readonly mucusPeak: MucusPeak | null;
 }
 
 /**
@@ -69,7 +82,7 @@ function markersFor(observation: Observation | undefined): ObservationMarker[] {
   const markers: ObservationMarker[] = [];
   if (observation.monitorReading !== null) markers.push("monitor");
   if (observation.bleeding !== null) markers.push("bleeding");
-  if (observation.userMarkedPeak === true) markers.push("user_marked_peak");
+  if (observation.peakOverride === true) markers.push("peak_override");
   if (observation.intercourse !== null) markers.push("intercourse");
   if (observation.lhStrip !== null) markers.push("lh_strip");
   if (observation.mucus !== null) markers.push("mucus");
@@ -124,20 +137,34 @@ export function projectChart(
   const cycles = cycleStarts.map((start, index): ChartCycle => {
     const nextStart = cycleStarts[index + 1]?.civilDate;
     const endDate = nextStart === undefined ? today : civilDatePlusDays(nextStart, -1);
-    const userMarkedPeaks = datedObservations.filter(
+    const observationsInCycle = datedObservations.filter(
       (observation) =>
-        observation.userMarkedPeak === true &&
         observation.civilDate >= start.civilDate &&
         observation.civilDate <= endDate,
     );
+
+    const peakOverrides = observationsInCycle.filter(
+      (observation) => observation.peakOverride === true,
+    );
+    const monitorPeaks = observationsInCycle.filter(
+      (observation) => observation.monitorReading === "Peak",
+    );
+    const anchorPeak =
+      peakOverrides.length > 0
+        ? peakOverrides[peakOverrides.length - 1]
+        : monitorPeaks.length > 0
+          ? monitorPeaks[monitorPeaks.length - 1]
+          : undefined;
+
     const dayCount = daysBetweenCivilDates(start.civilDate, endDate) + 1;
     const days = Array.from({ length: dayCount }, (_, dayIndex): ChartDay => {
       const civilDate = civilDatePlusDays(start.civilDate, dayIndex);
-      const annotations = userMarkedPeaks.flatMap((peak) => {
-        const count = daysBetweenCivilDates(peak.civilDate, civilDate);
+      const annotations: PeakAnnotation[] = [];
+      if (anchorPeak !== undefined) {
+        const count = daysBetweenCivilDates(anchorPeak.civilDate, civilDate);
         const annotation = PEAK_COUNT[count];
-        return annotation === undefined ? [] : [annotation];
-      });
+        if (annotation !== undefined) annotations.push(annotation);
+      }
       return {
         civilDate,
         cycleDay: dayIndex + 1,
@@ -147,7 +174,26 @@ export function projectChart(
       };
     });
 
-    return { startDate: start.civilDate, days };
+    const peakMucusObservations = observationsInCycle.filter(
+      (observation) => mucusCategory(observation.mucus) === "Peak",
+    );
+    const lastPeakMucus = peakMucusObservations[peakMucusObservations.length - 1];
+
+    let mucusPeak: MucusPeak | null = null;
+    if (lastPeakMucus !== undefined) {
+      const hasSubsequentNonPeakMucus = observationsInCycle.some((observation) => {
+        if (observation.civilDate <= lastPeakMucus.civilDate) return false;
+        const category = mucusCategory(observation.mucus);
+        return category !== null && category !== "Peak";
+      });
+      mucusPeak = {
+        civilDate: lastPeakMucus.civilDate,
+        cycleDay: daysBetweenCivilDates(start.civilDate, lastPeakMucus.civilDate) + 1,
+        provisional: !hasSubsequentNonPeakMucus,
+      };
+    }
+
+    return { startDate: start.civilDate, days, mucusPeak };
   });
 
   const unassignedDays = unassignedObservations.map((observation) => ({

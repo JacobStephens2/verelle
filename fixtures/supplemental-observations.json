@@ -6,7 +6,7 @@
       "civilDate": "2026-07-01",
       "monitorReading": null,
       "bleeding": "Moderate",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -18,7 +18,7 @@
       "civilDate": "2026-07-02",
       "monitorReading": null,
       "bleeding": "None",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": true,
       "lhStrip": null,
       "mucus": null,
@@ -30,7 +30,7 @@
       "civilDate": "2026-07-03",
       "monitorReading": null,
       "bleeding": "None",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": "Stretchy",
@@ -42,7 +42,7 @@
       "civilDate": "2026-07-04",
       "monitorReading": null,
       "bleeding": "None",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -54,7 +54,7 @@
       "civilDate": "2026-07-05",
       "monitorReading": null,
       "bleeding": "None",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": "Invalid",
       "mucus": null,
@@ -66,7 +66,7 @@
       "civilDate": "2026-07-08",
       "monitorReading": null,
       "bleeding": null,
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -89,7 +89,12 @@
           { "civilDate": "2026-07-06", "cycleDay": 6, "monitorReading": null, "markers": [], "annotations": [] },
           { "civilDate": "2026-07-07", "cycleDay": 7, "monitorReading": null, "markers": [], "annotations": [] },
           { "civilDate": "2026-07-08", "cycleDay": 8, "monitorReading": null, "markers": ["note"], "annotations": [] }
-        ]
+        ],
+        "mucusPeak": {
+          "civilDate": "2026-07-03",
+          "cycleDay": 3,
+          "provisional": true
+        }
       }
     ],
     "unassignedDays": []

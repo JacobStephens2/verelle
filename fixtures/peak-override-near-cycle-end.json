@@ -6,7 +6,7 @@
       "civilDate": "2026-10-01",
       "monitorReading": null,
       "bleeding": "Heavy",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -18,7 +18,7 @@
       "civilDate": "2026-10-03",
       "monitorReading": null,
       "bleeding": "None",
-      "userMarkedPeak": true,
+      "peakOverride": true,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -30,7 +30,7 @@
       "civilDate": "2026-10-05",
       "monitorReading": null,
       "bleeding": "Moderate",
-      "userMarkedPeak": null,
+      "peakOverride": null,
       "intercourse": null,
       "lhStrip": null,
       "mucus": null,
@@ -47,16 +47,18 @@
         "days": [
           { "civilDate": "2026-10-01", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
           { "civilDate": "2026-10-02", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] },
-          { "civilDate": "2026-10-03", "cycleDay": 3, "monitorReading": null, "markers": ["bleeding", "user_marked_peak"], "annotations": ["P"] },
+          { "civilDate": "2026-10-03", "cycleDay": 3, "monitorReading": null, "markers": ["bleeding", "peak_override"], "annotations": ["P"] },
           { "civilDate": "2026-10-04", "cycleDay": 4, "monitorReading": null, "markers": [], "annotations": ["P+1"] }
-        ]
+        ],
+        "mucusPeak": null
       },
       {
         "startDate": "2026-10-05",
         "days": [
           { "civilDate": "2026-10-05", "cycleDay": 1, "monitorReading": null, "markers": ["bleeding"], "annotations": [] },
           { "civilDate": "2026-10-06", "cycleDay": 2, "monitorReading": null, "markers": [], "annotations": [] }
-        ]
+        ],
+        "mucusPeak": null
       }
     ],
     "unassignedDays": []

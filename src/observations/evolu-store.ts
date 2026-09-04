@@ -75,7 +75,7 @@ const Schema = {
         literal("Heavy"),
       ),
     ),
-    userMarkedPeak: nullOr(SqliteBoolean),
+    peakOverride: nullOr(SqliteBoolean),
     intercourse: nullOr(SqliteBoolean),
     lhStrip: nullOr(union(literal("Negative"), literal("Positive"), literal("Invalid"))),
     mucus: nullOr(
@@ -113,7 +113,7 @@ function toObservation(row: ObservationRow): Observation | null {
     ...unrecordedObservation(row.civilDate),
     monitorReading: row.monitorReading,
     bleeding: row.bleeding,
-    userMarkedPeak: row.userMarkedPeak === null ? null : row.userMarkedPeak === 1,
+    peakOverride: row.peakOverride === null ? null : row.peakOverride === 1,
     intercourse: row.intercourse === null ? null : row.intercourse === 1,
     lhStrip: row.lhStrip,
     mucus: row.mucus,
@@ -139,8 +139,8 @@ function toColumns(update: ObservationUpdate): ObservationColumns {
   const columns: { -readonly [K in keyof ObservationColumns]: ObservationColumns[K] } = {};
   if (update.monitorReading !== undefined) columns.monitorReading = update.monitorReading;
   if (update.bleeding !== undefined) columns.bleeding = update.bleeding;
-  if (update.userMarkedPeak !== undefined)
-    columns.userMarkedPeak = toSqliteBoolean(update.userMarkedPeak);
+  if (update.peakOverride !== undefined)
+    columns.peakOverride = toSqliteBoolean(update.peakOverride);
   if (update.intercourse !== undefined)
     columns.intercourse = toSqliteBoolean(update.intercourse);
   if (update.lhStrip !== undefined) columns.lhStrip = update.lhStrip;

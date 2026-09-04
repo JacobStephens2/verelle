@@ -18,7 +18,7 @@ describe("an observation store", () => {
     await store.upsert("2026-08-30", {
       monitorReading: "High",
       bleeding: "None",
-      userMarkedPeak: false,
+      peakOverride: false,
       intercourse: true,
     });
 
@@ -28,6 +28,20 @@ describe("an observation store", () => {
       monitorReading: "High",
       intercourse: true,
     });
+  });
+
+  it("can set and clear a Peak override on a date", async () => {
+    const store = createMemoryObservationStore();
+    const observations = store.observe();
+
+    await store.upsert("2026-08-30", { peakOverride: true });
+    expect(observations.value[0]?.peakOverride).toBe(true);
+
+    await store.upsert("2026-08-30", { peakOverride: false });
+    expect(observations.value[0]?.peakOverride).toBe(false);
+
+    await store.upsert("2026-08-30", { peakOverride: null });
+    expect(observations.value[0]?.peakOverride).toBeNull();
   });
 
   it("keeps one row per Civil date, merging field by field", async () => {

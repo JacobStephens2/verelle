@@ -172,10 +172,10 @@ onMounted(() => {
               data-testid="chart-cell"
             >
               <!-- The reading in full, never an initial. A `P` on the Chart
-                   may only ever come from a User-marked Peak; a Monitor Peak
-                   is data the device displayed and nothing more (CONTEXT.md,
-                   ADR 0011). A day with no Observation stays blank, so a gap
-                   in the record reads as a gap. -->
+                   anchors to a Peak override when set, and otherwise to the
+                   last Monitor Peak of the Cycle (CONTEXT.md, ADR 0015). A day
+                   with no Observation stays blank, so a gap in the record
+                   reads as a gap. -->
               <button
                 v-if="day"
                 type="button"

@@ -243,7 +243,7 @@ try {
   const mandatory = [
     '[data-testid="monitor-High"]',
     '[data-testid="bleeding-None"]',
-    '[data-testid="user-marked-peak"]',
+    '[data-testid="peak-override"]',
     '[data-testid="intercourse"]',
     '[data-testid="save"]',
   ];
@@ -273,7 +273,7 @@ try {
   // 4. Record the four mandatory fields and save.
   await page.click('[data-testid="monitor-High"]');
   await page.click('[data-testid="bleeding-Heavy"]');
-  await page.click('[data-testid="user-marked-peak"]');
+  await page.click('[data-testid="peak-override"]');
   await page.click('[data-testid="intercourse"]');
   await page.click('[data-testid="save"]');
 
@@ -390,9 +390,9 @@ try {
       ),
     ].length,
     markedPeak:
-      document.querySelector('[data-testid="user-marked-peak"]') instanceof
+      document.querySelector('[data-testid="peak-override"]') instanceof
         HTMLInputElement &&
-      document.querySelector('[data-testid="user-marked-peak"]').checked,
+      document.querySelector('[data-testid="peak-override"]').checked,
     intercourse:
       document.querySelector('[data-testid="intercourse"]') instanceof HTMLInputElement &&
       document.querySelector('[data-testid="intercourse"]').checked,
@@ -451,7 +451,7 @@ try {
       days: [
         { civilDate: pastDate, monitorReading: "Error", peakAnnotations: [] },
         { civilDate: missedDate, monitorReading: "Missed", peakAnnotations: [] },
-        { civilDate: lastPastDate, monitorReading: "Peak", peakAnnotations: [] },
+        { civilDate: lastPastDate, monitorReading: "Peak", peakAnnotations: ["P"] },
       ],
     },
     {
@@ -836,7 +836,7 @@ try {
   );
 
   // 12. Un-marking the same date removes P and stays removed after a reload.
-  await page.click('[data-testid="user-marked-peak"]');
+  await page.click('[data-testid="peak-override"]');
   await page.click('[data-testid="save"]');
   await page.waitForFunction(
     (date) =>
@@ -851,7 +851,7 @@ try {
   const afterUnmark = await readTodaysCell(page, today);
   assert.deepEqual(afterUnmark.peakAnnotations, [], "P returned after the date was un-marked");
   const markStayedCleared = await page.$eval(
-    '[data-testid="user-marked-peak"]',
+    '[data-testid="peak-override"]',
     (element) => element instanceof HTMLInputElement && !element.checked,
   );
   if (!markStayedCleared) fail("The recording screen did not preserve the un-marked Peak");
