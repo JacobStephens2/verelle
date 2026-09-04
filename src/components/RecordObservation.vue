@@ -2,7 +2,10 @@
 import { computed, ref, watch } from "vue";
 
 import ChoiceRow from "./ChoiceRow.vue";
+import DayExplanation from "./DayExplanation.vue";
 import type { CivilDate } from "../chart/civil-date";
+import type { Chart } from "../chart/projection";
+import type { CycleOverlay } from "../observations/cycle-overlay";
 import type {
   Bleeding,
   MonitorReading,
@@ -29,7 +32,25 @@ const props = defineProps<{
   today: CivilDate;
   observations: readonly Observation[];
   showAllFields?: boolean;
+  chart?: Chart;
+  cycleOverlays?: readonly CycleOverlay[];
 }>();
+
+const activeCycle = computed(() =>
+  props.chart?.cycles.find((cycle) =>
+    cycle.days.some((day) => day.civilDate === props.date),
+  ),
+);
+
+const activeDay = computed(() =>
+  activeCycle.value?.days.find((day) => day.civilDate === props.date),
+);
+
+const activeCycleOverlay = computed(() =>
+  props.cycleOverlays?.find(
+    (overlay) => overlay.startDate === activeCycle.value?.startDate,
+  ),
+);
 
 const emit = defineEmits<{
   selectDate: [date: CivilDate];
@@ -186,6 +207,15 @@ const save = async () => {
         @change="selectDate"
       />
     </header>
+
+    <DayExplanation
+      v-if="showAllFields && activeDay && activeCycle"
+      :cycle-day="activeDay.cycleDay"
+      :day-status="activeDay.dayStatus"
+      :fertile-window="activeCycle.fertileWindow"
+      :protocol-family="activeCycleOverlay?.protocolFamily ?? null"
+      :protocol-version="activeCycleOverlay?.protocolVersion ?? null"
+    />
 
     <ChoiceRow
       v-model="monitorReading"

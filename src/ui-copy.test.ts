@@ -261,4 +261,19 @@ describe("UI copy", () => {
     expect(cycleScreen).toContain("Intention");
     expect(forbiddenWordsIn(cycleScreen)).toEqual([]);
   });
+
+  it("explains day fertility in DayExplanation without advice words while naming boundary rule, protocol version, and published source", async () => {
+    const dayExplanation = renderedText(
+      "DayExplanation.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "DayExplanation.vue"), "utf8"),
+    );
+
+    expect(dayExplanation).toContain('data-testid="day-explanation"');
+    expect(dayExplanation).toContain('data-testid="boundary-rule"');
+    expect(dayExplanation).toContain('data-testid="protocol-version"');
+    expect(dayExplanation).toContain('data-testid="rule-source-link"');
+    expect(dayExplanation).toContain('data-testid="boundary-confidence"');
+    expect(dayExplanation).toContain('data-testid="provisional-explanation"');
+    expect(forbiddenWordsIn(dayExplanation)).toEqual([]);
+  });
 });

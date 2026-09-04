@@ -101,6 +101,8 @@ const openCycleOverlay = (startDate?: CivilDate) => {
         :today="today"
         :observations="observations"
         :show-all-fields="showAllFields"
+        :chart="chart"
+        :cycle-overlays="cycleOverlays"
         @select-date="selectRecordingDate"
       />
     </section>
