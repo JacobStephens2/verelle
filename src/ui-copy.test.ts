@@ -3,11 +3,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-// ADR 0001 and ADR 0011: Verelle records and displays, and never interprets.
-// No UI string may apply any of these to a day. This test exists in v1 and
-// stays; it is the cheapest executable form of the record-and-display
-// boundary, and the boundary is a regulatory one, not a matter of taste.
-const FORBIDDEN = ["fertile", "infertile", "safe", "should"];
+// ADR 0015: Verelle computes the Marquette fertile window, naming days
+// fertile or infertile in the method's own words, but never gives advice.
+// No UI string may call a day safe or unsafe, or tell a couple what they
+// should do. This test stays; it is the cheapest executable form of the
+// advice boundary, and the boundary is a regulatory one, not a matter of
+// taste.
+const FORBIDDEN = ["safe", "unsafe", "should"];
 
 // Where user-visible text lives: Vue templates and the app shell. Restricted
 // to those on purpose - a comment in a .ts file explaining why a word is
@@ -29,27 +31,85 @@ async function uiCopyFilesUnder(entryPath: string): Promise<string[]> {
 }
 
 /** The rendered part of a file: a Vue single-file component's template, or a
- * whole `.html` page. A component's `<script>` and `<style>` blocks are not
- * copy. */
+ * whole `.html` page. A component's `<script>` and `<style>` blocks, and HTML
+ * comments, are not copy. */
 function renderedText(file: string, contents: string): string {
-  if (!file.endsWith(".vue")) return contents;
-  return [...contents.matchAll(/<template[^>]*>([\s\S]*?)<\/template>/g)]
-    .map((match) => match[1])
-    .join("\n");
+  const raw = file.endsWith(".vue")
+    ? [...contents.matchAll(/<template[^>]*>([\s\S]*?)<\/template>/g)]
+        .map((match) => match[1])
+        .join("\n")
+    : contents;
+  return raw
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+}
+
+function forbiddenWordsIn(text: string): string[] {
+  const found: string[] = [];
+  for (const word of FORBIDDEN) {
+    if (new RegExp(`\\b${word}\\b`, "i").test(text)) {
+      found.push(word);
+    }
+  }
+  return found;
 }
 
 describe("UI copy", () => {
-  it("never applies an interpretation word to a day", async () => {
+  it("permits 'fertile' and 'infertile' while forbidding 'safe', 'unsafe', and 'should'", () => {
+    expect(forbiddenWordsIn("Fertile window opens on day 6")).toEqual([]);
+    expect(forbiddenWordsIn("Infertile day")).toEqual([]);
+    expect(forbiddenWordsIn("This day is safe")).toEqual(["safe"]);
+    expect(forbiddenWordsIn("Unsafe intercourse")).toEqual(["unsafe"]);
+    expect(forbiddenWordsIn("You should avoid today")).toEqual(["should"]);
+  });
+
+  it("scans only rendered template text, ignoring script blocks, comments, and stylesheets", () => {
+    const vueComponent = `
+      <template>
+        <!-- A template comment mentioning safe, unsafe, and should -->
+        <p>Fertile window</p>
+      </template>
+      <script>
+        // safe, unsafe, should in script
+        const safe = true;
+      </script>
+      <style>
+        /* safe-area-inset in style */
+        .chart { padding-top: env(safe-area-inset-top); }
+      </style>
+    `;
+    const vueText = renderedText("TestComponent.vue", vueComponent);
+    expect(forbiddenWordsIn(vueText)).toEqual([]);
+    expect(vueText.trim()).toBe("<p>Fertile window</p>");
+
+    const htmlPage = `
+      <!doctype html>
+      <html>
+        <head>
+          <style>/* safe in stylesheet */ body { margin: 0; }</style>
+          <script>// safe and should in script const safe = true;</script>
+        </head>
+        <body>
+          <!-- unsafe in comment -->
+          <p>Fertile window</p>
+        </body>
+      </html>
+    `;
+    const htmlText = renderedText("index.html", htmlPage);
+    expect(forbiddenWordsIn(htmlText)).toEqual([]);
+    expect(htmlText).toContain("<p>Fertile window</p>");
+  });
+
+  it("never applies an advice word to a day", async () => {
     const files = (await Promise.all(COPY_ROOTS.map(uiCopyFilesUnder))).flat();
     expect(files.length).toBeGreaterThan(0);
 
     const offences: string[] = [];
     for (const file of files) {
       const text = renderedText(file, await readFile(file, "utf8"));
-      for (const word of FORBIDDEN) {
-        if (new RegExp(`\\b${word}\\b`, "i").test(text)) {
-          offences.push(`${path.relative(REPO_ROOT, file)}: ${word}`);
-        }
+      for (const word of forbiddenWordsIn(text)) {
+        offences.push(`${path.relative(REPO_ROOT, file)}: ${word}`);
       }
     }
 
