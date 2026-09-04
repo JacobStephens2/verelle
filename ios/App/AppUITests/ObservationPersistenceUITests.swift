@@ -15,7 +15,7 @@ final class ObservationPersistenceUITests: XCTestCase {
         // WebKit exposes aria-pressed buttons and checkboxes as accessibility
         // Switches. Select only values that are off so this test is safe to
         // repeat against an app container left behind by a previous run.
-        let mandatoryFields = ["High", "Heavy", "Mark my Peak", "Intercourse"]
+        let mandatoryFields = ["High", "Heavy", "Peak override", "Intercourse"]
             .map { app.switches[$0] }
         let high = mandatoryFields[0]
         XCTAssertTrue(
