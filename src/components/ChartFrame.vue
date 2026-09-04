@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, useTemplateRef } from "vue";
+import { computed, onMounted, ref, useTemplateRef } from "vue";
 
 import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
+import type { ChartZoom } from "../chart/chart-presentation";
+import { DEFAULT_CHART_ZOOM } from "../chart/chart-presentation";
 import type { ChartDay, UnassignedChartDay } from "../chart/projection";
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
 import type { MonitorReading, Observation } from "../observations/observation";
 import type { PairingState } from "../owners/owner-secret-store";
 import type { SyncState } from "../sync/sync-state";
+import ChartCell from "./ChartCell.vue";
+import ChartZoomControl from "./ChartZoom.vue";
 
 const props = defineProps<{
   today?: CivilDate;
@@ -20,8 +24,20 @@ const emit = defineEmits<{
   selectDate: [date: CivilDate];
 }>();
 
+const zoom = ref<ChartZoom>(DEFAULT_CHART_ZOOM);
+
 const chart = computed(() =>
   projectChart(props.observations ?? [], props.today ?? todayCivilDate()),
+);
+
+const observationsByDate = computed(
+  () =>
+    new Map(
+      (props.observations ?? []).map((observation) => [
+        observation.civilDate,
+        observation,
+      ]),
+    ),
 );
 
 const columnCount = computed(() =>
@@ -69,17 +85,6 @@ function monitorReadingText(
   day: { readonly monitorReading: MonitorReading | null } | null | undefined,
 ): string {
   return day?.monitorReading ?? "";
-}
-
-function chartDayLabel(day: ChartDay): string {
-  const details = [`Cycle Day ${day.cycleDay}`, day.civilDate];
-  if (day.monitorReading !== null) {
-    details.push(`Monitor reading ${day.monitorReading}`);
-  }
-  if (day.annotations.length > 0) {
-    details.push(`Peak count ${day.annotations.join(", ")}`);
-  }
-  return details.join(", ");
 }
 
 function unassignedChartDayLabel(day: UnassignedChartDay): string {
@@ -137,13 +142,44 @@ onMounted(() => {
       </div>
     </header>
 
-    <div class="chart__scroller">
-      <table class="chart__grid">
+    <!-- Stamp Legend: Verelle's own hues, excluding Creighton stamp vocabulary -->
+    <div
+      class="chart-legend"
+      tabindex="0"
+      role="group"
+      aria-label="Stamp legend"
+    >
+      <div class="legend-item">
+        <span class="legend-dot legend-dot-bleeding" />Bleeding
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot legend-dot-low" />Low
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot legend-dot-high" />High
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot legend-dot-peak" />Peak
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot legend-dot-intercourse">❤️</span>Intercourse
+      </div>
+    </div>
+
+    <!-- Zoom toolbar: Normal, Compact, Trend -->
+    <ChartZoomControl v-model="zoom" />
+
+    <!-- Chart Table Container (Chart35 layout, sticky cycle column, 3 zoom levels) -->
+    <div
+      class="chart-container"
+      :data-zoom="zoom !== 'normal' ? zoom : undefined"
+    >
+      <table class="chart-table">
         <caption class="chart__caption">
           Cycles, by cycle day
         </caption>
         <thead>
-          <tr>
+          <tr class="chart-header">
             <th scope="col" class="chart__cycle-label">Cycle</th>
             <th
               v-for="cycleDay in cycleDays"
@@ -160,48 +196,22 @@ onMounted(() => {
           <tr
             v-for="row in rows"
             :key="row.key"
+            class="cycle-row"
             data-testid="chart-cycle"
           >
-            <th scope="row" class="chart__cycle-label">{{ row.label }}</th>
-            <td
+            <th scope="row" class="chart__cycle-label">
+              <div class="cycle-label">
+                <span class="cycle-label-num">{{ row.label }}</span>
+              </div>
+            </th>
+            <ChartCell
               v-for="(day, index) in row.cells"
               :key="index"
-              class="chart__cell"
-              :class="{ 'chart__cell--today': day?.civilDate === chart.today }"
-              :data-civil-date="day?.civilDate ?? undefined"
-              data-testid="chart-cell"
-            >
-              <!-- The reading in full, never an initial. A `P` on the Chart
-                   anchors to a Peak override when set, and otherwise to the
-                   last Monitor Peak of the Cycle (CONTEXT.md, ADR 0015). A day
-                   with no Observation stays blank, so a gap in the record
-                   reads as a gap. -->
-              <button
-                v-if="day"
-                type="button"
-                class="chart__day"
-                :aria-label="chartDayLabel(day)"
-                :data-civil-date="day.civilDate"
-                data-testid="chart-day"
-                @click="emit('selectDate', day.civilDate)"
-              >
-                <span
-                  v-if="day.monitorReading"
-                  class="chart__monitor-reading"
-                  data-testid="monitor-reading"
-                >
-                  {{ monitorReadingText(day) }}
-                </span>
-                <span
-                  v-for="annotation in day.annotations"
-                  :key="annotation"
-                  class="chart__peak-annotation"
-                  data-testid="peak-annotation"
-                >
-                  {{ annotation }}
-                </span>
-              </button>
-            </td>
+              :day="day"
+              :observation="day ? observationsByDate.get(day.civilDate) : undefined"
+              :is-today="day?.civilDate === chart.today"
+              @select-date="emit('selectDate', $event)"
+            />
           </tr>
         </tbody>
       </table>
@@ -303,89 +313,11 @@ onMounted(() => {
   color: var(--verelle-ink);
 }
 
-/* The frame is 42 cycle day columns wide; it scrolls sideways rather than
-   compressing the columns until the numbers stop being readable. */
-.chart__scroller {
-  overflow-x: auto;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 8px;
-}
-
-.chart__grid {
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-
 .chart__caption {
   padding: 0.5rem 0.75rem;
   text-align: left;
   color: var(--verelle-ink-muted);
   font-size: 0.8125rem;
-}
-
-.chart__cycle-day,
-.chart__cell {
-  width: 4rem;
-  min-width: 4rem;
-  border: 1px solid var(--verelle-rule);
-  text-align: center;
-}
-
-.chart__cycle-label {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  min-width: 9rem;
-  padding: 0.375rem 0.75rem;
-  border: 1px solid var(--verelle-rule);
-  text-align: left;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-  color: var(--verelle-ink-muted);
-  background: var(--verelle-surface-sunken);
-}
-
-.chart__cycle-day {
-  padding: 0.375rem 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--verelle-ink-muted);
-  background: var(--verelle-surface-sunken);
-}
-
-.chart__cell {
-  padding: 0.25rem;
-  height: 3rem;
-  font-size: 0.75rem;
-}
-
-.chart__monitor-reading,
-.chart__peak-annotation {
-  display: block;
-}
-
-.chart__day {
-  width: 100%;
-  min-height: 2.5rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.chart__peak-annotation {
-  margin-top: 0.125rem;
-  font-weight: 700;
-  color: var(--verelle-ink);
-}
-
-.chart__cell--today {
-  background: var(--verelle-surface-sunken);
-  font-weight: 600;
 }
 
 .chart__empty {

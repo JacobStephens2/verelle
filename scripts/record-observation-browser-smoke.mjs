@@ -379,6 +379,24 @@ try {
   // The date between the two recorded days is a real Cycle Day with no
   // Observation. It opens the same complete editor, blank and ready to save.
   const missedDate = civilDatePlusDays(today, -2);
+  const unrecordedStyles = await page.$eval(
+    `[data-testid="chart-day"][data-civil-date="${missedDate}"]`,
+    (btn) => {
+      const circle = btn.querySelector(".stamp-circle");
+      if (!circle) return null;
+      const style = window.getComputedStyle(circle);
+      return {
+        isEmptyClass: btn.classList.contains("stamp--empty"),
+        borderStyle: style.borderTopStyle,
+        hasNoMonitorReading: btn.querySelector('[data-testid="monitor-reading"]') === null,
+      };
+    },
+  );
+  assert.ok(unrecordedStyles?.isEmptyClass, "Unrecorded day did not have stamp--empty class");
+  assert.equal(unrecordedStyles?.borderStyle, "dashed", "Unrecorded day circle was not dashed");
+  assert.ok(unrecordedStyles?.hasNoMonitorReading, "Unrecorded day had a monitor reading");
+  console.log(`ok: unrecorded day ${missedDate} renders visibly empty with dashed circle`);
+
   await page.click(
     `[data-testid="chart-day"][data-civil-date="${missedDate}"]`,
   );
@@ -460,6 +478,42 @@ try {
     },
   ]);
   console.log(`ok: the completed past Cycle matches its exact transcribed Chart row`);
+
+  // The Chart cell colors come from Verelle's own palette, not Chart35's Creighton stamps.
+  const cellPaletteClasses = await page.$$eval(
+    '[data-testid="chart-cell"][data-civil-date] .stamp',
+    (stamps) =>
+      stamps.map((s) => ({
+        date: s.getAttribute("data-civil-date"),
+        classes: [...s.classList],
+      })),
+  );
+  const peakStamp = cellPaletteClasses.find((s) => s.date === lastPastDate);
+  const errorStamp = cellPaletteClasses.find((s) => s.date === pastDate);
+  const missedStamp = cellPaletteClasses.find((s) => s.date === missedDate);
+  const todayStamp = cellPaletteClasses.find((s) => s.date === today);
+  assert.ok(peakStamp?.classes.includes("stamp--peak"), "Peak cell lacked stamp--peak");
+  assert.ok(errorStamp?.classes.includes("stamp--error"), "Error cell lacked stamp--error");
+  assert.ok(missedStamp?.classes.includes("stamp--missed"), "Missed cell lacked stamp--missed");
+  assert.ok(todayStamp?.classes.includes("stamp--peak"), "Today's peak-override cell lacked stamp--peak");
+  for (const s of cellPaletteClasses) {
+    assert.ok(
+      !s.classes.some((c) => c.includes("green") || c.includes("yellow") || c.includes("white")),
+      "Cell contained Creighton stamp class",
+    );
+  }
+  console.log("ok: cell colours come from Verelle's own palette, not Creighton stamp colours");
+
+  // In trend zoom mode, stamp labels hide so the row collapses to a ribbon of circles.
+  await page.click('[data-testid="zoom-trend"]');
+  const trendLabelsHidden = await page.$$eval(
+    '[data-testid="chart-cell"][data-civil-date] .stamp-code',
+    (codes) => codes.every((code) => window.getComputedStyle(code).display === "none"),
+  );
+  assert.ok(trendLabelsHidden, "Trend zoom mode did not hide stamp codes");
+  await page.click('[data-testid="zoom-normal"]');
+  console.log("ok: trend zoom collapses cells into a dense circle ribbon");
+
 
   // 9. The backup screen reveals the runtime Shared owner phrase, says plainly
   //    what losing it means, and validates the restore path. The phrase is
