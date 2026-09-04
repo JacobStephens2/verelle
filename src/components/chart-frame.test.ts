@@ -239,7 +239,7 @@ describe("ChartFrame component presentation seam", () => {
   });
 
   describe("Method disclaimer", () => {
-    it("renders the disclaimer once at the start with an acknowledge action", async () => {
+    it("renders the disclaimer once at the start of the chart frame", async () => {
       const app = createSSRApp({
         render: () =>
           h(ChartFrame, {
@@ -251,7 +251,7 @@ describe("ChartFrame component presentation seam", () => {
 
       const html = await renderToString(app);
       expect(html).toContain('data-testid="disclaimer"');
-      expect(html).toContain('data-testid="dismiss-disclaimer"');
+      expect(html).toContain("Method disclaimer");
       expect(html).toContain("instructor");
       expect(html).toMatch(/charting tool|not a medical device/i);
     });

@@ -30,7 +30,6 @@ const emit = defineEmits<{ close: [] }>();
       </p>
     </section>
 
-
     <section aria-labelledby="identity-title" class="privacy__section">
       <h2 id="identity-title">No account, no email, no password</h2>
       <p data-testid="no-account">

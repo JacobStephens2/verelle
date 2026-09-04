@@ -4,8 +4,12 @@ import { computed, onMounted, ref, useTemplateRef } from "vue";
 import type { CivilDate } from "../chart/civil-date";
 import { todayCivilDate } from "../chart/civil-date";
 import type { ChartZoom } from "../chart/chart-presentation";
-import { DEFAULT_CHART_ZOOM, fertileBandPresentation } from "../chart/chart-presentation";
+import {
+  DEFAULT_CHART_ZOOM,
+  fertileBandPresentation,
+} from "../chart/chart-presentation";
 import type { ChartDay, FertileWindow, UnassignedChartDay } from "../chart/projection";
+
 import { CYCLE_DAY_COLUMNS, projectChart } from "../chart/projection";
 import type { CycleOverlay } from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
@@ -23,11 +27,13 @@ const props = defineProps<{
   profile?: Profile;
   syncState?: SyncState;
   pairingState?: PairingState;
+  protocolOfferSkipped?: boolean;
 }>();
 
 const emit = defineEmits<{
   selectDate: [date: CivilDate];
   openCycleOverlay: [startDate: CivilDate];
+  skipProtocolOffer: [];
 }>();
 
 const zoom = ref<ChartZoom>(DEFAULT_CHART_ZOOM);
@@ -41,25 +47,32 @@ const chart = computed(() =>
   ),
 );
 
+const localProtocolOfferSkipped = ref(false);
+
 const firstCycle = computed(() => chart.value.cycles[0]);
 const firstCycleOverlay = computed(() => {
-  if (!firstCycle.value) return undefined;
-  return props.cycleOverlays?.find((o) => o.startDate === firstCycle.value?.startDate);
+  const cycle = firstCycle.value;
+  if (!cycle || !props.cycleOverlays) return undefined;
+  return props.cycleOverlays.find((overlay) => overlay.startDate === cycle.startDate);
 });
 
-const protocolOfferSkipped = ref(false);
+const isProtocolOfferSkipped = computed(
+  () => props.protocolOfferSkipped ?? localProtocolOfferSkipped.value,
+);
 
 const showProtocolOffer = computed(() => {
   if (!firstCycle.value) return false;
-  const family = firstCycleOverlay.value?.protocolFamily;
-  return (family === null || family === undefined) && !protocolOfferSkipped.value;
+  const protocolFamily = firstCycleOverlay.value?.protocolFamily;
+  return (
+    (protocolFamily === null || protocolFamily === undefined) &&
+    !isProtocolOfferSkipped.value
+  );
 });
 
 const skipProtocolOffer = () => {
-  protocolOfferSkipped.value = true;
+  localProtocolOfferSkipped.value = true;
+  emit("skipProtocolOffer");
 };
-
-
 
 const columnCount = computed(() =>
   Math.max(
@@ -124,16 +137,9 @@ function unassignedChartDayLabel(day: UnassignedChartDay): string {
 
 const root = useTemplateRef<HTMLElement>("root");
 
-const disclaimerDismissed = ref(false);
-
-const dismissDisclaimer = () => {
-  disclaimerDismissed.value = true;
-};
-
 // A launch breadcrumb, reporting the column count and the frame's laid-out
 // width and position once mounted.
 onMounted(() => {
-
   requestAnimationFrame(() => {
     const box = root.value?.getBoundingClientRect();
     console.info(
@@ -173,7 +179,6 @@ onMounted(() => {
 
     <!-- Method disclaimer (shown once at start, not repeated per day) -->
     <aside
-      v-if="!disclaimerDismissed"
       class="chart__disclaimer"
       aria-label="Method disclaimer"
       data-testid="disclaimer"
@@ -188,14 +193,6 @@ onMounted(() => {
           or individualized instruction.
         </p>
       </div>
-      <button
-        type="button"
-        class="chart__disclaimer-dismiss"
-        data-testid="dismiss-disclaimer"
-        @click="dismissDisclaimer"
-      >
-        Acknowledge
-      </button>
     </aside>
 
     <!-- Protocol family offer at first Cycle Day 1 (skippable) -->
@@ -209,7 +206,7 @@ onMounted(() => {
         <h2 class="chart__protocol-offer-title">Choose a Protocol family</h2>
         <p class="chart__protocol-offer-text">
           Your first Cycle Day 1 is recorded. Verelle computes the fertile window
-          once you select a Marquette protocol family. You can choose a family
+          once you select a Marquette protocol family. You can choose a protocol family
           now, or skip and chart without one.
         </p>
       </div>
@@ -232,8 +229,6 @@ onMounted(() => {
         </button>
       </div>
     </aside>
-
-
 
     <!-- Zoom toolbar: Normal, Compact, Trend -->
     <ChartZoomControl v-model="zoom" />
@@ -482,21 +477,8 @@ onMounted(() => {
   color: var(--verelle-ink-muted);
 }
 
-.chart__disclaimer-dismiss {
-  min-height: 2rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--verelle-rule);
-  border-radius: 6px;
-  background: var(--verelle-surface-sunken);
-  color: var(--verelle-ink);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
 .chart__protocol-offer {
+
   display: flex;
   flex-direction: column;
   gap: 0.75rem;

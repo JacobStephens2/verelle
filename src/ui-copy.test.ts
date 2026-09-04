@@ -361,7 +361,6 @@ describe("UI copy", () => {
 
     // Present at the start of ChartFrame
     expect(chartFrame).toContain('data-testid="disclaimer"');
-    expect(chartFrame).toContain('data-testid="dismiss-disclaimer"');
     expect(chartFrame).toContain("Method disclaimer");
     expect(chartFrame).toMatch(/certified Marquette\s+instructor/);
     expect(chartFrame).toContain("not a medical device");
@@ -372,7 +371,6 @@ describe("UI copy", () => {
     expect(privacyAbout).toContain("Method disclaimer");
     expect(privacyAbout).toMatch(/certified Marquette\s+instructor/);
     expect(forbiddenWordsIn(privacyAbout)).toEqual([]);
-
 
     // Never repeated on per-day surfaces
     expect(chartCell.toLowerCase()).not.toContain("disclaimer");

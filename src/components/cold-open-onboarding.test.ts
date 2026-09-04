@@ -9,7 +9,7 @@ import { defaultProfile } from "../observations/profile";
 import ChartFrame from "./ChartFrame.vue";
 
 describe("Cold open, onboarding, and disclaimer seam integration", () => {
-  it("allows a new user to record a Monitor reading on first launch with no profile and no protocol family", async () => {
+  it("allows a new couple to record a Monitor reading on first launch with no profile and no protocol family", async () => {
     const store = createMemoryObservationStore();
     const today = "2026-06-15";
 
@@ -19,7 +19,7 @@ describe("Cold open, onboarding, and disclaimer seam integration", () => {
     expect(store.observeProfile().value).toEqual(defaultProfile());
 
 
-    // 2. User records a Monitor reading on first launch
+    // 2. The couple records a Monitor reading on first launch
     await store.upsert(today, { monitorReading: "High" });
 
     const observations = store.observe().value;
@@ -59,7 +59,7 @@ describe("Cold open, onboarding, and disclaimer seam integration", () => {
 
     // Disclaimer is shown once at the start
     expect(html).toContain('data-testid="disclaimer"');
-    expect(html).toContain('data-testid="dismiss-disclaimer"');
+    expect(html).toContain("Method disclaimer");
 
     // No protocol family offer before Cycle Day 1
     expect(html).not.toContain('data-testid="protocol-family-offer"');
@@ -99,7 +99,7 @@ describe("Cold open, onboarding, and disclaimer seam integration", () => {
     expect(html).not.toContain('data-has-fertile-window="true"');
     expect(html).not.toContain("chart__cell--fertile");
 
-    // Now if the user chooses a protocol family (e.g. regular_monitor)
+    // Now if the couple chooses a protocol family (e.g. regular_monitor)
     const overlay = {
       startDate: today,
       protocolFamily: "regular_monitor" as const,

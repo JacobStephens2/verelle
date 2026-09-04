@@ -24,8 +24,10 @@ const editor = useTemplateRef<HTMLElement>("editor");
 const overlay = ref<"backup" | "privacy" | "pairing" | "profile" | "cycle" | null>(null);
 const selectedCycleStartDate = ref<CivilDate | undefined>(undefined);
 const pairingState = ref<PairingState>("unpaired");
+const protocolOfferSkipped = ref(false);
 
 const observationStore = useObservationStore();
+
 const ownerManager = useOwnerManager();
 const observations = observationStore.observe();
 const cycleOverlays = observationStore.observeCycleOverlays();
@@ -113,10 +115,13 @@ const openCycleOverlay = (startDate?: CivilDate) => {
       :profile="profile"
       :sync-state="syncState"
       :pairing-state="pairingState"
+      :protocol-offer-skipped="protocolOfferSkipped"
       @select-date="openDayDetails"
       @open-cycle-overlay="openCycleOverlay($event)"
+      @skip-protocol-offer="protocolOfferSkipped = true"
     />
   </main>
+
 
 </template>
 
