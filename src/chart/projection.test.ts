@@ -922,6 +922,111 @@ describe("Fertile window computation (regular_monitor_plus_mucus: dual-check)", 
       confidence: "provisional",
     });
   });
+
+  it("closes on Monitor Peak + 3 when Mucus never detects a Peak (no_mucus_peak_but_monitor_peak)", () => {
+    // Monitor High on CD10. Mucus changes to thick/sticky on CD12.
+    // Monitor Peak on CD14-15 (last Peak CD15). Mucus stays non-peak (dry on CD15).
+    // Window closes CD15 + 3 = CD18 with REG-END-1.
+    const cd10 = applyUpdate(unrecordedObservation("2026-06-10"), { monitorReading: "High" });
+    const cd12 = applyUpdate(unrecordedObservation("2026-06-12"), { mucus: "thick and sticky" });
+    const cd14 = applyUpdate(unrecordedObservation("2026-06-14"), {
+      monitorReading: "Peak",
+      mucus: "thick and sticky",
+    });
+    const cd15 = applyUpdate(unrecordedObservation("2026-06-15"), {
+      monitorReading: "Peak",
+      mucus: "dry or scant",
+    });
+
+    const chart = projectChart(
+      [cd1, cd10, cd12, cd14, cd15],
+      "2026-06-22",
+      [dualOverlay],
+    );
+    const cycle = chart.cycles[0]!;
+
+    expect(cycle.fertileWindow?.end).toEqual({
+      cycleDay: 18,
+      ruleId: "REG-END-1",
+      confidence: "final",
+    });
+    expect(cycle.fertileWindow?.discrepancies).toContain("monitor_high_before_mucus_change");
+    expect(cycle.fertileWindow?.discrepancies).toContain("no_mucus_peak_but_monitor_peak");
+  });
+
+  it("attributes MUCUS-ONLY-START-2 and MUCUS-ONLY-END-2 in post-6 cycles when mucus peak controls history", () => {
+    const cycleStartDates = [
+      "2026-01-01",
+      "2026-01-29",
+      "2026-02-26",
+      "2026-03-26",
+      "2026-04-23",
+      "2026-05-21",
+      "2026-06-18",
+    ];
+    const observations: Observation[] = [];
+    const overlays: CycleOverlay[] = [];
+
+    // Prior 6 cycles: monitor peaks at CD 16 (offset 15), mucus peaks at CD 12 (offset 11)
+    // Earliest peak is CD 12 (mucus). Latest peak is CD 16 (monitor).
+    for (let i = 0; i < 6; i++) {
+      const startDate = cycleStartDates[i]!;
+      overlays.push({
+        ...defaultCycleOverlay(startDate),
+        protocolFamily: "regular_monitor_plus_mucus",
+        protocolVersion: "marquette_regular_plus_mucus_manual",
+      });
+      observations.push(
+        applyUpdate(unrecordedObservation(startDate), { bleeding: "Heavy" }),
+      );
+      // Bleeding ends
+      observations.push(
+        applyUpdate(unrecordedObservation(civilDatePlusDays(startDate, 4)), {
+          bleeding: "None",
+        }),
+      );
+      // Mucus Peak at CD 12
+      observations.push(
+        applyUpdate(unrecordedObservation(civilDatePlusDays(startDate, 11)), {
+          mucus: "clear and stretchy like egg white",
+        }),
+      );
+      // Monitor Peak at CD 16
+      observations.push(
+        applyUpdate(unrecordedObservation(civilDatePlusDays(startDate, 15)), {
+          monitorReading: "Peak",
+        }),
+      );
+    }
+
+    // Cycle 7
+    const c7Start = cycleStartDates[6]!;
+    overlays.push({
+      ...defaultCycleOverlay(c7Start),
+      protocolFamily: "regular_monitor_plus_mucus",
+      protocolVersion: "marquette_regular_plus_mucus_manual",
+    });
+    observations.push(
+      applyUpdate(unrecordedObservation(c7Start), { bleeding: "Heavy" }),
+    );
+
+    // Earliest peak in last 6 was CD 12 (mucus). Calendar start = CD 12 - 6 = CD 6.
+    // Rule attribution: earliest peak source was mucus -> MUCUS-ONLY-START-2.
+    // If no peaks in cycle 7, fallback end = latest peak (CD 16, monitor) + 3 = CD 19 with REG-END-2.
+    const chart = projectChart(observations, "2026-06-25", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    expect(cycle7.fertileWindow?.start).toEqual({
+      cycleDay: 6,
+      ruleId: "MUCUS-ONLY-START-2",
+      confidence: "final",
+    });
+    expect(cycle7.fertileWindow?.end).toEqual({
+      cycleDay: 19,
+      ruleId: "REG-END-2",
+      confidence: "provisional",
+    });
+  });
 });
 
 

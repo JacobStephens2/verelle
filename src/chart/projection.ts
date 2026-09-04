@@ -1,6 +1,7 @@
 import type {
   Bleeding,
   MonitorReading,
+  Mucus,
   Observation,
 } from "../observations/observation";
 import { isFullFlow, mucusCategory } from "../observations/observation";
@@ -144,7 +145,9 @@ function markersFor(observation: Observation | undefined): ObservationMarker[] {
 /**
  * Departure from baseline mucus: any observed mucus other than dry/scant.
  */
-export function isMucusChangeFromBaseline(mucus: string | null | undefined): boolean {
+export function isMucusChangeFromBaseline(
+  mucus: Mucus | string | null | undefined,
+): boolean {
   if (!mucus) return false;
   return mucus !== "dry or scant" && mucus !== "Dry";
 }
@@ -164,6 +167,46 @@ export function isDayInFertileWindow(
     return cycleDay >= startCycleDay;
   }
   return cycleDay >= startCycleDay && cycleDay <= endCycleDay;
+}
+
+interface PriorMethodCycle {
+  readonly startDate: CivilDate;
+  readonly observations: readonly Observation[];
+}
+
+function getLastSixPriorMethodCycles(
+  cycleStarts: readonly Observation[],
+  currentIndex: number,
+  overlaysByStartDate: ReadonlyMap<CivilDate, CycleOverlay>,
+  datedObservations: readonly Observation[],
+  today: CivilDate,
+): readonly PriorMethodCycle[] {
+  const priorMethodStarts = cycleStarts.slice(0, currentIndex).filter((s) => {
+    const priorOverlay = overlaysByStartDate.get(s.civilDate);
+    return (
+      priorOverlay?.protocolFamily !== null &&
+      priorOverlay?.protocolFamily !== undefined
+    );
+  });
+  const lastSixPriorStarts = priorMethodStarts.slice(-6);
+  return lastSixPriorStarts.map((priorStart) => {
+    const priorIndex = cycleStarts.findIndex(
+      (s) => s.civilDate === priorStart.civilDate,
+    );
+    const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
+    const priorEndDate =
+      priorNextStart === undefined
+        ? today
+        : civilDatePlusDays(priorNextStart, -1);
+    const observations = datedObservations.filter(
+      (o) =>
+        o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
+    );
+    return {
+      startDate: priorStart.civilDate,
+      observations,
+    };
+  });
 }
 
 /**
@@ -320,31 +363,22 @@ export function projectChart(
         };
       } else {
         // After six completed method cycles: use historical Monitor Peaks
-        const priorMethodStarts = cycleStarts.slice(0, index).filter((s) => {
-          const priorOverlay = overlaysByStartDate.get(s.civilDate);
-          return priorOverlay?.protocolFamily !== null && priorOverlay?.protocolFamily !== undefined;
-        });
-        const lastSixPriorStarts = priorMethodStarts.slice(-6);
+        const priorCycles = getLastSixPriorMethodCycles(
+          cycleStarts,
+          index,
+          overlaysByStartDate,
+          datedObservations,
+          today,
+        );
         const historicalPeakCycleDays: number[] = [];
 
-        for (const priorStart of lastSixPriorStarts) {
-          const priorIndex = cycleStarts.findIndex(
-            (s) => s.civilDate === priorStart.civilDate,
-          );
-          const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
-          const priorEndDate =
-            priorNextStart === undefined
-              ? today
-              : civilDatePlusDays(priorNextStart, -1);
-          const priorObservations = datedObservations.filter(
-            (o) => o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
-          );
-          const priorMonitorPeaks = priorObservations.filter(
+        for (const cycle of priorCycles) {
+          const priorMonitorPeaks = cycle.observations.filter(
             (o) => o.monitorReading === "Peak",
           );
           for (const peak of priorMonitorPeaks) {
             const peakCycleDay =
-              daysBetweenCivilDates(priorStart.civilDate, peak.civilDate) + 1;
+              daysBetweenCivilDates(cycle.startDate, peak.civilDate) + 1;
             historicalPeakCycleDays.push(peakCycleDay);
           }
         }
@@ -502,32 +536,23 @@ export function projectChart(
         };
       } else {
         // After six completed cycles under mucus_only: historical mucus peaks
-        const priorMethodStarts = cycleStarts.slice(0, index).filter((s) => {
-          const priorOverlay = overlaysByStartDate.get(s.civilDate);
-          return priorOverlay?.protocolFamily !== null && priorOverlay?.protocolFamily !== undefined;
-        });
-        const lastSixPriorStarts = priorMethodStarts.slice(-6);
+        const priorCycles = getLastSixPriorMethodCycles(
+          cycleStarts,
+          index,
+          overlaysByStartDate,
+          datedObservations,
+          today,
+        );
         const historicalMucusPeakCycleDays: number[] = [];
 
-        for (const priorStart of lastSixPriorStarts) {
-          const priorIndex = cycleStarts.findIndex(
-            (s) => s.civilDate === priorStart.civilDate,
-          );
-          const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
-          const priorEndDate =
-            priorNextStart === undefined
-              ? today
-              : civilDatePlusDays(priorNextStart, -1);
-          const priorObservations = datedObservations.filter(
-            (o) => o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
-          );
-          const priorPeakMucusObs = priorObservations.filter(
+        for (const cycle of priorCycles) {
+          const priorPeakMucusObs = cycle.observations.filter(
             (o) => mucusCategory(o.mucus) === "Peak",
           );
           const priorLastPeakMucus = priorPeakMucusObs[priorPeakMucusObs.length - 1];
           if (priorLastPeakMucus !== undefined) {
             const peakCycleDay =
-              daysBetweenCivilDates(priorStart.civilDate, priorLastPeakMucus.civilDate) + 1;
+              daysBetweenCivilDates(cycle.startDate, priorLastPeakMucus.civilDate) + 1;
             historicalMucusPeakCycleDays.push(peakCycleDay);
           }
         }
@@ -614,6 +639,7 @@ export function projectChart(
 
       let startBoundary: FertileWindowBoundary;
       let latestPeakLast6: number | undefined;
+      let latestPeakSource: "monitor" | "mucus" = "monitor";
 
       if (methodCycleNumber <= 6) {
         // In first six cycles, calendar start is CD6
@@ -657,51 +683,50 @@ export function projectChart(
         }
       } else {
         // After six completed cycles: history uses both Monitor Peaks and Mucus Peaks
-        const priorMethodStarts = cycleStarts.slice(0, index).filter((s) => {
-          const priorOverlay = overlaysByStartDate.get(s.civilDate);
-          return priorOverlay?.protocolFamily !== null && priorOverlay?.protocolFamily !== undefined;
-        });
-        const lastSixPriorStarts = priorMethodStarts.slice(-6);
-        const historicalPeakCycleDays: number[] = [];
+        const priorCycles = getLastSixPriorMethodCycles(
+          cycleStarts,
+          index,
+          overlaysByStartDate,
+          datedObservations,
+          today,
+        );
+        interface HistoricalPeak {
+          readonly cycleDay: number;
+          readonly source: "monitor" | "mucus";
+        }
+        const historicalPeaks: HistoricalPeak[] = [];
 
-        for (const priorStart of lastSixPriorStarts) {
-          const priorIndex = cycleStarts.findIndex(
-            (s) => s.civilDate === priorStart.civilDate,
-          );
-          const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
-          const priorEndDate =
-            priorNextStart === undefined
-              ? today
-              : civilDatePlusDays(priorNextStart, -1);
-          const priorObservations = datedObservations.filter(
-            (o) => o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
-          );
-          for (const peak of priorObservations.filter((o) => o.monitorReading === "Peak")) {
-            historicalPeakCycleDays.push(
-              daysBetweenCivilDates(priorStart.civilDate, peak.civilDate) + 1,
-            );
+        for (const cycle of priorCycles) {
+          for (const peak of cycle.observations.filter((o) => o.monitorReading === "Peak")) {
+            historicalPeaks.push({
+              cycleDay: daysBetweenCivilDates(cycle.startDate, peak.civilDate) + 1,
+              source: "monitor",
+            });
           }
-          const priorPeakMucusObs = priorObservations.filter(
+          const priorPeakMucusObs = cycle.observations.filter(
             (o) => mucusCategory(o.mucus) === "Peak",
           );
           const priorLastPeakMucus = priorPeakMucusObs[priorPeakMucusObs.length - 1];
           if (priorLastPeakMucus !== undefined) {
-            historicalPeakCycleDays.push(
-              daysBetweenCivilDates(priorStart.civilDate, priorLastPeakMucus.civilDate) + 1,
-            );
+            historicalPeaks.push({
+              cycleDay: daysBetweenCivilDates(cycle.startDate, priorLastPeakMucus.civilDate) + 1,
+              source: "mucus",
+            });
           }
         }
 
-        if (historicalPeakCycleDays.length === 0) {
+        if (historicalPeaks.length === 0) {
           startBoundary = {
             cycleDay: 6,
             ruleId: "REG-START-1",
             confidence: "final",
           };
         } else {
-          const earliestPeakLast6 = Math.min(...historicalPeakCycleDays);
-          latestPeakLast6 = Math.max(...historicalPeakCycleDays);
-          const historicalCalendarStart = Math.max(1, earliestPeakLast6 - 6);
+          const earliestPeak = [...historicalPeaks].sort((a, b) => a.cycleDay - b.cycleDay)[0]!;
+          const latestPeak = [...historicalPeaks].sort((a, b) => b.cycleDay - a.cycleDay)[0]!;
+          latestPeakLast6 = latestPeak.cycleDay;
+          latestPeakSource = latestPeak.source;
+          const historicalCalendarStart = Math.max(1, earliestPeak.cycleDay - 6);
 
           if (
             firstMucusChangeCycleDay !== undefined &&
@@ -737,7 +762,7 @@ export function projectChart(
           } else {
             startBoundary = {
               cycleDay: historicalCalendarStart,
-              ruleId: "REG-START-2",
+              ruleId: earliestPeak.source === "mucus" ? "MUCUS-ONLY-START-2" : "REG-START-2",
               confidence: "final",
             };
           }
@@ -820,7 +845,7 @@ export function projectChart(
           const isEndComplete = today > endCivilDate || nextStart !== undefined;
           endBoundary = {
             cycleDay: fallbackEnd,
-            ruleId: "REG-END-2",
+            ruleId: latestPeakSource === "mucus" ? "MUCUS-ONLY-END-2" : "REG-END-2",
             confidence: isEndComplete ? "final" : "provisional",
           };
         } else {

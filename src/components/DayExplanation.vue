@@ -97,7 +97,7 @@ const provisionalExplanation = computed<string | null>(() => {
       return "This boundary is provisional. Observing a non-Peak mucus day after a Mucus Peak and completing three full days will make it final.";
     }
     if (props.protocolFamily === "regular_monitor_plus_mucus") {
-      return "This boundary is provisional. Recording a Peak marker and completing three full days will make it final.";
+      return "This boundary is provisional. Completing three full days after a Monitor Peak or a Mucus Peak will make it final.";
     }
     return "This boundary is provisional. Recording a Monitor Peak and completing three full days after the last Monitor Peak will make it final.";
   }

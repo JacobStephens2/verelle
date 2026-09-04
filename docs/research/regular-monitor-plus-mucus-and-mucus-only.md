@@ -88,7 +88,7 @@ Key findings against primary literature:
 3. **What constitutes a Change from Baseline?**
    Under Marquette teaching:
    - For a woman whose baseline is dry: **Any observed mucus** (including sticky or scant) is a departure from baseline and is termed "first mucus seen or felt".
-   - In women with a continuous basic infertile pattern (BIP) of sticky/cloudy mucus (more common in postpartum or perimenopause), baseline is that unchanging daily discharge. A "change from baseline" is any change in sensation (e.g. from dry/tacky to moist/wet) or appearance (from thick/clumpy to thinner/cloudy/stretchy).
+   - In women with a continuous basic infertile pattern (BIP) of sticky/cloudy mucus (more common in postpartum or perimenopause), baseline is that unchanging daily mucus pattern. A "change from baseline" is any change in sensation (e.g. from dry/tacky to moist/wet) or appearance (from thick/clumpy to thinner/cloudy/stretchy).
    - Therefore, in regular cycles, the transition from dry to **any mucus observation** constitutes a change from baseline and signals the opening of the biological fertile phase.
 
 #### Start of Fertility Under `regular_monitor_plus_mucus` (Dual-Check)
