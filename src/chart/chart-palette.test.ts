@@ -233,5 +233,32 @@ describe("Chart presentation and palette", () => {
     expect(css).toContain(".chart__cell--highlight");
     expect(css).toContain(".stamp--highlight");
   });
+
+  it("defines Calendar view structural styles and Verelle palette markers in calendar.css", async () => {
+    const cssPath = path.join(REPO_ROOT, "src", "styles", "calendar.css");
+    const css = await readFile(cssPath, "utf8");
+
+    // Structural elements ported from Chart35
+    expect(css).toContain(".calendar-nav");
+    expect(css).toContain(".calendar-grid");
+    expect(css).toContain(".calendar-day");
+    expect(css).toContain(".calendar-day.cycle-start");
+    expect(css).toContain(".calendar-stamp");
+    expect(css).toContain(".calendar-intercourse");
+
+    // Palette tokens for markers
+    expect(css).toContain("var(--verelle-stamp-low)");
+    expect(css).toContain("var(--verelle-stamp-high)");
+    expect(css).toContain("var(--verelle-stamp-peak)");
+    expect(css).toContain("var(--verelle-stamp-bleeding)");
+    expect(css).toContain("var(--verelle-stamp-missed)");
+    expect(css).toContain("var(--verelle-stamp-error)");
+
+    // Excludes Creighton colors
+    const creightonColors = ["#4f7b63", "#dfc26b", "#fffdfb"];
+    for (const color of creightonColors) {
+      expect(css.toLowerCase()).not.toContain(color);
+    }
+  });
 });
 

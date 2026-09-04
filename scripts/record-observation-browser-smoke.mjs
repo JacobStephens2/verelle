@@ -27,7 +27,11 @@ import {
 
 const PORT = 4194;
 const origin = `http://127.0.0.1:${PORT}`;
-const chromePath = process.env.VERELLE_CHROME_PATH || "/usr/bin/google-chrome";
+const chromePath =
+  process.env.VERELLE_CHROME_PATH ||
+  (process.platform === "darwin"
+    ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    : "/usr/bin/google-chrome");
 // A typical phone. The four mandatory fields have to be settable inside this
 // box without scrolling.
 const VIEWPORT = { width: 390, height: 844 };
