@@ -209,6 +209,26 @@ function getLastSixPriorMethodCycles(
   });
 }
 
+function computePeakPlusThreeEndBoundary(
+  anchorPeak: Observation | undefined,
+  startCivilDate: CivilDate,
+  today: CivilDate,
+  nextStartCivilDate: CivilDate | undefined,
+  ruleId: string,
+): FertileWindowBoundary | null {
+  if (anchorPeak === undefined) return null;
+  const anchorPeakCycleDay =
+    daysBetweenCivilDates(startCivilDate, anchorPeak.civilDate) + 1;
+  const endCycleDay = anchorPeakCycleDay + 3;
+  const endCivilDate = civilDatePlusDays(anchorPeak.civilDate, 3);
+  const isEndComplete = today > endCivilDate || nextStartCivilDate !== undefined;
+  return {
+    cycleDay: endCycleDay,
+    ruleId,
+    confidence: isEndComplete ? "final" : "provisional",
+  };
+}
+
 /**
  * Project Observations into Cycle rows and Cycle Day columns.
  *
@@ -875,12 +895,14 @@ export function projectChart(
       const daysWithHighOrPeak: number[] = [];
       if (firstHighCycleDay !== undefined) daysWithHighOrPeak.push(firstHighCycleDay);
       if (monitorPeaks.length > 0) {
-        const firstPeakCD = daysBetweenCivilDates(start.civilDate, monitorPeaks[0]!.civilDate) + 1;
-        daysWithHighOrPeak.push(firstPeakCD);
+        const firstPeakCycleDay =
+          daysBetweenCivilDates(start.civilDate, monitorPeaks[0]!.civilDate) + 1;
+        daysWithHighOrPeak.push(firstPeakCycleDay);
       }
       if (peakOverrides.length > 0) {
-        const firstOverrideCD = daysBetweenCivilDates(start.civilDate, peakOverrides[0]!.civilDate) + 1;
-        daysWithHighOrPeak.push(firstOverrideCD);
+        const firstOverrideCycleDay =
+          daysBetweenCivilDates(start.civilDate, peakOverrides[0]!.civilDate) + 1;
+        daysWithHighOrPeak.push(firstOverrideCycleDay);
       }
 
       if (daysWithHighOrPeak.length > 0) {
@@ -891,18 +913,13 @@ export function projectChart(
           confidence: "final",
         };
 
-        let endBoundary: FertileWindowBoundary | null = null;
-        if (anchorPeak !== undefined) {
-          const anchorPeakCD = daysBetweenCivilDates(start.civilDate, anchorPeak.civilDate) + 1;
-          const endCycleDay = anchorPeakCD + 3;
-          const endCivilDate = civilDatePlusDays(anchorPeak.civilDate, 3);
-          const isEndComplete = today > endCivilDate || nextStart !== undefined;
-          endBoundary = {
-            cycleDay: endCycleDay,
-            ruleId: "PP0-END",
-            confidence: isEndComplete ? "final" : "provisional",
-          };
-        }
+        const endBoundary = computePeakPlusThreeEndBoundary(
+          anchorPeak,
+          start.civilDate,
+          today,
+          nextStart,
+          "PP0-END",
+        );
 
         fertileWindow = {
           start: startBoundary,
@@ -933,18 +950,13 @@ export function projectChart(
         };
       }
 
-      let endBoundary: FertileWindowBoundary | null = null;
-      if (anchorPeak !== undefined) {
-        const anchorPeakCD = daysBetweenCivilDates(start.civilDate, anchorPeak.civilDate) + 1;
-        const endCycleDay = anchorPeakCD + 3;
-        const endCivilDate = civilDatePlusDays(anchorPeak.civilDate, 3);
-        const isEndComplete = today > endCivilDate || nextStart !== undefined;
-        endBoundary = {
-          cycleDay: endCycleDay,
-          ruleId: "PP-RETURN-END-1",
-          confidence: isEndComplete ? "final" : "provisional",
-        };
-      }
+      const endBoundary = computePeakPlusThreeEndBoundary(
+        anchorPeak,
+        start.civilDate,
+        today,
+        nextStart,
+        "PP-RETURN-END-1",
+      );
 
       fertileWindow = {
         start: startBoundary,

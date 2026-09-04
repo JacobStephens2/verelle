@@ -31,11 +31,11 @@ const emit = defineEmits<{ close: [] }>();
 const store = useObservationStore();
 const overlays = store.observeCycleOverlays();
 
-const activeStartDate = ref<CivilDate>(
+const activeStartDate = ref<CivilDate | null>(
   props.startDate ??
     (props.cycleStartDates && props.cycleStartDates.length > 0
-      ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? ("" as CivilDate))
-      : ("" as CivilDate)),
+      ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? null)
+      : null),
 );
 
 watch(
@@ -45,7 +45,8 @@ watch(
   },
 );
 
-const currentOverlay = computed<CycleOverlay>(() => {
+const currentOverlay = computed<CycleOverlay | null>(() => {
+  if (!activeStartDate.value) return null;
   const found = overlays.value.find((o) => o.startDate === activeStartDate.value);
   return found ?? defaultCycleOverlay(activeStartDate.value);
 });
@@ -61,7 +62,13 @@ const edit = (field: keyof CycleOverlayFields) => {
   edited.value = recordingEdits.mark([field]);
 };
 
-const load = (overlay: CycleOverlay, preserveEdited: boolean) => {
+const load = (overlay: CycleOverlay | null, preserveEdited: boolean) => {
+  if (!overlay) {
+    protocolFamily.value = null;
+    intention.value = null;
+    postpartumCycleNumber.value = "";
+    return;
+  }
   const settled = (field: keyof CycleOverlayFields) =>
     !preserveEdited || !edited.value.has(field);
   if (settled("protocolFamily")) protocolFamily.value = overlay.protocolFamily;
@@ -93,13 +100,13 @@ const isEnteringNewCycle = ref(false);
 const toggleEnteringNewCycle = () => {
   isEnteringNewCycle.value = !isEnteringNewCycle.value;
   if (isEnteringNewCycle.value) {
-    activeStartDate.value = "" as CivilDate;
+    activeStartDate.value = null;
   } else {
     activeStartDate.value =
       props.startDate ??
       (props.cycleStartDates && props.cycleStartDates.length > 0
-        ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? ("" as CivilDate))
-        : ("" as CivilDate));
+        ? (props.cycleStartDates[props.cycleStartDates.length - 1] ?? null)
+        : null);
   }
 };
 
