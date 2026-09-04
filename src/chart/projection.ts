@@ -1,6 +1,7 @@
 import type {
   Bleeding,
   MonitorReading,
+  Mucus,
   Observation,
 } from "../observations/observation";
 import { isFullFlow, mucusCategory } from "../observations/observation";
@@ -52,11 +53,23 @@ export interface FertileWindowBoundary {
 }
 
 /**
+ * Discrepancy flags between monitor and mucus markers in dual-check protocols.
+ */
+export type MarkerDiscrepancy =
+  | "mucus_fertile_before_monitor_high"
+  | "monitor_high_before_mucus_change"
+  | "mucus_peak_after_monitor_peak"
+  | "monitor_peak_after_mucus_peak"
+  | "no_monitor_peak_but_mucus_peak"
+  | "no_mucus_peak_but_monitor_peak";
+
+/**
  * The span of cycle days the selected protocol treats as fertile (`CONTEXT.md`).
  */
 export interface FertileWindow {
   readonly start: FertileWindowBoundary;
   readonly end: FertileWindowBoundary | null;
+  readonly discrepancies?: readonly MarkerDiscrepancy[];
 }
 
 /** One Civil date in a numbered Cycle. */
@@ -130,6 +143,16 @@ function markersFor(observation: Observation | undefined): ObservationMarker[] {
 }
 
 /**
+ * Departure from baseline mucus: any observed mucus other than dry/scant.
+ */
+export function isMucusChangeFromBaseline(
+  mucus: Mucus | string | null | undefined,
+): boolean {
+  if (!mucus) return false;
+  return mucus !== "dry or scant" && mucus !== "Dry";
+}
+
+/**
  * Determine whether a Cycle Day falls within a Fertile window.
  */
 export function isDayInFertileWindow(
@@ -144,6 +167,46 @@ export function isDayInFertileWindow(
     return cycleDay >= startCycleDay;
   }
   return cycleDay >= startCycleDay && cycleDay <= endCycleDay;
+}
+
+interface PriorMethodCycle {
+  readonly startDate: CivilDate;
+  readonly observations: readonly Observation[];
+}
+
+function getLastSixPriorMethodCycles(
+  cycleStarts: readonly Observation[],
+  currentIndex: number,
+  overlaysByStartDate: ReadonlyMap<CivilDate, CycleOverlay>,
+  datedObservations: readonly Observation[],
+  today: CivilDate,
+): readonly PriorMethodCycle[] {
+  const priorMethodStarts = cycleStarts.slice(0, currentIndex).filter((s) => {
+    const priorOverlay = overlaysByStartDate.get(s.civilDate);
+    return (
+      priorOverlay?.protocolFamily !== null &&
+      priorOverlay?.protocolFamily !== undefined
+    );
+  });
+  const lastSixPriorStarts = priorMethodStarts.slice(-6);
+  return lastSixPriorStarts.map((priorStart) => {
+    const priorIndex = cycleStarts.findIndex(
+      (s) => s.civilDate === priorStart.civilDate,
+    );
+    const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
+    const priorEndDate =
+      priorNextStart === undefined
+        ? today
+        : civilDatePlusDays(priorNextStart, -1);
+    const observations = datedObservations.filter(
+      (o) =>
+        o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
+    );
+    return {
+      startDate: priorStart.civilDate,
+      observations,
+    };
+  });
 }
 
 /**
@@ -224,6 +287,45 @@ export function projectChart(
       overlay?.protocolVersion ??
       (protocolFamily ? defaultProtocolVersion(protocolFamily) : null);
 
+    // Compute Mucus Peak for this cycle (knowable retrospectively)
+    const peakMucusObservations = observationsInCycle.filter(
+      (observation) => mucusCategory(observation.mucus) === "Peak",
+    );
+    const lastPeakMucus = peakMucusObservations[peakMucusObservations.length - 1];
+
+    let mucusPeak: MucusPeak | null = null;
+    if (lastPeakMucus !== undefined) {
+      const hasSubsequentNonPeakMucus = observationsInCycle.some((observation) => {
+        if (observation.civilDate <= lastPeakMucus.civilDate) return false;
+        const category = mucusCategory(observation.mucus);
+        return category !== null && category !== "Peak";
+      });
+      mucusPeak = {
+        civilDate: lastPeakMucus.civilDate,
+        cycleDay: daysBetweenCivilDates(start.civilDate, lastPeakMucus.civilDate) + 1,
+        provisional: !hasSubsequentNonPeakMucus,
+      };
+    }
+
+    // High monitor readings and Mucus change observations
+    const highReadings = observationsInCycle.filter(
+      (o) => o.monitorReading === "High",
+    );
+    const firstHighObs = highReadings[0];
+    const firstHighCycleDay =
+      firstHighObs !== undefined
+        ? daysBetweenCivilDates(start.civilDate, firstHighObs.civilDate) + 1
+        : undefined;
+
+    const mucusChangeObservations = observationsInCycle.filter(
+      (observation) => isMucusChangeFromBaseline(observation.mucus),
+    );
+    const firstMucusChange = mucusChangeObservations[0];
+    const firstMucusChangeCycleDay =
+      firstMucusChange !== undefined
+        ? daysBetweenCivilDates(start.civilDate, firstMucusChange.civilDate) + 1
+        : undefined;
+
     // Count only cycles charting under a method protocol family
     const methodCyclesBefore = cycleStarts.slice(0, index).filter((s) => {
       const priorOverlay = overlaysByStartDate.get(s.civilDate);
@@ -261,31 +363,22 @@ export function projectChart(
         };
       } else {
         // After six completed method cycles: use historical Monitor Peaks
-        const priorMethodStarts = cycleStarts.slice(0, index).filter((s) => {
-          const priorOverlay = overlaysByStartDate.get(s.civilDate);
-          return priorOverlay?.protocolFamily !== null && priorOverlay?.protocolFamily !== undefined;
-        });
-        const lastSixPriorStarts = priorMethodStarts.slice(-6);
+        const priorCycles = getLastSixPriorMethodCycles(
+          cycleStarts,
+          index,
+          overlaysByStartDate,
+          datedObservations,
+          today,
+        );
         const historicalPeakCycleDays: number[] = [];
 
-        for (const priorStart of lastSixPriorStarts) {
-          const priorIndex = cycleStarts.findIndex(
-            (s) => s.civilDate === priorStart.civilDate,
-          );
-          const priorNextStart = cycleStarts[priorIndex + 1]?.civilDate;
-          const priorEndDate =
-            priorNextStart === undefined
-              ? today
-              : civilDatePlusDays(priorNextStart, -1);
-          const priorObservations = datedObservations.filter(
-            (o) => o.civilDate >= priorStart.civilDate && o.civilDate <= priorEndDate,
-          );
-          const priorMonitorPeaks = priorObservations.filter(
+        for (const cycle of priorCycles) {
+          const priorMonitorPeaks = cycle.observations.filter(
             (o) => o.monitorReading === "Peak",
           );
           for (const peak of priorMonitorPeaks) {
             const peakCycleDay =
-              daysBetweenCivilDates(priorStart.civilDate, peak.civilDate) + 1;
+              daysBetweenCivilDates(cycle.startDate, peak.civilDate) + 1;
             historicalPeakCycleDays.push(peakCycleDay);
           }
         }
@@ -306,14 +399,6 @@ export function projectChart(
 
           // Start rule: earlier of earliest Monitor Peak minus six and current cycle's first High
           const historicalCalendarStart = Math.max(1, earliestPeakLast6 - 6);
-          const highReadings = observationsInCycle.filter(
-            (o) => o.monitorReading === "High",
-          );
-          const firstHighObs = highReadings[0];
-          const firstHighCycleDay =
-            firstHighObs !== undefined
-              ? daysBetweenCivilDates(start.civilDate, firstHighObs.civilDate) + 1
-              : undefined;
 
           let startBoundary: FertileWindowBoundary;
           if (
@@ -408,6 +493,371 @@ export function projectChart(
           };
         }
       }
+    } else if (
+      protocolFamily === "mucus_only" &&
+      protocolVersion === "marquette_mucus_only_manual"
+    ) {
+      if (methodCycleNumber <= 6) {
+        let startBoundary: FertileWindowBoundary;
+        if (
+          firstMucusChangeCycleDay !== undefined &&
+          firstMucusChangeCycleDay < 6
+        ) {
+          startBoundary = {
+            cycleDay: firstMucusChangeCycleDay,
+            ruleId: "MUCUS-ONLY-START-3",
+            confidence: "final",
+          };
+        } else {
+          startBoundary = {
+            cycleDay: 6,
+            ruleId: "MUCUS-ONLY-START-1",
+            confidence: "final",
+          };
+        }
+
+        let endBoundary: FertileWindowBoundary | null = null;
+        if (mucusPeak !== null) {
+          const endCycleDay = mucusPeak.cycleDay + 3;
+          const endCivilDate = civilDatePlusDays(mucusPeak.civilDate, 3);
+          const isEndComplete =
+            !mucusPeak.provisional &&
+            (today > endCivilDate || nextStart !== undefined);
+          endBoundary = {
+            cycleDay: endCycleDay,
+            ruleId: "MUCUS-ONLY-END-1",
+            confidence: isEndComplete ? "final" : "provisional",
+          };
+        }
+
+        fertileWindow = {
+          start: startBoundary,
+          end: endBoundary,
+        };
+      } else {
+        // After six completed cycles under mucus_only: historical mucus peaks
+        const priorCycles = getLastSixPriorMethodCycles(
+          cycleStarts,
+          index,
+          overlaysByStartDate,
+          datedObservations,
+          today,
+        );
+        const historicalMucusPeakCycleDays: number[] = [];
+
+        for (const cycle of priorCycles) {
+          const priorPeakMucusObs = cycle.observations.filter(
+            (o) => mucusCategory(o.mucus) === "Peak",
+          );
+          const priorLastPeakMucus = priorPeakMucusObs[priorPeakMucusObs.length - 1];
+          if (priorLastPeakMucus !== undefined) {
+            const peakCycleDay =
+              daysBetweenCivilDates(cycle.startDate, priorLastPeakMucus.civilDate) + 1;
+            historicalMucusPeakCycleDays.push(peakCycleDay);
+          }
+        }
+
+        if (historicalMucusPeakCycleDays.length === 0) {
+          fertileWindow = {
+            start: {
+              cycleDay: 6,
+              ruleId: "MUCUS-ONLY-START-1",
+              confidence: "final",
+            },
+            end: null,
+          };
+        } else {
+          const earliestPeakLast6 = Math.min(...historicalMucusPeakCycleDays);
+          const latestPeakLast6 = Math.max(...historicalMucusPeakCycleDays);
+          const historicalCalendarStart = Math.max(1, earliestPeakLast6 - 6);
+
+          let startBoundary: FertileWindowBoundary;
+          if (
+            firstMucusChangeCycleDay !== undefined &&
+            firstMucusChangeCycleDay < historicalCalendarStart
+          ) {
+            startBoundary = {
+              cycleDay: firstMucusChangeCycleDay,
+              ruleId: "MUCUS-ONLY-START-3",
+              confidence: "final",
+            };
+          } else {
+            startBoundary = {
+              cycleDay: historicalCalendarStart,
+              ruleId: "MUCUS-ONLY-START-2",
+              confidence: "final",
+            };
+          }
+
+          let endBoundary: FertileWindowBoundary | null = null;
+          if (mucusPeak !== null) {
+            const endCycleDay = mucusPeak.cycleDay + 3;
+            const endCivilDate = civilDatePlusDays(mucusPeak.civilDate, 3);
+            const isEndComplete =
+              !mucusPeak.provisional &&
+              (today > endCivilDate || nextStart !== undefined);
+            endBoundary = {
+              cycleDay: endCycleDay,
+              ruleId: "MUCUS-ONLY-END-1",
+              confidence: isEndComplete ? "final" : "provisional",
+            };
+          } else {
+            const fallbackEnd = latestPeakLast6 + 3;
+            const endCivilDate = civilDatePlusDays(start.civilDate, fallbackEnd - 1);
+            const isEndComplete = today > endCivilDate || nextStart !== undefined;
+            endBoundary = {
+              cycleDay: fallbackEnd,
+              ruleId: "MUCUS-ONLY-END-2",
+              confidence: isEndComplete ? "final" : "provisional",
+            };
+          }
+
+          fertileWindow = {
+            start: startBoundary,
+            end: endBoundary,
+          };
+        }
+      }
+    } else if (
+      protocolFamily === "regular_monitor_plus_mucus" &&
+      protocolVersion === "marquette_regular_plus_mucus_manual"
+    ) {
+      const discrepancies: MarkerDiscrepancy[] = [];
+
+      // Record start discrepancies
+      if (
+        firstMucusChangeCycleDay !== undefined &&
+        (firstHighCycleDay === undefined || firstMucusChangeCycleDay < firstHighCycleDay)
+      ) {
+        discrepancies.push("mucus_fertile_before_monitor_high");
+      } else if (
+        firstHighCycleDay !== undefined &&
+        (firstMucusChangeCycleDay === undefined || firstHighCycleDay < firstMucusChangeCycleDay)
+      ) {
+        discrepancies.push("monitor_high_before_mucus_change");
+      }
+
+      let startBoundary: FertileWindowBoundary;
+      let latestPeakLast6: number | undefined;
+      let latestPeakSource: "monitor" | "mucus" = "monitor";
+
+      if (methodCycleNumber <= 6) {
+        // In first six cycles, calendar start is CD6
+        if (
+          firstMucusChangeCycleDay !== undefined &&
+          firstMucusChangeCycleDay < 6 &&
+          (firstHighCycleDay === undefined || firstMucusChangeCycleDay < firstHighCycleDay)
+        ) {
+          startBoundary = {
+            cycleDay: firstMucusChangeCycleDay,
+            ruleId: "MUCUS-START",
+            confidence: "final",
+          };
+        } else if (
+          firstHighCycleDay !== undefined &&
+          firstHighCycleDay < 6 &&
+          (firstMucusChangeCycleDay === undefined || firstHighCycleDay < firstMucusChangeCycleDay)
+        ) {
+          startBoundary = {
+            cycleDay: firstHighCycleDay,
+            ruleId: "REG-START-3",
+            confidence: "final",
+          };
+        } else if (
+          firstHighCycleDay !== undefined &&
+          firstHighCycleDay < 6 &&
+          firstMucusChangeCycleDay !== undefined &&
+          firstHighCycleDay === firstMucusChangeCycleDay
+        ) {
+          startBoundary = {
+            cycleDay: firstHighCycleDay,
+            ruleId: "REG-START-3",
+            confidence: "final",
+          };
+        } else {
+          startBoundary = {
+            cycleDay: 6,
+            ruleId: "REG-START-1",
+            confidence: "final",
+          };
+        }
+      } else {
+        // After six completed cycles: history uses both Monitor Peaks and Mucus Peaks
+        const priorCycles = getLastSixPriorMethodCycles(
+          cycleStarts,
+          index,
+          overlaysByStartDate,
+          datedObservations,
+          today,
+        );
+        interface HistoricalPeak {
+          readonly cycleDay: number;
+          readonly source: "monitor" | "mucus";
+        }
+        const historicalPeaks: HistoricalPeak[] = [];
+
+        for (const cycle of priorCycles) {
+          for (const peak of cycle.observations.filter((o) => o.monitorReading === "Peak")) {
+            historicalPeaks.push({
+              cycleDay: daysBetweenCivilDates(cycle.startDate, peak.civilDate) + 1,
+              source: "monitor",
+            });
+          }
+          const priorPeakMucusObs = cycle.observations.filter(
+            (o) => mucusCategory(o.mucus) === "Peak",
+          );
+          const priorLastPeakMucus = priorPeakMucusObs[priorPeakMucusObs.length - 1];
+          if (priorLastPeakMucus !== undefined) {
+            historicalPeaks.push({
+              cycleDay: daysBetweenCivilDates(cycle.startDate, priorLastPeakMucus.civilDate) + 1,
+              source: "mucus",
+            });
+          }
+        }
+
+        if (historicalPeaks.length === 0) {
+          startBoundary = {
+            cycleDay: 6,
+            ruleId: "REG-START-1",
+            confidence: "final",
+          };
+        } else {
+          const earliestPeak = [...historicalPeaks].sort((a, b) => a.cycleDay - b.cycleDay)[0]!;
+          const latestPeak = [...historicalPeaks].sort((a, b) => b.cycleDay - a.cycleDay)[0]!;
+          latestPeakLast6 = latestPeak.cycleDay;
+          latestPeakSource = latestPeak.source;
+          const historicalCalendarStart = Math.max(1, earliestPeak.cycleDay - 6);
+
+          if (
+            firstMucusChangeCycleDay !== undefined &&
+            firstMucusChangeCycleDay < historicalCalendarStart &&
+            (firstHighCycleDay === undefined || firstMucusChangeCycleDay < firstHighCycleDay)
+          ) {
+            startBoundary = {
+              cycleDay: firstMucusChangeCycleDay,
+              ruleId: "MUCUS-START",
+              confidence: "final",
+            };
+          } else if (
+            firstHighCycleDay !== undefined &&
+            firstHighCycleDay < historicalCalendarStart &&
+            (firstMucusChangeCycleDay === undefined || firstHighCycleDay < firstMucusChangeCycleDay)
+          ) {
+            startBoundary = {
+              cycleDay: firstHighCycleDay,
+              ruleId: "REG-START-3",
+              confidence: "final",
+            };
+          } else if (
+            firstHighCycleDay !== undefined &&
+            firstHighCycleDay < historicalCalendarStart &&
+            firstMucusChangeCycleDay !== undefined &&
+            firstHighCycleDay === firstMucusChangeCycleDay
+          ) {
+            startBoundary = {
+              cycleDay: firstHighCycleDay,
+              ruleId: "REG-START-3",
+              confidence: "final",
+            };
+          } else {
+            startBoundary = {
+              cycleDay: historicalCalendarStart,
+              ruleId: earliestPeak.source === "mucus" ? "MUCUS-ONLY-START-2" : "REG-START-2",
+              confidence: "final",
+            };
+          }
+        }
+      }
+
+      // End rule: whichever Peak marker occurs last
+      const hasMonitorPeak = monitorPeaks.length > 0;
+      const lastMonitorPeakObs = monitorPeaks[monitorPeaks.length - 1];
+      const monitorPeakCD =
+        lastMonitorPeakObs !== undefined
+          ? daysBetweenCivilDates(start.civilDate, lastMonitorPeakObs.civilDate) + 1
+          : undefined;
+      const hasMucusPeak = mucusPeak !== null;
+      const mucusPeakCD = mucusPeak?.cycleDay;
+
+      // Record end discrepancies
+      if (hasMucusPeak && hasMonitorPeak) {
+        if (mucusPeakCD! > monitorPeakCD!) {
+          discrepancies.push("mucus_peak_after_monitor_peak");
+        } else if (monitorPeakCD! > mucusPeakCD!) {
+          discrepancies.push("monitor_peak_after_mucus_peak");
+        }
+      } else if (hasMucusPeak && !hasMonitorPeak) {
+        discrepancies.push("no_monitor_peak_but_mucus_peak");
+      } else if (hasMonitorPeak && !hasMucusPeak) {
+        discrepancies.push("no_mucus_peak_but_monitor_peak");
+      }
+
+      let endBoundary: FertileWindowBoundary | null = null;
+      if (hasMucusPeak && hasMonitorPeak) {
+        if (mucusPeakCD! > monitorPeakCD!) {
+          const endCycleDay = mucusPeakCD! + 3;
+          const endCivilDate = civilDatePlusDays(mucusPeak!.civilDate, 3);
+          const isEndComplete =
+            !mucusPeak!.provisional &&
+            (today > endCivilDate || nextStart !== undefined);
+          endBoundary = {
+            cycleDay: endCycleDay,
+            ruleId: "MUCUS-END",
+            confidence: isEndComplete ? "final" : "provisional",
+          };
+        } else {
+          const endCycleDay = monitorPeakCD! + 3;
+          const endCivilDate = civilDatePlusDays(lastMonitorPeakObs!.civilDate, 3);
+          const isEndComplete =
+            (!mucusPeak!.provisional || monitorPeakCD! > mucusPeakCD!) &&
+            (today > endCivilDate || nextStart !== undefined);
+          endBoundary = {
+            cycleDay: endCycleDay,
+            ruleId: "REG-END-1",
+            confidence: isEndComplete ? "final" : "provisional",
+          };
+        }
+      } else if (hasMucusPeak && !hasMonitorPeak) {
+        const endCycleDay = mucusPeakCD! + 3;
+        const endCivilDate = civilDatePlusDays(mucusPeak!.civilDate, 3);
+        const isEndComplete =
+          !mucusPeak!.provisional &&
+          (today > endCivilDate || nextStart !== undefined);
+        endBoundary = {
+          cycleDay: endCycleDay,
+          ruleId: "MUCUS-END",
+          confidence: isEndComplete ? "final" : "provisional",
+        };
+      } else if (hasMonitorPeak && !hasMucusPeak) {
+        const endCycleDay = monitorPeakCD! + 3;
+        const endCivilDate = civilDatePlusDays(lastMonitorPeakObs!.civilDate, 3);
+        const isEndComplete = today > endCivilDate || nextStart !== undefined;
+        endBoundary = {
+          cycleDay: endCycleDay,
+          ruleId: "REG-END-1",
+          confidence: isEndComplete ? "final" : "provisional",
+        };
+      } else {
+        // Neither peaked
+        if (methodCycleNumber > 6 && latestPeakLast6 !== undefined) {
+          const fallbackEnd = latestPeakLast6 + 3;
+          const endCivilDate = civilDatePlusDays(start.civilDate, fallbackEnd - 1);
+          const isEndComplete = today > endCivilDate || nextStart !== undefined;
+          endBoundary = {
+            cycleDay: fallbackEnd,
+            ruleId: latestPeakSource === "mucus" ? "MUCUS-ONLY-END-2" : "REG-END-2",
+            confidence: isEndComplete ? "final" : "provisional",
+          };
+        } else {
+          endBoundary = null;
+        }
+      }
+
+      fertileWindow = {
+        start: startBoundary,
+        end: endBoundary,
+        discrepancies,
+      };
     }
 
     const dayCount = daysBetweenCivilDates(start.civilDate, endDate) + 1;
@@ -435,25 +885,6 @@ export function projectChart(
         dayStatus,
       };
     });
-
-    const peakMucusObservations = observationsInCycle.filter(
-      (observation) => mucusCategory(observation.mucus) === "Peak",
-    );
-    const lastPeakMucus = peakMucusObservations[peakMucusObservations.length - 1];
-
-    let mucusPeak: MucusPeak | null = null;
-    if (lastPeakMucus !== undefined) {
-      const hasSubsequentNonPeakMucus = observationsInCycle.some((observation) => {
-        if (observation.civilDate <= lastPeakMucus.civilDate) return false;
-        const category = mucusCategory(observation.mucus);
-        return category !== null && category !== "Peak";
-      });
-      mucusPeak = {
-        civilDate: lastPeakMucus.civilDate,
-        cycleDay: daysBetweenCivilDates(start.civilDate, lastPeakMucus.civilDate) + 1,
-        provisional: !hasSubsequentNonPeakMucus,
-      };
-    }
 
     return { startDate: start.civilDate, days, mucusPeak, fertileWindow };
   });

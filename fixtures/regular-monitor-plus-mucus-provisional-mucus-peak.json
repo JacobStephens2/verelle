@@ -1,0 +1,266 @@
+{
+  "name": "dual-check provisional mucus peak keeps window provisional until non-peak day follows",
+  "today": "2026-06-21",
+  "cycleOverlays": [
+    {
+      "startDate": "2026-06-01",
+      "protocolFamily": "regular_monitor_plus_mucus",
+      "protocolVersion": "marquette_regular_plus_mucus_manual",
+      "intention": "avoid",
+      "postpartumCycleNumber": null
+    }
+  ],
+  "observations": [
+    {
+      "civilDate": "2026-06-01",
+      "monitorReading": null,
+      "bleeding": "Heavy",
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-14",
+      "monitorReading": "Peak",
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": null,
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    },
+    {
+      "civilDate": "2026-06-16",
+      "monitorReading": null,
+      "bleeding": null,
+      "peakOverride": null,
+      "intercourse": null,
+      "lhStrip": null,
+      "mucus": "clear and stretchy like egg white",
+      "temperature": null,
+      "temperatureUnit": null,
+      "note": null
+    }
+  ],
+  "expected": {
+    "today": "2026-06-21",
+    "cycles": [
+      {
+        "startDate": "2026-06-01",
+        "days": [
+          {
+            "civilDate": "2026-06-01",
+            "cycleDay": 1,
+            "monitorReading": null,
+            "markers": [
+              "bleeding"
+            ],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-02",
+            "cycleDay": 2,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-03",
+            "cycleDay": 3,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-04",
+            "cycleDay": 4,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-05",
+            "cycleDay": 5,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-06",
+            "cycleDay": 6,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-07",
+            "cycleDay": 7,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-08",
+            "cycleDay": 8,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-09",
+            "cycleDay": 9,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-10",
+            "cycleDay": 10,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-11",
+            "cycleDay": 11,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-12",
+            "cycleDay": 12,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-13",
+            "cycleDay": 13,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-14",
+            "cycleDay": 14,
+            "monitorReading": "Peak",
+            "markers": [
+              "monitor"
+            ],
+            "annotations": [
+              "P"
+            ],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-15",
+            "cycleDay": 15,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [
+              "P+1"
+            ],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-16",
+            "cycleDay": 16,
+            "monitorReading": null,
+            "markers": [
+              "mucus"
+            ],
+            "annotations": [
+              "P+2"
+            ],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-17",
+            "cycleDay": 17,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [
+              "P+3"
+            ],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-18",
+            "cycleDay": 18,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-19",
+            "cycleDay": 19,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "fertile"
+          },
+          {
+            "civilDate": "2026-06-20",
+            "cycleDay": 20,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          },
+          {
+            "civilDate": "2026-06-21",
+            "cycleDay": 21,
+            "monitorReading": null,
+            "markers": [],
+            "annotations": [],
+            "dayStatus": "infertile"
+          }
+        ],
+        "mucusPeak": {
+          "civilDate": "2026-06-16",
+          "cycleDay": 16,
+          "provisional": true
+        },
+        "fertileWindow": {
+          "start": {
+            "cycleDay": 6,
+            "ruleId": "REG-START-1",
+            "confidence": "final"
+          },
+          "end": {
+            "cycleDay": 19,
+            "ruleId": "MUCUS-END",
+            "confidence": "provisional"
+          },
+          "discrepancies": [
+            "mucus_fertile_before_monitor_high",
+            "mucus_peak_after_monitor_peak"
+          ]
+        }
+      }
+    ],
+    "unassignedDays": [],
+    "eligibilityWarnings": []
+  }
+}
