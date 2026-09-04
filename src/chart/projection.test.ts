@@ -9,6 +9,7 @@ import type { CycleOverlay } from "../observations/cycle-overlay";
 import { defaultCycleOverlay } from "../observations/cycle-overlay";
 import type { Profile } from "../observations/profile";
 import type { CivilDate } from "./civil-date";
+import { civilDatePlusDays } from "./civil-date";
 import { projectChart } from "./projection";
 
 interface GoldenFixture {
@@ -304,6 +305,247 @@ describe("Fertile window computation (regular_monitor, first six cycles)", () =>
       },
       end: null,
     });
+  });
+});
+
+describe("Fertile window computation (regular_monitor, after six cycles: the history rules)", () => {
+  const cycleStartDates = [
+    "2026-01-01",
+    "2026-01-29",
+    "2026-02-26",
+    "2026-03-26",
+    "2026-04-23",
+    "2026-05-21",
+    "2026-06-18", // Cycle 7 (after 6 completed cycles)
+  ];
+
+  // Last 6 cycles have peaks at CD 14, 15, 13, 16, 14, 15
+  // Earliest Monitor Peak = CD 13 -> 13 - 6 = CD 7
+  // Latest Monitor Peak = CD 16 -> 16 + 3 = CD 19
+  function makeSixPriorCycles(): {
+    observations: Observation[];
+    overlays: CycleOverlay[];
+  } {
+    const observations: Observation[] = [];
+    const overlays: CycleOverlay[] = [];
+
+    const peakOffsets = [13, 14, 12, 15, 13, 14]; // 0-indexed day offset: CD 14, 15, 13, 16, 14, 15
+    for (let i = 0; i < 6; i++) {
+      const startDate = cycleStartDates[i]!;
+      overlays.push({
+        ...defaultCycleOverlay(startDate),
+        protocolFamily: "regular_monitor",
+        protocolVersion: "marquette_regular_manual_public",
+      });
+      observations.push(
+        applyUpdate(unrecordedObservation(startDate), { bleeding: "Heavy" }),
+      );
+      // Bleeding ends
+      observations.push(
+        applyUpdate(unrecordedObservation(civilDatePlusDays(startDate, 4)), {
+          bleeding: "None",
+        }),
+      );
+      // Add Monitor Peak
+      const peakCivilDate = civilDatePlusDays(startDate, peakOffsets[i]!);
+      observations.push(
+        applyUpdate(unrecordedObservation(peakCivilDate), { monitorReading: "Peak" }),
+      );
+    }
+
+    // Add Cycle 7 overlay & start
+    const c7Start = cycleStartDates[6]!;
+    overlays.push({
+      ...defaultCycleOverlay(c7Start),
+      protocolFamily: "regular_monitor",
+      protocolVersion: "marquette_regular_manual_public",
+    });
+    observations.push(
+      applyUpdate(unrecordedObservation(c7Start), { bleeding: "Heavy" }),
+    );
+
+    return { observations, overlays };
+  }
+
+  it("opens fertility at earliest Monitor Peak of the last six minus six with REG-START-2", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // Cycle 7 start is 2026-06-18. Today is 2026-06-25 (CD 8).
+    const chart = projectChart(observations, "2026-06-25", overlays);
+    expect(chart.cycles).toHaveLength(7);
+    const cycle7 = chart.cycles[6]!;
+
+    // Earliest peak CD 13 - 6 = CD 7
+    expect(cycle7.fertileWindow?.start).toEqual({
+      cycleDay: 7,
+      ruleId: "REG-START-2",
+      confidence: "final",
+    });
+
+    const statusesByDay = Object.fromEntries(
+      cycle7.days.map((d) => [d.cycleDay, d.dayStatus]),
+    );
+    for (let cd = 1; cd <= 6; cd++) {
+      expect(statusesByDay[cd], `Cycle Day ${cd}`).toBe("infertile");
+    }
+    expect(statusesByDay[7], "Cycle Day 7").toBe("fertile");
+  });
+
+  it("moves start earlier to first High with REG-START-3 when High is earlier than calendar start", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // High on CD 5 (2026-06-22) earlier than calendar start CD 7
+    observations.push(
+      applyUpdate(unrecordedObservation("2026-06-22"), { monitorReading: "High" }),
+    );
+    const chart = projectChart(observations, "2026-06-25", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    expect(cycle7.fertileWindow?.start).toEqual({
+      cycleDay: 5,
+      ruleId: "REG-START-3",
+      confidence: "final",
+    });
+
+    const statusesByDay = Object.fromEntries(
+      cycle7.days.map((d) => [d.cycleDay, d.dayStatus]),
+    );
+    for (let cd = 1; cd <= 4; cd++) {
+      expect(statusesByDay[cd], `Cycle Day ${cd}`).toBe("infertile");
+    }
+    for (let cd = 5; cd <= 8; cd++) {
+      expect(statusesByDay[cd], `Cycle Day ${cd}`).toBe("fertile");
+    }
+  });
+
+  it("keeps calendar start REG-START-2 when first High occurs on or after calendar start", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // High on CD 8 (2026-06-25) on/after calendar start CD 7
+    observations.push(
+      applyUpdate(unrecordedObservation("2026-06-25"), { monitorReading: "High" }),
+    );
+    const chart = projectChart(observations, "2026-06-26", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    expect(cycle7.fertileWindow?.start).toEqual({
+      cycleDay: 7,
+      ruleId: "REG-START-2",
+      confidence: "final",
+    });
+  });
+
+  it("ends at the earlier of current Peak + 3 and historical latest Peak + 3 (current is earlier: REG-END-1)", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // Current cycle peak on CD 14 (2026-07-01). 14 + 3 = 17.
+    // Historical latest peak is CD 16. 16 + 3 = 19.
+    // Earlier is CD 17 (REG-END-1).
+    observations.push(
+      applyUpdate(unrecordedObservation("2026-07-01"), { monitorReading: "Peak" }),
+    );
+    // Today is CD 22 (2026-07-09), after CD 17.
+    const chart = projectChart(observations, "2026-07-09", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    expect(cycle7.fertileWindow?.end).toEqual({
+      cycleDay: 17,
+      ruleId: "REG-END-1",
+      confidence: "final",
+    });
+
+    const statusesByDay = Object.fromEntries(
+      cycle7.days.map((d) => [d.cycleDay, d.dayStatus]),
+    );
+    expect(statusesByDay[17]).toBe("fertile");
+    expect(statusesByDay[18]).toBe("infertile");
+  });
+
+  it("ends at the earlier of current Peak + 3 and historical latest Peak + 3 (historical is earlier: REG-END-2)", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // Current cycle late peak on CD 18 (2026-07-05). 18 + 3 = 21.
+    // Historical latest peak is CD 16. 16 + 3 = 19.
+    // Earlier is CD 19 (REG-END-2).
+    observations.push(
+      applyUpdate(unrecordedObservation("2026-07-05"), { monitorReading: "Peak" }),
+    );
+    // Today is CD 22 (2026-07-09), after CD 19.
+    const chart = projectChart(observations, "2026-07-09", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    expect(cycle7.fertileWindow?.end).toEqual({
+      cycleDay: 19,
+      ruleId: "REG-END-2",
+      confidence: "final",
+    });
+
+    const statusesByDay = Object.fromEntries(
+      cycle7.days.map((d) => [d.cycleDay, d.dayStatus]),
+    );
+    expect(statusesByDay[19]).toBe("fertile");
+    expect(statusesByDay[20]).toBe("infertile");
+  });
+
+  it("uses historical missed-surge fallback REG-END-2 when cycle after six has no Monitor Peak and no prolonged High", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // High on CD 10-11, then Low on CD 12-14. No Monitor Peak.
+    observations.push(
+      applyUpdate(unrecordedObservation("2026-06-27"), { monitorReading: "High" }), // CD 10
+      applyUpdate(unrecordedObservation("2026-06-28"), { monitorReading: "High" }), // CD 11
+      applyUpdate(unrecordedObservation("2026-06-29"), { monitorReading: "Low" }),  // CD 12
+    );
+    // Historical latest peak is CD 16 -> fallback end is CD 19.
+    // Today is CD 22 (2026-07-09).
+    const chart = projectChart(observations, "2026-07-09", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    expect(cycle7.fertileWindow?.end).toEqual({
+      cycleDay: 19,
+      ruleId: "REG-END-2",
+      confidence: "final",
+    });
+
+    const statusesByDay = Object.fromEntries(
+      cycle7.days.map((d) => [d.cycleDay, d.dayStatus]),
+    );
+    for (let cd = 7; cd <= 19; cd++) {
+      expect(statusesByDay[cd], `Cycle Day ${cd}`).toBe("fertile");
+    }
+    for (let cd = 20; cd <= 22; cd++) {
+      expect(statusesByDay[cd], `Cycle Day ${cd}`).toBe("infertile");
+    }
+  });
+
+  it("keeps the window open rather than reading as infertility when a prolonged run of High readings occurs with no Peak", () => {
+    const { observations, overlays } = makeSixPriorCycles();
+    // Prolonged run of High readings without a Peak (CD 9 through CD 20 are High)
+    // Historical latest peak + 3 would be CD 19, but High continues through CD 20.
+    for (let cd = 9; cd <= 20; cd++) {
+      const date = civilDatePlusDays("2026-06-18", cd - 1);
+      observations.push(
+        applyUpdate(unrecordedObservation(date), {
+          monitorReading: "High",
+        }),
+      );
+    }
+
+    // Today is CD 22 (2026-07-09).
+    const chart = projectChart(observations, "2026-07-09", overlays);
+    const cycle7 = chart.cycles[6]!;
+
+    // Window stays open (end is null)
+    expect(cycle7.fertileWindow).toEqual({
+      start: {
+        cycleDay: 7,
+        ruleId: "REG-START-2",
+        confidence: "final",
+      },
+      end: null,
+    });
+
+    // All days from CD 7 to CD 22 are fertile, none reading as infertility
+    const statusesByDay = Object.fromEntries(
+      cycle7.days.map((d) => [d.cycleDay, d.dayStatus]),
+    );
+    for (let cd = 7; cd <= 22; cd++) {
+      expect(statusesByDay[cd], `Cycle Day ${cd}`).toBe("fertile");
+    }
   });
 });
 

@@ -89,6 +89,26 @@ const isProvisional = computed<boolean>(() => {
 const confidenceDisplay = computed<string>(() => {
   return isProvisional.value ? "Provisional" : "Final";
 });
+
+const provisionalExplanation = computed<string | null>(() => {
+  if (!isProvisional.value) return null;
+  if (props.fertileWindow?.end === null) {
+    return "This boundary is provisional. Recording a Monitor Peak and completing three full days after the last Monitor Peak will make it final.";
+  }
+  if (props.fertileWindow?.end?.confidence === "provisional") {
+    const endRule = lookupBoundaryRule(props.fertileWindow.end.ruleId);
+    return endRule?.provisionalRequirement
+      ? `This boundary is provisional. ${endRule.provisionalRequirement}`
+      : "This boundary is provisional.";
+  }
+  if (props.fertileWindow?.start?.confidence === "provisional") {
+    const startRule = lookupBoundaryRule(props.fertileWindow.start.ruleId);
+    return startRule?.provisionalRequirement
+      ? `This boundary is provisional. ${startRule.provisionalRequirement}`
+      : "This boundary is provisional.";
+  }
+  return "This boundary is provisional.";
+});
 </script>
 
 <template>
@@ -139,11 +159,8 @@ const confidenceDisplay = computed<string>(() => {
       <div class="day-explanation__rule" data-testid="boundary-rule">
         <span class="day-explanation__label">Boundary rule:</span>
         <span class="day-explanation__rule-id">{{ rule.id }}</span>
-        <span v-if="rule.id === 'REG-START-1'" class="day-explanation__rule-desc">
-          &mdash; First six cycles begin fertility on Cycle Day 6.
-        </span>
-        <span v-else-if="rule.id === 'REG-END-1'" class="day-explanation__rule-desc">
-          &mdash; End is three full days after last Monitor Peak.
+        <span v-if="rule.description" class="day-explanation__rule-desc">
+          &mdash; {{ rule.description }}
         </span>
       </div>
 
@@ -161,16 +178,8 @@ const confidenceDisplay = computed<string>(() => {
       </div>
     </div>
 
-    <div v-if="isProvisional" class="day-explanation__provisional-note" data-testid="provisional-explanation">
-      <span v-if="fertileWindow.end === null">
-        This boundary is provisional. Recording a Monitor Peak and completing three full days after the last Monitor Peak will make it final.
-      </span>
-      <span v-else-if="fertileWindow.end.confidence === 'provisional'">
-        This boundary is provisional. Completing three full days after the last Monitor Peak will make it final.
-      </span>
-      <span v-else-if="fertileWindow.start.confidence === 'provisional'">
-        This boundary is provisional.
-      </span>
+    <div v-if="provisionalExplanation" class="day-explanation__provisional-note" data-testid="provisional-explanation">
+      {{ provisionalExplanation }}
     </div>
   </aside>
 </template>

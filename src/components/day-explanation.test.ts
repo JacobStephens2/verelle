@@ -227,5 +227,135 @@ describe("DayExplanation component", () => {
     const html = await renderToString(app);
     expect(html).not.toContain("day-explanation");
   });
+
+  it("explains fertility starting from earliest Peak minus six with REG-START-2", async () => {
+    const historyStartWindow: FertileWindow = {
+      start: {
+        cycleDay: 7,
+        ruleId: "REG-START-2",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 19,
+        ruleId: "REG-END-2",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 7,
+          dayStatus: "fertile",
+          fertileWindow: historyStartWindow,
+          protocolFamily: "regular_monitor",
+          protocolVersion: "marquette_regular_manual_public",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 7 is fertile");
+    expect(html).toContain("opens on Cycle Day 7");
+    expect(html).toContain("REG-START-2");
+    expect(html).toContain("Earliest Monitor Peak of the last six cycles minus six");
+    expect(html).toContain("https://device.report/m/5d2a8bd09ddf8f66399d538367a5d586e38444ab368d3e85f42fd740a0aeb0ea.pdf");
+  });
+
+  it("explains fertility starting earlier from first High with REG-START-3", async () => {
+    const highStartWindow: FertileWindow = {
+      start: {
+        cycleDay: 5,
+        ruleId: "REG-START-3",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 19,
+        ruleId: "REG-END-2",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 5,
+          dayStatus: "fertile",
+          fertileWindow: highStartWindow,
+          protocolFamily: "regular_monitor",
+          protocolVersion: "marquette_regular_manual_public",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 5 is fertile");
+    expect(html).toContain("opens on Cycle Day 5");
+    expect(html).toContain("REG-START-3");
+    expect(html).toContain("First High reading earlier than calendar start");
+    expect(html).toContain("https://device.report/m/5d2a8bd09ddf8f66399d538367a5d586e38444ab368d3e85f42fd740a0aeb0ea.pdf");
+  });
+
+  it("explains closing with missed-surge fallback REG-END-2 and links Case Reports source", async () => {
+    const fallbackWindow: FertileWindow = {
+      start: {
+        cycleDay: 7,
+        ruleId: "REG-START-2",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 19,
+        ruleId: "REG-END-2",
+        confidence: "final",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 20,
+          dayStatus: "infertile",
+          fertileWindow: fallbackWindow,
+          protocolFamily: "regular_monitor",
+          protocolVersion: "marquette_regular_manual_public",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Cycle Day 20 is infertile");
+    expect(html).toContain("fertile window closed on Cycle Day 19");
+    expect(html).toContain("REG-END-2");
+    expect(html).toContain("Missed-surge fallback uses latest Monitor Peak from last six cycles plus three full days");
+    expect(html).toContain("https://pmc.ncbi.nlm.nih.gov/articles/PMC6081769/");
+    expect(html).toContain("Case Reports of the Marquette Method");
+  });
+
+  it("explains provisional confidence when REG-END-2 is provisional", async () => {
+    const fallbackWindowProvisional: FertileWindow = {
+      start: {
+        cycleDay: 7,
+        ruleId: "REG-START-2",
+        confidence: "final",
+      },
+      end: {
+        cycleDay: 19,
+        ruleId: "REG-END-2",
+        confidence: "provisional",
+      },
+    };
+
+    const app = createSSRApp({
+      render: () =>
+        h(DayExplanation, {
+          cycleDay: 10,
+          dayStatus: "fertile",
+          fertileWindow: fallbackWindowProvisional,
+          protocolFamily: "regular_monitor",
+          protocolVersion: "marquette_regular_manual_public",
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain("Provisional");
+    expect(html).toContain("Passing the historical fallback day or completing three full days after a Monitor Peak will make it final");
+  });
 });
 
