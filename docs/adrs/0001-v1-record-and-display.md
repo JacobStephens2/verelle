@@ -1,6 +1,6 @@
 # ADR 0001: v1 is record-and-display only
 
-- Status: accepted
+- Status: superseded by ADR 0015 (Verelle computes the Marquette fertile window)
 - Date: 2026-07-18
 - Source: plan D1
 - Amended by: ADR 0011 (mechanical transcription is not a fertility verdict)

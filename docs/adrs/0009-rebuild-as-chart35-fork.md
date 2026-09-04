@@ -1,6 +1,6 @@
 # ADR 0009: rebuild Verelle as a Capacitor/Vue fork of Chart35
 
-- Status: accepted
+- Status: accepted; view-layer clause amended by ADR 0015
 - Date: 2026-08-25
 - Supersedes: ADR 0004 (retain Leptos CSR after the browser spike) and
   ADR 0004 (Android is the first phone platform) — the repo has two 0004s

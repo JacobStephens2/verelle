@@ -1,6 +1,6 @@
 # ADR 0011: mechanical transcription is not a fertility verdict
 
-- Status: accepted
+- Status: superseded by ADR 0015 (Verelle computes the Marquette fertile window)
 - Date: 2026-08-25
 - Note: drafted as 0008 during the 2026-08-25 design session
 - Amends: ADR 0001 (v1 is record-and-display only)
