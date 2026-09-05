@@ -85,7 +85,7 @@ defineEmits<{
       <div class="guide__peak-steps">
         <div class="guide__peak-step">
           <span class="guide__peak-badge">P</span>
-          <span class="guide__peak-label">Peak day (anchor)</span>
+          <span class="guide__peak-label">Peak anchor</span>
         </div>
         <div class="guide__peak-step">
           <span class="guide__peak-badge">P+1</span>
@@ -119,9 +119,9 @@ defineEmits<{
           <p class="guide__family-body">
             Uses the Clearblue monitor. During the first six cycles, the fertile window
             opens on Cycle Day 6. After six completed cycles, it opens on the earlier of
-            the first High reading or the earliest Peak of the previous six cycles minus six days.
+            the first High reading or the earliest Monitor Peak of the previous six cycles minus six days.
             Fertility closes three full days after the last Monitor Peak, or on the latest
-            Peak plus three days if no Peak is detected.
+            Monitor Peak plus three days if no Monitor Peak is detected.
           </p>
         </div>
 
@@ -147,7 +147,7 @@ defineEmits<{
         <div class="guide__family-item">
           <h3 class="guide__family-title">Postpartum cycle zero</h3>
           <p class="guide__family-body">
-            For breastfeeding women prior to the return of menses. Uses 20-day artificial monitor
+            For breastfeeding women prior to the return of menstrual bleeding. Uses 20-day artificial monitor
             cycles. Days without High or Peak readings are infertile; any High or Peak reading
             opens the fertile window through three full days past the last Peak.
           </p>
@@ -156,7 +156,7 @@ defineEmits<{
         <div class="guide__family-item">
           <h3 class="guide__family-title">Postpartum return to cycles</h3>
           <p class="guide__family-body">
-            Begins when the first menstrual period occurs postpartum. Fertility begins on
+            Begins when menstrual bleeding returns postpartum. Fertility begins on
             Cycle Day 10 in cycle 1, Day 9 in cycle 2, Day 8 in cycle 3, Day 7 in cycle 4,
             and Day 6 in cycle 5 onward, unless an earlier High reading occurs.
           </p>
@@ -275,7 +275,7 @@ defineEmits<{
           </a>
           <span class="guide__source-authors">Bouchard, Fehring &amp; Schneider (2013)</span>
           <p class="guide__source-desc">
-            Peer-reviewed protocol in the Journal of the American Board of Family Medicine describing the stepping start day (CD10 to CD6) upon return of menses postpartum.
+            Peer-reviewed protocol in the Journal of the American Board of Family Medicine describing the stepping start day (Cycle Day 10 to Cycle Day 6) upon return of menstrual bleeding postpartum.
           </p>
         </li>
         <li class="guide__source-item">

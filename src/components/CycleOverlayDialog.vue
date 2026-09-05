@@ -278,7 +278,7 @@ const save = async () => {
         />
       </label>
 
-      <div class="overlay-dialog__coaching">
+      <div v-if="protocolFamily !== 'mucus_only'" class="overlay-dialog__coaching">
         <MonitorSetupCoaching compact />
       </div>
 

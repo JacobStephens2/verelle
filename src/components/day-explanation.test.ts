@@ -568,25 +568,8 @@ describe("DayExplanation component", () => {
     expect(html).toContain("PP-RETURN-START-HIGH");
     expect(html).toContain("First High reading earlier than calendar start");
   });
-
-  it("warns that the window may be less certain when a test was missed near expected Peak", async () => {
-    const app = createSSRApp({
-      render: () =>
-        h(DayExplanation, {
-          cycleDay: 14,
-          dayStatus: "fertile",
-          fertileWindow,
-          protocolFamily: "regular_monitor",
-          protocolVersion: "marquette_regular_manual_public",
-          hasMissedNearExpectedPeak: true,
-        }),
-    });
-
-    const html = await renderToString(app);
-    expect(html).toContain('data-testid="missed-test-warning"');
-    expect(html).toContain("less certain");
-  });
 });
+
 
 
 

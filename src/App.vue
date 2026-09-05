@@ -119,17 +119,6 @@ const openCycleOverlay = (startDate?: CivilDate) => {
         >
           Insights
         </button>
-        <button
-          type="button"
-          role="tab"
-          class="app__view-btn"
-          :class="{ active: currentView === 'guide' }"
-          :aria-selected="currentView === 'guide'"
-          data-testid="view-guide"
-          @click="currentView = 'guide'"
-        >
-          Guide
-        </button>
       </div>
       <nav class="app__utility" aria-label="Chart tools">
         <button type="button" data-testid="open-guide" @click="currentView = 'guide'">

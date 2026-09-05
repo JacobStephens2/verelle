@@ -345,6 +345,36 @@ describe("evaluateEligibilityWarnings", () => {
       );
       expect(warnings.some((w) => w.circumstance === "missed_test_near_expected_peak")).toBe(false);
     });
+
+    it("does not produce a warning when Peak was already detected in the current cycle", () => {
+      const cycle = makeCycle("2026-01-01", 28);
+      const days = [...cycle.days];
+      days[13] = { ...days[13]!, monitorReading: "Peak" }; // Peak on CD14
+      days[14] = { ...days[14]!, monitorReading: "Missed" }; // Missed on CD15 (P+1)
+      const cycleWithPeak = { ...cycle, days };
+
+      const warnings = evaluateEligibilityWarnings([cycleWithPeak], today, null);
+      expect(warnings.some((w) => w.circumstance === "missed_test_near_expected_peak")).toBe(false);
+    });
+
+    it("evaluates historical peak without being shadowed by an early High reading", () => {
+      const priorCycle = makeCycle("2026-01-01", 28);
+      const priorDays = [...priorCycle.days];
+      priorDays[17] = { ...priorDays[17]!, monitorReading: "Peak" }; // Prior Peak on CD18
+
+      // Current cycle has early High on CD10 and Missed on CD17 (near historical Peak CD18, even though CD17 > CD10 + 5)
+      const currentCycle = makeCycle("2026-01-29", 20);
+      const currentDays = [...currentCycle.days];
+      currentDays[9] = { ...currentDays[9]!, monitorReading: "High" };
+      currentDays[16] = { ...currentDays[16]!, monitorReading: "Missed" };
+
+      const warnings = evaluateEligibilityWarnings(
+        [{ ...priorCycle, days: priorDays }, { ...currentCycle, days: currentDays }],
+        today,
+        null,
+      );
+      expect(warnings.some((w) => w.circumstance === "missed_test_near_expected_peak")).toBe(true);
+    });
   });
 });
 

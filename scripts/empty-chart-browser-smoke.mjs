@@ -228,7 +228,7 @@ try {
   console.log("ok: Insights view is reachable, displays stats and export options, and switches back to Chart");
 
   // 3e. Method Guide is reachable, displays sources and monitor coaching, and switches back to Chart.
-  await page.click('[data-testid="view-guide"]');
+  await page.click('[data-testid="open-guide"]');
   await page.waitForSelector('[data-testid="method-guide"]', { timeout: PAINT_TIMEOUT_MS });
   const hasSources = await page.$eval(
     '[data-testid="method-sources"]',

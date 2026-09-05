@@ -219,22 +219,30 @@ export function evaluateEligibilityWarnings(
     for (const missedDay of missedDays) {
       let isNearExpectedPeak = false;
 
-      if (currentPeakDay !== undefined) {
-        if (missedDay.cycleDay >= currentPeakDay - 2 && missedDay.cycleDay <= currentPeakDay + 1) {
+      // When no Peak has been detected in the current cycle, check all indicators for expected Peak:
+      if (currentPeakDay === undefined) {
+        if (
+          priorPeakDays.length > 0 &&
+          missedDay.cycleDay >= Math.min(...priorPeakDays) - 2 &&
+          missedDay.cycleDay <= Math.max(...priorPeakDays) + 1
+        ) {
           isNearExpectedPeak = true;
         }
-      } else if (firstHighDay !== undefined) {
-        if (missedDay.cycleDay >= firstHighDay && missedDay.cycleDay <= firstHighDay + 5) {
+
+        if (
+          firstHighDay !== undefined &&
+          missedDay.cycleDay >= firstHighDay &&
+          missedDay.cycleDay <= firstHighDay + 5
+        ) {
           isNearExpectedPeak = true;
         }
-      } else if (priorPeakDays.length > 0) {
-        const minPrior = Math.min(...priorPeakDays);
-        const maxPrior = Math.max(...priorPeakDays);
-        if (missedDay.cycleDay >= minPrior - 2 && missedDay.cycleDay <= maxPrior + 1) {
-          isNearExpectedPeak = true;
-        }
-      } else {
-        if (missedDay.cycleDay >= 11 && missedDay.cycleDay <= 17) {
+
+        if (
+          priorPeakDays.length === 0 &&
+          firstHighDay === undefined &&
+          missedDay.cycleDay >= 11 &&
+          missedDay.cycleDay <= 17
+        ) {
           isNearExpectedPeak = true;
         }
       }

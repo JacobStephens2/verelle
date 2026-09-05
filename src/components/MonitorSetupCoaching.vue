@@ -1,6 +1,5 @@
 <script setup lang="ts">
 defineProps<{
-  title?: string;
   compact?: boolean;
 }>();
 </script>
@@ -14,7 +13,7 @@ defineProps<{
   >
     <div class="monitor-coaching__header">
       <h3 class="monitor-coaching__title">
-        {{ title ?? "Monitor setup coaching" }}
+        Monitor setup coaching
       </h3>
       <p class="monitor-coaching__subtitle">
         Essential Clearblue Fertility Monitor setup instructions to avoid lost data or missed Peak detection.

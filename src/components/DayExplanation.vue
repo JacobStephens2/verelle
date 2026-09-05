@@ -16,7 +16,6 @@ const props = defineProps<{
   fertileWindow: FertileWindow | null;
   protocolVersion: ProtocolVersion | null;
   protocolFamily?: ProtocolFamily | null;
-  hasMissedNearExpectedPeak?: boolean;
 }>();
 
 const effectiveProtocolVersion = computed<ProtocolVersion | null>(() => {
@@ -203,36 +202,10 @@ const provisionalExplanation = computed<string | null>(() => {
     <div v-if="provisionalExplanation" class="day-explanation__provisional-note" data-testid="provisional-explanation">
       {{ provisionalExplanation }}
     </div>
-
-    <div
-      v-if="hasMissedNearExpectedPeak"
-      class="day-explanation__warning"
-      data-testid="missed-test-warning"
-    >
-      <span class="day-explanation__warning-label">Notice:</span>
-      A monitor test was missed near the expected Peak. The fertile window may be less certain.
-    </div>
   </aside>
 </template>
 
 <style scoped>
-.day-explanation__warning {
-  margin-top: 0.375rem;
-  padding: 0.5rem 0.625rem;
-  border-radius: 6px;
-  background: var(--verelle-surface, #fff);
-  border: 1px solid var(--verelle-amber, #d97706);
-  border-left-width: 3px;
-  color: var(--verelle-ink, #0f172a);
-  font-size: 0.8125rem;
-  line-height: 1.4;
-}
-
-.day-explanation__warning-label {
-  font-weight: 600;
-  color: var(--verelle-amber, #d97706);
-  margin-right: 0.25rem;
-}
 .day-explanation {
   display: flex;
   flex-direction: column;

@@ -35,13 +35,11 @@ describe("App Method Guide & Monitor Coaching integration", () => {
     return { app, observationStore };
   }
 
-  it("renders Guide option in the header view switcher and utility tools", async () => {
+  it("renders reachable Method Guide option in utility tools", async () => {
     const { app } = createTestApp();
     const html = await renderToString(app);
 
-    expect(html).toContain('data-testid="view-guide"');
     expect(html).toContain('data-testid="open-guide"');
-    expect(html).toContain("Guide");
     expect(html).toContain("Method guide");
   });
 
