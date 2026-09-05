@@ -7,6 +7,7 @@ import CalendarView from "./components/CalendarView.vue";
 import ChartFrame from "./components/ChartFrame.vue";
 import CycleOverlayDialog from "./components/CycleOverlayDialog.vue";
 import InsightsView from "./components/InsightsView.vue";
+import MethodGuide from "./components/MethodGuide.vue";
 import Pairing from "./components/Pairing.vue";
 import PrivacyAbout from "./components/PrivacyAbout.vue";
 import ProfileSettings from "./components/ProfileSettings.vue";
@@ -27,7 +28,7 @@ const overlay = ref<"backup" | "privacy" | "pairing" | "profile" | "cycle" | nul
 const selectedCycleStartDate = ref<CivilDate | undefined>(undefined);
 const pairingState = ref<PairingState>("unpaired");
 const protocolOfferSkipped = ref(false);
-const currentView = ref<"chart" | "calendar" | "insights">("chart");
+const currentView = ref<"chart" | "calendar" | "insights" | "guide">("chart");
 
 const observationStore = useObservationStore();
 
@@ -118,8 +119,22 @@ const openCycleOverlay = (startDate?: CivilDate) => {
         >
           Insights
         </button>
+        <button
+          type="button"
+          role="tab"
+          class="app__view-btn"
+          :class="{ active: currentView === 'guide' }"
+          :aria-selected="currentView === 'guide'"
+          data-testid="view-guide"
+          @click="currentView = 'guide'"
+        >
+          Guide
+        </button>
       </div>
       <nav class="app__utility" aria-label="Chart tools">
+        <button type="button" data-testid="open-guide" @click="currentView = 'guide'">
+          Method guide
+        </button>
         <button type="button" data-testid="open-profile" @click="overlay = 'profile'">
           Profile
         </button>
@@ -137,7 +152,7 @@ const openCycleOverlay = (startDate?: CivilDate) => {
         </button>
       </nav>
     </header>
-    <section ref="editor">
+    <section v-if="currentView !== 'guide'" ref="editor">
       <RecordObservation
         :date="selectedDate"
         :today="today"
@@ -175,6 +190,10 @@ const openCycleOverlay = (startDate?: CivilDate) => {
       :chart="chart"
       :observations="observations"
       :profile="profile"
+    />
+    <MethodGuide
+      v-else-if="currentView === 'guide'"
+      @back="currentView = 'chart'"
     />
   </main>
 

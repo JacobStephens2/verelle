@@ -40,6 +40,24 @@ const temperatureFormatted = computed(() => {
   const unit = props.observation.temperatureUnit ?? "F";
   return `${props.observation.temperature} °${unit}`;
 });
+
+const hasMissedNearExpectedPeak = computed(() => {
+  if (!props.cycle) return false;
+  const missedDays = props.cycle.days.filter((d) => d.monitorReading === "Missed");
+  if (missedDays.length === 0) return false;
+  const currentPeakDay = props.cycle.days.find((d) => d.monitorReading === "Peak")?.cycleDay;
+  const firstHighDay = props.cycle.days.find((d) => d.monitorReading === "High")?.cycleDay;
+  for (const md of missedDays) {
+    if (currentPeakDay !== undefined) {
+      if (md.cycleDay >= currentPeakDay - 2 && md.cycleDay <= currentPeakDay + 1) return true;
+    } else if (firstHighDay !== undefined) {
+      if (md.cycleDay >= firstHighDay && md.cycleDay <= firstHighDay + 5) return true;
+    } else if (md.cycleDay >= 11 && md.cycleDay <= 17) {
+      return true;
+    }
+  }
+  return false;
+});
 </script>
 
 <template>
@@ -55,6 +73,7 @@ const temperatureFormatted = computed(() => {
       :fertile-window="cycle.fertileWindow"
       :protocol-family="cycleOverlay?.protocolFamily ?? null"
       :protocol-version="cycleOverlay?.protocolVersion ?? null"
+      :has-missed-near-expected-peak="hasMissedNearExpectedPeak"
     />
 
     <div v-if="hasObservation && observation" class="day-detail-info">

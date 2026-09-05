@@ -162,6 +162,18 @@ from prescriptive advice or interpretive conclusions.
 The instructor- and doctor-readable representation of chart observations and
 cycles, shared natively or saved offline as a handoff artifact.
 
+**Method guide**:
+The in-app reference for the Marquette Method, citing published primary sources
+with external links, explaining the three Peaks and protocol families, and
+providing monitor coaching.
+_Avoid_: Manual (unqualified), tutorial, FAQ
+
+**Monitor coaching**:
+Guidance on Clearblue Fertility Monitor setup covering the `m` button, the
+six-hour testing window, first-morning urine, and the twenty-test limit, surfaced
+at setup rather than buried.
+_Avoid_: Device tips, onboarding walkthrough
+
 ### The couple
 
 **Couple**:
