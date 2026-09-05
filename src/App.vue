@@ -6,6 +6,7 @@ import BackupRestore from "./components/BackupRestore.vue";
 import CalendarView from "./components/CalendarView.vue";
 import ChartFrame from "./components/ChartFrame.vue";
 import CycleOverlayDialog from "./components/CycleOverlayDialog.vue";
+import InsightsView from "./components/InsightsView.vue";
 import Pairing from "./components/Pairing.vue";
 import PrivacyAbout from "./components/PrivacyAbout.vue";
 import ProfileSettings from "./components/ProfileSettings.vue";
@@ -26,7 +27,7 @@ const overlay = ref<"backup" | "privacy" | "pairing" | "profile" | "cycle" | nul
 const selectedCycleStartDate = ref<CivilDate | undefined>(undefined);
 const pairingState = ref<PairingState>("unpaired");
 const protocolOfferSkipped = ref(false);
-const currentView = ref<"chart" | "calendar">("chart");
+const currentView = ref<"chart" | "calendar" | "insights">("chart");
 
 const observationStore = useObservationStore();
 
@@ -106,6 +107,17 @@ const openCycleOverlay = (startDate?: CivilDate) => {
         >
           Calendar
         </button>
+        <button
+          type="button"
+          role="tab"
+          class="app__view-btn"
+          :class="{ active: currentView === 'insights' }"
+          :aria-selected="currentView === 'insights'"
+          data-testid="view-insights"
+          @click="currentView = 'insights'"
+        >
+          Insights
+        </button>
       </div>
       <nav class="app__utility" aria-label="Chart tools">
         <button type="button" data-testid="open-profile" @click="overlay = 'profile'">
@@ -156,6 +168,13 @@ const openCycleOverlay = (startDate?: CivilDate) => {
       :observations="observations"
       :selected-date="selectedDate"
       @select-date="openDayDetails"
+    />
+    <InsightsView
+      v-else-if="currentView === 'insights'"
+      :today="today"
+      :chart="chart"
+      :observations="observations"
+      :profile="profile"
     />
   </main>
 

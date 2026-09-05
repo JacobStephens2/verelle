@@ -208,6 +208,25 @@ try {
   await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
   console.log("ok: Calendar view navigates months, opens day details on tap, and switches back to Chart");
 
+  // 3d. Insights view is reachable, displays stats and export options, and switches back to Chart.
+  await page.click('[data-testid="view-insights"]');
+  await page.waitForSelector('[data-testid="insights-view"]', { timeout: PAINT_TIMEOUT_MS });
+  const hasStats = await page.$eval(
+    '[data-testid="cycle-stats"]',
+    (el) => (el.textContent?.trim().length ?? 0) > 0,
+  );
+  assert.ok(hasStats, "Insights view did not render cycle stats");
+  const hasExport = await page.$eval(
+    '[data-testid="export-section"]',
+    (el) => (el.textContent?.trim().length ?? 0) > 0,
+  );
+  assert.ok(hasExport, "Insights view did not render export section");
+
+  // Switch back to Chart
+  await page.click('[data-testid="view-chart"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Insights view is reachable, displays stats and export options, and switches back to Chart");
+
   const pairingState = await page.$eval(
     '[data-testid="pairing-state"]',
     (element) => element.textContent?.trim() ?? "",

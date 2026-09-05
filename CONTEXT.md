@@ -153,6 +153,15 @@ fertile window banded behind it. Verelle's primary output.
 The month-grid view of observations and cycles, letting her find a date by
 calendar date rather than by counting Cycle Day columns.
 
+**Insights**:
+The view of cycle-length trends and variation across recorded cycles, showing
+her own pattern without drawing a conclusion or applying advice words. Distinct
+from prescriptive advice or interpretive conclusions.
+
+**Export**:
+The instructor- and doctor-readable representation of chart observations and
+cycles, shared natively or saved offline as a handoff artifact.
+
 ### The couple
 
 **Couple**:
