@@ -21,7 +21,8 @@ export type EligibilityCircumstance =
   | "cycle_variation_over_10_days"
   | "post_pill"
   | "perimenopausal"
-  | "postpartum_without_breastfeeding";
+  | "postpartum_without_breastfeeding"
+  | "missed_test_near_expected_peak";
 
 export interface InstructorRoute {
   readonly label: string;
@@ -179,6 +180,86 @@ export function evaluateEligibilityWarnings(
         "Clearblue and Marquette instructions advise monitoring for the return of regular cycles or following an instructor-guided transition protocol; continue charting and treat days before confirmed post-Peak infertility as fertile.",
       instructorRoute: MARQUETTE_INSTRUCTOR_ROUTE,
     });
+  }
+
+  function isMonitorCycle(cycle: ChartCycle): boolean {
+    const overlay = overlaysByStartDate.get(cycle.startDate);
+    if (!overlay || overlay.protocolFamily === null || overlay.protocolFamily === undefined) {
+      return true;
+    }
+    return (
+      overlay.protocolFamily === "regular_monitor" ||
+      overlay.protocolFamily === "regular_monitor_plus_mucus" ||
+      overlay.protocolFamily === "postpartum_return_to_cycles" ||
+      overlay.protocolFamily === "postpartum_cycle_zero_original"
+    );
+  }
+
+  // Evaluate missed monitor tests near expected Peak
+  for (let cycleIndex = 0; cycleIndex < cycles.length; cycleIndex++) {
+    const cycle = cycles[cycleIndex];
+    if (!cycle || !isMonitorCycle(cycle)) continue;
+
+    // Monitor tests are requested only during the testing interval (CD6 onward)
+    const missedDays = cycle.days.filter(
+      (d) => d.monitorReading === "Missed" && d.cycleDay >= 6,
+    );
+    if (missedDays.length === 0) continue;
+
+    const priorCycles = cycles.slice(Math.max(0, cycleIndex - 6), cycleIndex);
+    const priorPeakDays: number[] = [];
+    for (const pc of priorCycles) {
+      const peakDay = pc.days.find((d) => d.monitorReading === "Peak");
+      if (peakDay) priorPeakDays.push(peakDay.cycleDay);
+    }
+
+    const currentPeakDay = cycle.days.find((d) => d.monitorReading === "Peak")?.cycleDay;
+    const firstHighDay = cycle.days.find((d) => d.monitorReading === "High")?.cycleDay;
+
+    for (const missedDay of missedDays) {
+      let isNearExpectedPeak = false;
+
+      // When no Peak has been detected in the current cycle, check all indicators for expected Peak:
+      if (currentPeakDay === undefined) {
+        if (
+          priorPeakDays.length > 0 &&
+          missedDay.cycleDay >= Math.min(...priorPeakDays) - 2 &&
+          missedDay.cycleDay <= Math.max(...priorPeakDays) + 1
+        ) {
+          isNearExpectedPeak = true;
+        }
+
+        if (
+          firstHighDay !== undefined &&
+          missedDay.cycleDay >= firstHighDay &&
+          missedDay.cycleDay <= firstHighDay + 5
+        ) {
+          isNearExpectedPeak = true;
+        }
+
+        if (
+          priorPeakDays.length === 0 &&
+          firstHighDay === undefined &&
+          missedDay.cycleDay >= 11 &&
+          missedDay.cycleDay <= 17
+        ) {
+          isNearExpectedPeak = true;
+        }
+      }
+
+      if (isNearExpectedPeak) {
+        warnings.push({
+          circumstance: "missed_test_near_expected_peak",
+          reason: `A monitor test was missed near the expected Peak (Cycle Day ${missedDay.cycleDay}).`,
+          instructionLimit:
+            "The Clearblue Fertility Monitor instructions state that a test missed close to ovulation can miss the chance to identify Peak fertility.",
+          conservativeGuidance:
+            "The fertile window may be less certain; continue testing as requested by the monitor and treat days as fertile until fertility is confirmed closed, or consult an instructor.",
+          instructorRoute: MARQUETTE_INSTRUCTOR_ROUTE,
+        });
+        break;
+      }
+    }
   }
 
   return warnings;

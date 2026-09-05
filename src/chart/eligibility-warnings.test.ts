@@ -293,5 +293,89 @@ describe("evaluateEligibilityWarnings", () => {
       expect(warnings.some((w) => w.circumstance === "cycle_variation_over_10_days")).toBe(false);
     });
   });
+
+  describe("Missed test near expected Peak", () => {
+    it("produces a warning that the window may be less certain when a monitor test is missed near expected Peak", () => {
+      const cycle = makeCycle("2026-01-01", 28);
+      const days = [...cycle.days];
+      days[11] = { ...days[11]!, monitorReading: "High" };
+      days[13] = { ...days[13]!, monitorReading: "Missed" };
+      const cycleWithMissed = { ...cycle, days };
+
+      const warnings = evaluateEligibilityWarnings([cycleWithMissed], today, null);
+      const warning = warnings.find((w) => w.circumstance === "missed_test_near_expected_peak");
+      expect(warning).toBeDefined();
+      expect(warning?.reason).toMatch(/missed.*expected Peak/i);
+      expect(warning?.conservativeGuidance).toMatch(/less certain/i);
+      expect(warning?.instructionLimit).toMatch(/Clearblue/i);
+    });
+
+    it("produces a warning when a test is missed near historical Peak from prior cycles", () => {
+      const priorCycle = makeCycle("2026-01-01", 28);
+      const priorDays = [...priorCycle.days];
+      priorDays[14] = { ...priorDays[14]!, monitorReading: "Peak" };
+
+      const currentCycle = makeCycle("2026-01-29", 20);
+      const currentDays = [...currentCycle.days];
+      currentDays[13] = { ...currentDays[13]!, monitorReading: "Missed" };
+
+      const warnings = evaluateEligibilityWarnings(
+        [{ ...priorCycle, days: priorDays }, { ...currentCycle, days: currentDays }],
+        today,
+        null,
+      );
+      const warning = warnings.find((w) => w.circumstance === "missed_test_near_expected_peak");
+      expect(warning).toBeDefined();
+      expect(warning?.conservativeGuidance).toMatch(/less certain/i);
+    });
+
+    it("does not produce a warning when a test is missed far from expected Peak (e.g. CD6)", () => {
+      const priorCycle = makeCycle("2026-01-01", 28);
+      const priorDays = [...priorCycle.days];
+      priorDays[15] = { ...priorDays[15]!, monitorReading: "Peak" };
+
+      const currentCycle = makeCycle("2026-01-29", 20);
+      const currentDays = [...currentCycle.days];
+      currentDays[5] = { ...currentDays[5]!, monitorReading: "Missed" };
+
+      const warnings = evaluateEligibilityWarnings(
+        [{ ...priorCycle, days: priorDays }, { ...currentCycle, days: currentDays }],
+        today,
+        null,
+      );
+      expect(warnings.some((w) => w.circumstance === "missed_test_near_expected_peak")).toBe(false);
+    });
+
+    it("does not produce a warning when Peak was already detected in the current cycle", () => {
+      const cycle = makeCycle("2026-01-01", 28);
+      const days = [...cycle.days];
+      days[13] = { ...days[13]!, monitorReading: "Peak" }; // Peak on CD14
+      days[14] = { ...days[14]!, monitorReading: "Missed" }; // Missed on CD15 (P+1)
+      const cycleWithPeak = { ...cycle, days };
+
+      const warnings = evaluateEligibilityWarnings([cycleWithPeak], today, null);
+      expect(warnings.some((w) => w.circumstance === "missed_test_near_expected_peak")).toBe(false);
+    });
+
+    it("evaluates historical peak without being shadowed by an early High reading", () => {
+      const priorCycle = makeCycle("2026-01-01", 28);
+      const priorDays = [...priorCycle.days];
+      priorDays[17] = { ...priorDays[17]!, monitorReading: "Peak" }; // Prior Peak on CD18
+
+      // Current cycle has early High on CD10 and Missed on CD17 (near historical Peak CD18, even though CD17 > CD10 + 5)
+      const currentCycle = makeCycle("2026-01-29", 20);
+      const currentDays = [...currentCycle.days];
+      currentDays[9] = { ...currentDays[9]!, monitorReading: "High" };
+      currentDays[16] = { ...currentDays[16]!, monitorReading: "Missed" };
+
+      const warnings = evaluateEligibilityWarnings(
+        [{ ...priorCycle, days: priorDays }, { ...currentCycle, days: currentDays }],
+        today,
+        null,
+      );
+      expect(warnings.some((w) => w.circumstance === "missed_test_near_expected_peak")).toBe(true);
+    });
+  });
 });
+
 

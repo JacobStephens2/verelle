@@ -22,6 +22,7 @@ import {
 } from "../observations/cycle-overlay";
 import { useObservationStore } from "../observations/store";
 import { createRecordingEdits } from "./recording-edits";
+import MonitorSetupCoaching from "./MonitorSetupCoaching.vue";
 
 const props = defineProps<{
   startDate?: CivilDate;
@@ -276,6 +277,10 @@ const save = async () => {
           @input="edit('postpartumCycleNumber')"
         />
       </label>
+
+      <div v-if="protocolFamily !== 'mucus_only'" class="overlay-dialog__coaching">
+        <MonitorSetupCoaching compact />
+      </div>
 
       <div class="overlay-dialog__actions">
         <button

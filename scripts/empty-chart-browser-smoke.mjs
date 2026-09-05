@@ -227,6 +227,25 @@ try {
   await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
   console.log("ok: Insights view is reachable, displays stats and export options, and switches back to Chart");
 
+  // 3e. Method Guide is reachable, displays sources and monitor coaching, and switches back to Chart.
+  await page.click('[data-testid="open-guide"]');
+  await page.waitForSelector('[data-testid="method-guide"]', { timeout: PAINT_TIMEOUT_MS });
+  const hasSources = await page.$eval(
+    '[data-testid="method-sources"]',
+    (el) => (el.textContent?.trim().length ?? 0) > 0,
+  );
+  assert.ok(hasSources, "Method Guide did not render published sources");
+  const hasCoaching = await page.$eval(
+    '[data-testid="monitor-setup-coaching"]',
+    (el) => (el.textContent?.trim().length ?? 0) > 0,
+  );
+  assert.ok(hasCoaching, "Method Guide did not render monitor setup coaching");
+
+  // Switch back to Chart
+  await page.click('[data-testid="guide-back"]');
+  await page.waitForSelector('[data-testid="chart-frame"]', { timeout: PAINT_TIMEOUT_MS });
+  console.log("ok: Method Guide is reachable, displays sources and monitor coaching, and switches back to Chart");
+
   const pairingState = await page.$eval(
     '[data-testid="pairing-state"]',
     (element) => element.textContent?.trim() ?? "",

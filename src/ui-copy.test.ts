@@ -286,6 +286,46 @@ describe("UI copy", () => {
     }
   });
 
+  it("presents MethodGuide and MonitorSetupCoaching without advice words, citing sources with links and surfacing setup coaching", async () => {
+    const guideView = renderedText(
+      "MethodGuide.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "MethodGuide.vue"), "utf8"),
+    );
+    const coaching = renderedText(
+      "MonitorSetupCoaching.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "MonitorSetupCoaching.vue"), "utf8"),
+    );
+    const cycleOverlay = renderedText(
+      "CycleOverlayDialog.vue",
+      await readFile(path.join(REPO_ROOT, "src", "components", "CycleOverlayDialog.vue"), "utf8"),
+    );
+
+    // Reached and structured
+    expect(guideView).toContain('data-testid="method-guide"');
+    expect(guideView).toContain('data-testid="method-sources"');
+    expect(guideView).toContain('data-testid="guide-three-peaks"');
+    expect(guideView).toContain('data-testid="guide-peak-count"');
+    expect(guideView).toContain('data-testid="guide-protocol-families"');
+
+    // Sources cited with links
+    expect(guideView).toContain("https://device.report/m/5d2a8bd09ddf8f66399d538367a5d586e38444ab368d3e85f42fd740a0aeb0ea.pdf");
+    expect(guideView).toContain("https://www.clearblue.com/sites/default/files/wysiwyg/fam_booklet_800834-14.pdf");
+    expect(guideView).toContain("https://www.marquette.edu/nursing/institute-natural-family-planning/model.php");
+
+    // Monitor setup coaching covers m button, testing window, first-morning urine, twenty-test limit
+    expect(coaching).toContain('data-testid="coaching-m-button"');
+    expect(coaching).toContain('data-testid="coaching-testing-window"');
+    expect(coaching).toContain('data-testid="coaching-first-morning-urine"');
+    expect(coaching).toContain('data-testid="coaching-twenty-test-limit"');
+
+    // Surfaced at setup in CycleOverlayDialog
+    expect(cycleOverlay).toContain("<MonitorSetupCoaching");
+
+    // Issue #44: No guide copy applies "safe", "unsafe" or "should" to a day
+    expect(forbiddenWordsIn(guideView)).toEqual([]);
+    expect(forbiddenWordsIn(coaching)).toEqual([]);
+  });
+
   it("explains day fertility in DayExplanation without advice words while naming boundary rule, protocol version, and published source", async () => {
     const dayExplanation = renderedText(
       "DayExplanation.vue",

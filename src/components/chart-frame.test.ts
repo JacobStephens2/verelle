@@ -261,6 +261,31 @@ describe("ChartFrame component presentation seam", () => {
     expect(html).toContain("chart__cell--fertile");
   });
 
+  it("renders a warning that the window may be less certain when a test was missed near expected Peak", async () => {
+    const cd1Obs = applyUpdate(unrecordedObservation("2026-06-01"), { bleeding: "Heavy" });
+    const highObs = applyUpdate(unrecordedObservation("2026-06-12"), { monitorReading: "High" });
+    const missedObs = applyUpdate(unrecordedObservation("2026-06-14"), { monitorReading: "Missed" });
+    const overlay = {
+      ...defaultCycleOverlay("2026-06-01"),
+      protocolFamily: "regular_monitor" as const,
+      protocolVersion: "marquette_regular_manual_public" as const,
+    };
+    const app = createSSRApp({
+      render: () =>
+        h(ChartFrame, {
+          today: "2026-06-20",
+          observations: [cd1Obs, highObs, missedObs],
+          cycleOverlays: [overlay],
+        }),
+    });
+
+    const html = await renderToString(app);
+    expect(html).toContain('data-testid="eligibility-warnings"');
+    expect(html).toContain('data-testid="eligibility-warning"');
+    expect(html).toMatch(/missed.*expected Peak/i);
+    expect(html).toContain("less certain");
+  });
+
   describe("Method disclaimer", () => {
     it("renders the disclaimer once at the start of the chart frame", async () => {
       const app = createSSRApp({
