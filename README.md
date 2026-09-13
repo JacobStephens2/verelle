@@ -1,5 +1,7 @@
 # Verelle
 
+*Sep 13 2026: Archived in favor of Marquette NFP Pro*
+
 Verelle is a local-first fertility chart for couples using the Marquette
 Method. It records what the couple observed, lays it out as an
 instructor-readable chart, and computes the **Fertile window** of the
