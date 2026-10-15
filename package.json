@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Verelle - a record-and-display chart for couples using the Marquette Method.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
